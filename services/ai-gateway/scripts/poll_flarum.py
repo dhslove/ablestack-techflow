@@ -144,6 +144,8 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         "observed": len(events), "delivered": delivered, "seen": len(seen),
         "reviewsChecked": reconciliation.get("data", {}).get("checked", 0),
         "reviewsApproved": reconciliation.get("data", {}).get("approved", 0),
+        "reviewsRetried": reconciliation.get("data", {}).get("retried", 0),
+        "reviewRetryFailed": reconciliation.get("data", {}).get("retryFailed", 0),
     }
 
 

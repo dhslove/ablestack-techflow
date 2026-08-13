@@ -271,6 +271,44 @@ class ChatEndpointTest(unittest.TestCase):
         self.assertEqual(1, reconciled.json()["data"]["approved"])
         self.assertEqual("PUBLISHED", store.get_community_case(case["caseId"])["state"])
 
+    def test_reconcile_recovers_missing_review_post_and_notifies_chat(self) -> None:
+        flarum = FakeFlarumReview()
+        review_settings = Settings(
+            flarum_api_key_file="/run/secrets/flarum_api_key",
+            flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+            community_review_post_enabled=True,
+            chat_bot_enabled=True,
+            chat_bot_token_file="/run/secrets/chat_bot_token",
+            chat_reviewer_usernames=("ceo",),
+            community_approve_webhook_file="/run/secrets/community_approve_webhook",
+            community_reject_webhook_file="/run/secrets/community_reject_webhook",
+        )
+        store = MemoryStore()
+        store.upsert_chat_reviewer("7", "ceo")
+        case = store.create_community_case(
+            {"discussionId": "990", "discussionUrl": "https://community.ablecloud.io/d/990",
+             "title": "복구 질문", "question": "전체 답변 링크를 알려주세요.", "authorId": "42",
+             "tagSlugs": ["mold"], "artifactIds": []},
+            {"draftAnswer": "복구된 전체 답변", "answerState": "ANSWERED", "citations": []},
+            "review-retry-create", "review-retry-correlation",
+        )
+        bot = FakeBot()
+        client = TestClient(create_app(
+            review_settings, store=store, chat_bot_client=bot,
+            community_flow_client=FakeFlows(store), flarum_client_instance=flarum,
+        ))
+        reconciled = client.post(
+            "/v1/community/reviews/reconcile",
+            headers={"X-Correlation-Id": "review-retry-run", "Idempotency-Key": "review-retry-run"},
+            json={},
+        )
+        data = reconciled.json()["data"]
+        self.assertEqual(1, data["retried"])
+        self.assertEqual(0, data["retryFailed"])
+        recovered = store.get_community_case(case["caseId"])
+        self.assertEqual("990", recovered["reviewPostId"])
+        self.assertIn(recovered["reviewPostUrl"], json.dumps(bot.sent[0][1], ensure_ascii=False))
+
     def test_approve_uses_chat_identity_and_publishes(self) -> None:
         reference = str(self.case["caseId"])[:8]
         response = self.post(form(f"승인 {reference} 1", post_id="approve-100"))

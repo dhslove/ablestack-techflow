@@ -74,12 +74,15 @@ class FlarumClient:
             raise InvalidBoundaryError("invalid Flarum API key boundary")
         if not as_assistant:
             return f"Token {key}"
+        return f"Token {key}; userId={self._assistant_user_id()}"
+
+    def _assistant_user_id(self) -> str:
         if not self.assistant_user_id_file:
             raise InvalidBoundaryError("Flarum assistant identity is not configured")
         user_id = Path(self.assistant_user_id_file).read_text(encoding="utf-8").strip()
         if not user_id.isdigit() or int(user_id) < 1:
             raise InvalidBoundaryError("invalid Flarum assistant identity boundary")
-        return f"Token {key}; userId={user_id}"
+        return user_id
 
     def _request(
         self, path: str, method: str = "GET", body: bytes | None = None, *, as_assistant: bool = False
@@ -123,9 +126,13 @@ class FlarumClient:
             raise InvalidBoundaryError("community review posting is disabled")
         query = urllib.parse.urlencode({"filter[discussion]": discussion_id, "page[limit]": "50"})
         existing = self._request(f"/api/posts?{query}")
+        assistant_user_id = self._assistant_user_id()
         for item in existing.get("data") or []:
             attributes = item.get("attributes") or {}
             if marker in (attributes.get("contentHtml") or "") or marker in (attributes.get("content") or ""):
+                author_id = str((((item.get("relationships") or {}).get("user") or {}).get("data") or {}).get("id") or "")
+                if author_id != assistant_user_id:
+                    continue
                 if attributes.get("isApproved") is True:
                     raise InvalidBoundaryError("review reply is already public")
                 post_id = str(item["id"])

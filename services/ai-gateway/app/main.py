@@ -677,18 +677,45 @@ def create_app(
         correlation_id: Annotated[str, Depends(_correlation_id)],
         _: Annotated[str, Depends(_idempotency_key)],
     ) -> Envelope:
-        checked = approved = 0
+        checked = approved = retried = retry_failed = 0
         for item in runtime_store.list_community_cases(("DRAFT_PENDING",), 100):
             post_id = str(item.get("reviewPostId") or "")
             if not post_id:
-                continue
+                if not runtime_settings.community_review_post_enabled or not item.get("draftAnswer"):
+                    continue
+                try:
+                    marker = f"<!-- techflow-review:{item['caseId']}:v{item['draftVersion']} -->"
+                    review = flarum_client.publish_review_reply(item["discussionId"], item["draftAnswer"], marker)
+                    item = runtime_store.attach_community_review(
+                        item["caseId"], review, f"review-post-{item['caseId']}-v{item['draftVersion']}",
+                    )
+                    post_id = str(item["reviewPostId"])
+                    retried += 1
+                    if runtime_settings.chat_bot_enabled:
+                        reviewer_ids = [row["userId"] for row in runtime_store.list_chat_reviewers()]
+                        if reviewer_ids:
+                            runtime_chat_bot.send(reviewer_ids, case_card(item, new_notification=True))
+                    _json_log(
+                        "community_review_post_recovered", correlationId=correlation_id,
+                        caseId=str(item["caseId"]), postId=post_id,
+                    )
+                except Exception as exc:
+                    retry_failed += 1
+                    _json_log(
+                        "community_review_post_retry_failed", correlationId=correlation_id,
+                        caseId=str(item["caseId"]), errorType=type(exc).__name__,
+                    )
+                    continue
             checked += 1
             if flarum_client.review_post_is_approved(post_id):
                 runtime_store.mark_community_review_approved(
                     item["caseId"], f"flarum-review-approved-{post_id}",
                 )
                 approved += 1
-        return _envelope({"checked": checked, "approved": approved}, correlation_id)
+        return _envelope(
+            {"checked": checked, "approved": approved, "retried": retried, "retryFailed": retry_failed},
+            correlation_id,
+        )
 
     @application.post("/v1/community/cases/{caseId}/decision", response_model=Envelope, operation_id="decideCommunityCase")
     def decide_community_case(

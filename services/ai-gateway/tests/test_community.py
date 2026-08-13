@@ -187,6 +187,28 @@ class CommunityTests(unittest.TestCase):
             create_request = opened.call_args_list[1].args[0]
             self.assertEqual("Token " + "a" * 40 + "; userId=40", create_request.headers["Authorization"])
 
+    def test_review_reply_ignores_matching_marker_from_a_different_author(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            user_file = Path(directory) / "assistant-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            user_file.write_text("40", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), False,
+                str(user_file), True,
+            )
+            responses = [
+                FakeResponse({"data": [{
+                    "id": "77", "attributes": {"contentHtml": "<!-- review -->", "isApproved": True},
+                    "relationships": {"user": {"data": {"type": "users", "id": "32"}}},
+                }]}),
+                FakeResponse({"data": {"id": "88", "attributes": {"isApproved": False}}}),
+            ]
+            with patch("urllib.request.urlopen", side_effect=responses) as opened:
+                result = client.publish_review_reply("901", "전체 검토 답변", "<!-- review -->")
+            self.assertEqual("88", result["postId"])
+            self.assertEqual(2, opened.call_count)
+
     def test_memory_case_tracks_flarum_review_approval(self) -> None:
         store = MemoryStore()
         case = store.create_community_case(
