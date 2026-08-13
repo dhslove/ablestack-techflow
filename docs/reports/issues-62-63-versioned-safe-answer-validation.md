@@ -194,7 +194,7 @@ Reviewer `상세 <Case>`에는 질문과 답변만 표시되고 Citation·Source
 
 #### 적용 버전
 
-- 현재 적용 기준은 ABLESTACK Cloud Diplo다. 최신 Diplo Head `10973eeb...`와 활성 인덱스 `2a0564fa...` 사이의 콘솔 관련 파일 변경이 없음을 별도 대조했다.
+- 현재 적용 기준은 ABLESTACK Diplo다. 최신 Diplo Head `10973eeb...`와 활성 인덱스 `2a0564fa...` 사이의 콘솔 관련 파일 변경이 없음을 별도 대조했다.
 - 이 사례는 제품 코드 버전 결함이 아니라 QEMU/libvirt 런타임 상태 문제이므로 Europa 비교는 `NOT_APPLICABLE`이다.
 
 0.11.2는 제품 내부 Console Proxy 경로를 우선해 실제 알려진 원인과 조치 우선순위가 달랐다. 0.11.3은 Source Reviewer가 승인한 운영 지식과 공식 QEMU/libvirt 문서 스냅샷을 결합해 QEMU VNC 런타임 문제를 우선하고, CLI 조회·라이브 마이그레이션·정지 후 시작·후순위 프록시 점검 순서로 교정했다.

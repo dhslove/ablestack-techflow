@@ -145,8 +145,8 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         headings = ["### 증상", "### 원인", "### 해결 방법", "### 추가 고려사항", "### 적용 버전"]
         self.assertTrue(all(heading in answer for heading in headings), answer)
         self.assertEqual(sorted(answer.index(heading) for heading in headings), [answer.index(heading) for heading in headings])
-        self.assertIn("ABLESTACK Cloud Diplo(현재 출시판)", answer)
-        self.assertIn("ABLESTACK Cloud Europa(미출시 Preview)", answer)
+        self.assertIn("ABLESTACK Diplo(현재 출시판)", answer)
+        self.assertIn("ABLESTACK Europa(미출시 Preview)", answer)
         self.assertIn("개선이 진행 중", answer)
         self.assertNotIn("Foo.java", answer)
         self.assertNotIn("CLOUD_DIPLO", answer)

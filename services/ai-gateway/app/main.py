@@ -59,6 +59,7 @@ from .store import InvalidBoundaryError, InvalidStateError, MemoryStore, Store, 
 from .artifacts import ArtifactStore
 from .comprehensive import plan_query
 from .community import FlarumClient, format_draft, profiles_for_tags
+from .conversation import build_conversation_question, source_post_id
 from .versioned_assist import (
     CURATED_PLATFORM_PROFILE,
     SOURCE_ROLES,
@@ -599,18 +600,34 @@ def create_app(
         correlation_id: Annotated[str, Depends(_correlation_id)],
         idempotency_key: Annotated[str, Depends(_idempotency_key)],
     ) -> Envelope:
+        event = _model_data(request)
+        post_id = source_post_id(event)
+        if request.resolution_only:
+            result = runtime_store.sync_community_resolution(event, idempotency_key, correlation_id)
+            return _envelope(result, correlation_id)
+        if runtime_store.community_turn_exists(request.discussion_id, post_id):
+            result = runtime_store.get_community_case_by_discussion(request.discussion_id)
+            result.update(created=False, turnCreated=False)
+            return _envelope(result, correlation_id)
+        if not request.response_requested:
+            result = runtime_store.record_community_turn(event, idempotency_key, correlation_id)
+            return _envelope(result, correlation_id)
+        turns = runtime_store.list_community_turns(request.discussion_id)
+        conversation_question = build_conversation_question(request.title, turns, event)
         assist_request = ComprehensiveQueryRequest(
-            queryId=uuid4(), question=f"{request.title}\n\n{request.question}", actorId=f"community:{request.author_id}",
+            queryId=uuid4(), question=conversation_question, actorId=f"community:{request.author_id}",
             productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,
             locale="ko-KR", classification="D0",
         )
         result = _query_comprehensive(assist_request, correlation_id)
+        result["userQuestion"] = request.question
         draft = {"draftAnswer": format_draft(result), "answerState": result.get("state"),
                  "citations": result.get("citations") or [], "evidenceLedger": evidence_ledger(result)}
-        result = runtime_store.create_community_case(_model_data(request), draft, idempotency_key, correlation_id)
+        result = runtime_store.create_community_case(event, draft, idempotency_key, correlation_id)
         created = result.pop("created", False)
+        turn_created = result.pop("turnCreated", created)
         review_ready = not runtime_settings.community_review_post_enabled
-        if created and runtime_settings.community_review_post_enabled and result.get("draftAnswer"):
+        if turn_created and runtime_settings.community_review_post_enabled and result.get("draftAnswer"):
             try:
                 marker = f"<!-- techflow-review:{result['caseId']}:v{result['draftVersion']} -->"
                 review = flarum_client.publish_review_reply(
@@ -629,7 +646,7 @@ def create_app(
                     "community_review_post_failed", correlationId=correlation_id,
                     caseId=str(result["caseId"]), errorType=type(exc).__name__,
                 )
-        if runtime_settings.chat_bot_enabled and created and review_ready:
+        if runtime_settings.chat_bot_enabled and turn_created and review_ready:
             reviewer_ids = [item["userId"] for item in runtime_store.list_chat_reviewers()]
             if not reviewer_ids:
                 _json_log(
@@ -677,7 +694,7 @@ def create_app(
         correlation_id: Annotated[str, Depends(_correlation_id)],
         _: Annotated[str, Depends(_idempotency_key)],
     ) -> Envelope:
-        checked = approved = retried = retry_failed = 0
+        checked = approved = missing = retried = retry_failed = 0
         for item in runtime_store.list_community_cases(("DRAFT_PENDING",), 100):
             post_id = str(item.get("reviewPostId") or "")
             if not post_id:
@@ -707,13 +724,20 @@ def create_app(
                     )
                     continue
             checked += 1
-            if flarum_client.review_post_is_approved(post_id):
+            review_approved = flarum_client.review_post_is_approved(post_id)
+            if review_approved is True:
                 runtime_store.mark_community_review_approved(
                     item["caseId"], f"flarum-review-approved-{post_id}",
                 )
                 approved += 1
+            elif review_approved is None:
+                runtime_store.mark_community_review_missing(
+                    item["caseId"], f"flarum-review-missing-{post_id}",
+                )
+                missing += 1
         return _envelope(
-            {"checked": checked, "approved": approved, "retried": retried, "retryFailed": retry_failed},
+            {"checked": checked, "approved": approved, "missing": missing,
+             "retried": retried, "retryFailed": retry_failed},
             correlation_id,
         )
 

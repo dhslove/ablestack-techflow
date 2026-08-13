@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from app.community import FlarumClient, format_draft, profiles_for_tags
+from app.community import FlarumClient, FlarumResourceNotFound, format_draft, profiles_for_tags
 from app.config import Settings
 from app.main import create_app
 from app.store import MemoryStore
@@ -52,7 +52,8 @@ class CommunityTests(unittest.TestCase):
             "citations": [{"repository": "ablecloud-team/ablestack-docs", "commit": "a" * 40,
                            "path": "docs/test.md", "startLine": 1, "endLine": 3}],
         })
-        self.assertIn("ABLESTACK 트러블슈팅 가이드", draft)
+        self.assertTrue(draft.startswith("### 증상"))
+        self.assertNotIn("## ABLESTACK 트러블슈팅 가이드", draft)
         self.assertIn("### 적용 버전", draft)
         self.assertIn("개선이 진행 중", draft)
         self.assertNotIn("github.com", draft)
@@ -206,6 +207,19 @@ class CommunityTests(unittest.TestCase):
             request = opened.call_args.args[0]
             self.assertEqual("Token " + "a" * 40 + "; userId=40", request.headers["Authorization"])
 
+    def test_removed_review_post_is_reported_without_breaking_reconciliation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            user_file = Path(directory) / "assistant-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            user_file.write_text("40", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), False,
+                str(user_file), True,
+            )
+            with patch.object(client, "_request", side_effect=FlarumResourceNotFound("gone")):
+                self.assertIsNone(client.review_post_is_approved("88"))
+
     def test_review_reply_ignores_matching_marker_from_a_different_author(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             key_file = Path(directory) / "key"
@@ -242,7 +256,109 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual("88", attached["reviewPostId"])
         approved = store.mark_community_review_approved(case["caseId"], "review-case-approved")
         self.assertEqual("PUBLISHED", approved["state"])
+        self.assertEqual("WAITING_RESOLUTION", approved["conversationState"])
         self.assertEqual("flarum:moderator", approved["reviewer"])
+
+    def test_missing_information_is_an_optional_section_without_document_title(self) -> None:
+        draft = format_draft({
+            "state": "NEEDS_INFORMATION",
+            "userQuestion": "가상머신 콘솔이 연결중에서 멈춥니다.",
+            "plan": {"questionsNeeded": ["문제가 발생한 시각과 libvirt 로그를 첨부해 주세요."]},
+        })
+        self.assertTrue(draft.startswith("### 증상"))
+        self.assertIn("### 추가로 필요한 정보", draft)
+        self.assertIn("libvirt 로그", draft)
+        self.assertNotIn("트러블슈팅 가이드", draft)
+
+    def test_followup_turn_keeps_context_and_creates_a_new_review_version(self) -> None:
+        store = MemoryStore()
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42",
+                 "turnRole": "REQUESTER", "responseRequested": True}
+        case = store.create_community_case(
+            first, {"draftAnswer": "로그를 첨부해 주세요.", "answerState": "ANSWERED", "citations": []},
+            "conversation-first-post", "conversation-first-correlation",
+        )
+        store.attach_community_review(
+            case["caseId"], {"postId": "200", "postUrl": "https://community.ablecloud.io/d/901/200"},
+            "conversation-first-review",
+        )
+        published = store.mark_community_review_approved(case["caseId"], "conversation-first-approved")
+        self.assertEqual("WAITING_RESOLUTION", published["conversationState"])
+
+        followup = {**self.payload(), "question": "요청한 로그를 첨부했습니다.", "postId": "101",
+                    "postNumber": 3, "postAuthorId": "42", "turnRole": "REQUESTER",
+                    "responseRequested": True, "artifactIds": []}
+        updated = store.create_community_case(
+            followup, {"draftAnswer": "로그를 반영한 후속 답변", "answerState": "ANSWERED", "citations": []},
+            "conversation-followup-post", "conversation-followup-correlation",
+        )
+        self.assertFalse(updated["created"])
+        self.assertTrue(updated["turnCreated"])
+        self.assertEqual(2, updated["draftVersion"])
+        self.assertEqual(2, updated["contextVersion"])
+        self.assertEqual("WAITING_REVIEW", updated["conversationState"])
+        self.assertEqual(["100", "101"], [item["sourcePostId"] for item in store.list_community_turns("901")])
+
+        duplicate = store.create_community_case(
+            followup, {"draftAnswer": "중복", "answerState": "ANSWERED", "citations": []},
+            "conversation-followup-duplicate", "conversation-followup-correlation",
+        )
+        self.assertFalse(duplicate["turnCreated"])
+        self.assertEqual(2, duplicate["draftVersion"])
+
+    def test_requester_best_answer_resolves_and_unset_reopens_conversation(self) -> None:
+        store = MemoryStore()
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
+        case = store.create_community_case(
+            first, {"draftAnswer": "답변", "answerState": "ANSWERED", "citations": []},
+            "resolution-first-post", "resolution-first-correlation",
+        )
+        resolved = store.sync_community_resolution(
+            {**first, "bestAnswerPostId": "200", "bestAnswerUserId": "42"},
+            "resolution-selected", "resolution-selected-correlation",
+        )
+        self.assertEqual("RESOLVED", resolved["conversationState"])
+        self.assertEqual("200", resolved["resolvedPostId"])
+
+        reopened = store.sync_community_resolution(
+            {**first, "bestAnswerPostId": None, "bestAnswerUserId": None},
+            "resolution-unset", "resolution-unset-correlation",
+        )
+        self.assertEqual("ANALYZING", reopened["conversationState"])
+        self.assertIsNotNone(reopened["reopenedAt"])
+        events = store.list_community_case_events(case["caseId"], 10)
+        self.assertIn("RESOLUTION_UNSET_REOPENED", [item["eventType"] for item in events])
+
+    def test_moderator_best_answer_does_not_impersonate_requester_resolution(self) -> None:
+        store = MemoryStore()
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
+        store.create_community_case(
+            first, {"draftAnswer": "답변", "answerState": "ANSWERED", "citations": []},
+            "moderator-resolution-first", "moderator-resolution-correlation",
+        )
+        result = store.sync_community_resolution(
+            {**first, "bestAnswerPostId": "200", "bestAnswerUserId": "1"},
+            "moderator-resolution-selected", "moderator-resolution-selected-correlation",
+        )
+        self.assertEqual("WAITING_RESOLUTION", result["conversationState"])
+        self.assertIsNone(result["resolvedAt"])
+
+    def test_missing_review_post_is_failed_closed_and_audited(self) -> None:
+        store = MemoryStore()
+        case = store.create_community_case(
+            {**self.payload(), "postId": "100", "postNumber": 1},
+            {"draftAnswer": "답변", "answerState": "ANSWERED", "citations": []},
+            "missing-review-first", "missing-review-correlation",
+        )
+        store.attach_community_review(
+            case["caseId"], {"postId": "200", "postUrl": "https://community.ablecloud.io/d/901/200"},
+            "missing-review-attached",
+        )
+        rejected = store.mark_community_review_missing(case["caseId"], "missing-review-reconciled")
+        self.assertEqual("REJECTED", rejected["state"])
+        self.assertEqual("ANALYZING", rejected["conversationState"])
+        events = store.list_community_case_events(case["caseId"], 5)
+        self.assertIn("REVIEW_POST_MISSING", [item["eventType"] for item in events])
 
 
 if __name__ == "__main__":

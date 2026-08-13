@@ -294,11 +294,36 @@ def _is_causal_artifact_finding(value: str) -> bool:
 
 
 def format_public_answer(result: dict[str, Any]) -> str | None:
+    if result.get("state") == "NEEDS_INFORMATION":
+        needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
+        question = simplify_public_text(result.get("userQuestion"), [])
+        lines = [
+            "### 증상",
+            f"- {question}" if question else "- 질문에 대한 추가 확인이 필요합니다.",
+            "",
+            "### 원인",
+            "- 현재 정보만으로는 원인을 확정할 수 없습니다.",
+        ]
+        if needed:
+            lines.extend(["", "### 추가로 필요한 정보", *(f"- {item}" for item in needed)])
+        lines.extend([
+            "",
+            "### 해결 방법",
+            "- 요청한 정보를 확인한 뒤 안전한 확인 순서와 해결 방법을 안내하겠습니다.",
+            "",
+            "### 추가 고려사항",
+            "- 현재까지 확인한 내용과 이후 제공되는 자료를 같은 기술지원 맥락으로 계속 검토합니다.",
+            "",
+            "### 적용 버전",
+            "- 현재 적용 기준: ABLESTACK Diplo(현재 출시판)",
+            "- 차기 참고 기준: ABLESTACK Europa(미출시 Preview)",
+        ])
+        return "\n".join(lines).strip()
     if result.get("state") != "ANSWERED" or not result.get("report"):
         return None
     report = result["report"]
     citations = result.get("citations") or []
-    lines = ["## ABLESTACK 트러블슈팅 가이드"]
+    lines: list[str] = []
 
     symptom_candidates = _section_values(report.get("observedFacts") or [], citations)
     symptom_values = [value for value in symptom_candidates if _is_user_observed_symptom(value)]
@@ -349,11 +374,24 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
         }
         preview_label = labels.get(preview, simplify_public_text(preview, citations))
 
+    information_requests: list[str] = []
     considerations: list[str] = list(contextual_artifact_findings)
     for row in report.get("unknowns") or []:
         clean = simplify_public_text(row, citations)
-        if clean and clean not in considerations:
+        if not clean:
+            continue
+        if any(marker in clean for marker in ("필요", "확인", "제공", "알려", "첨부", "로그", "화면")):
+            if clean not in information_requests:
+                information_requests.append(clean)
+        elif clean not in considerations:
             considerations.append(clean)
+    if information_requests:
+        insertion = lines.index("### 해결 방법")
+        lines[insertion:insertion] = [
+            "### 추가로 필요한 정보",
+            *(f"- {value}" for value in information_requests),
+            "",
+        ]
     if guidance and guidance not in considerations:
         considerations.append(guidance)
     lines.extend(["", "### 추가 고려사항"])
@@ -361,10 +399,10 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
 
     lines.extend(["", "### 적용 버전"])
     if current:
-        lines.append(f"- 현재 적용 기준: ABLESTACK Cloud Diplo(현재 출시판) - {current_label}")
+        lines.append(f"- 현재 적용 기준: ABLESTACK Diplo(현재 출시판) - {current_label}")
     else:
-        lines.append("- 현재 적용 기준: ABLESTACK Cloud Diplo(현재 출시판) - 판정 정보가 없습니다.")
-    lines.append(f"- 차기 참고 기준: ABLESTACK Cloud Europa(미출시 Preview) - {preview_label}")
+        lines.append("- 현재 적용 기준: ABLESTACK Diplo(현재 출시판) - 판정 정보가 없습니다.")
+    lines.append(f"- 차기 참고 기준: ABLESTACK Europa(미출시 Preview) - {preview_label}")
     lines.extend(["", "> 이 답변은 ABLESTACK TechFlow가 제품 자료와 구현을 종합 검토한 뒤 담당자 승인을 거쳐 제공합니다."])
     return "\n".join(line for line in lines if line is not None).strip()
 

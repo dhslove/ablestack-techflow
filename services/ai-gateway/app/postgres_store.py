@@ -9,6 +9,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from .provider import PROVIDER_PROFILES
+from .conversation import conversation_state_for_draft, source_post_id
 
 from .config import Settings
 from .indexing import build_index_bundle, reciprocal_rank_fusion
@@ -1092,6 +1093,11 @@ class PostgresStore:
             "approvalVersion": row["approval_version"], "reviewer": row["reviewer"],
             "reviewPostId": row.get("review_post_id"), "reviewPostUrl": row.get("review_post_url"),
             "publishedPostId": row["published_post_id"], "publishedPostUrl": row["published_post_url"],
+            "conversationState": row.get("conversation_state") or "WAITING_REVIEW",
+            "requesterUserId": row.get("requester_user_id"),
+            "lastSeenPostId": row.get("last_seen_post_id"), "contextVersion": row.get("context_version") or 0,
+            "resolvedPostId": row.get("resolved_post_id"), "resolvedByUserId": row.get("resolved_by_user_id"),
+            "resolvedAt": row.get("resolved_at"), "reopenedAt": row.get("reopened_at"),
             "correlationId": row["correlation_id"], "createdAt": row["created_at"], "updatedAt": row["updated_at"],
         }
 
@@ -1100,31 +1106,226 @@ class PostgresStore:
     ) -> dict[str, Any]:
         with self._pool.connection() as connection:
             existing = connection.execute(
-                "SELECT * FROM community_case WHERE idempotency_key=%s OR discussion_id=%s ORDER BY created_at LIMIT 1",
-                (idempotency_key, request["discussionId"]),
+                "SELECT * FROM community_case WHERE idempotency_key=%s ORDER BY created_at LIMIT 1",
+                (idempotency_key,),
             ).fetchone()
             if existing:
                 result = self._community_payload(existing)
                 result["created"] = False
+                result["turnCreated"] = False
+                return result
+            post_id = source_post_id(request)
+            row = connection.execute(
+                "SELECT * FROM community_case WHERE discussion_id=%s FOR UPDATE", (request["discussionId"],)
+            ).fetchone()
+            if row:
+                inserted = connection.execute(
+                    """INSERT INTO community_turn
+                       (id,case_id,source_post_id,post_number,author_user_id,role,content,artifact_ids,correlation_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (case_id,source_post_id) DO NOTHING RETURNING id""",
+                    (uuid4(), row["id"], post_id, request.get("postNumber"),
+                     request.get("postAuthorId") or request["authorId"], request.get("turnRole") or "REQUESTER",
+                     request.get("question") or "", json.dumps([str(item) for item in request.get("artifactIds") or []]),
+                     correlation_id),
+                ).fetchone()
+                if not inserted:
+                    result = self._community_payload(row)
+                    result.update(created=False, turnCreated=False)
+                    return result
+                draft_version = row["draft_version"] + 1
+                was_resolved = row.get("conversation_state") == "RESOLVED"
+                metadata = dict(row.get("source_metadata") or {})
+                metadata["evidenceLedger"] = draft.get("evidenceLedger") or {}
+                updated = connection.execute(
+                    """UPDATE community_case SET state='DRAFT_PENDING',conversation_state=%s,
+                       draft_version=%s,draft_answer=%s,answer_state=%s,citations=%s,approval_version=0,
+                       reviewer=NULL,approved_at=NULL,review_post_id=NULL,review_post_url=NULL,
+                       published_post_id=NULL,published_post_url=NULL,published_at=NULL,
+                       last_seen_post_id=%s,context_version=context_version+1,
+                       resolved_post_id=CASE WHEN %s THEN NULL ELSE resolved_post_id END,
+                       resolved_by_user_id=CASE WHEN %s THEN NULL ELSE resolved_by_user_id END,
+                       resolved_at=CASE WHEN %s THEN NULL ELSE resolved_at END,
+                       reopened_at=CASE WHEN %s THEN now() ELSE reopened_at END,
+                       correlation_id=%s,idempotency_key=%s,source_metadata=%s,updated_at=now()
+                       WHERE id=%s RETURNING *""",
+                    (conversation_state_for_draft(draft), draft_version, draft.get("draftAnswer"),
+                     draft.get("answerState"), json.dumps(draft.get("citations") or []), post_id,
+                     was_resolved, was_resolved, was_resolved, was_resolved, correlation_id, idempotency_key,
+                     json.dumps(metadata), row["id"]),
+                ).fetchone()
+                connection.execute(
+                    """INSERT INTO community_response
+                       (id,case_id,draft_version,state,answer,answer_state,correlation_id)
+                       VALUES (%s,%s,%s,'DRAFT_PENDING',%s,%s,%s)""",
+                    (uuid4(), row["id"], draft_version, draft.get("draftAnswer"), draft.get("answerState"), correlation_id),
+                )
+                connection.execute(
+                    """INSERT INTO community_case_event
+                       (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                       VALUES (%s,%s,%s,'techflow',%s,%s,%s)""",
+                    (uuid4(), row["id"], "CONVERSATION_REOPENED" if was_resolved else "FOLLOWUP_DRAFT_CREATED",
+                     idempotency_key, correlation_id, json.dumps({"sourcePostId": post_id, "draftVersion": draft_version})),
+                )
+                result = self._community_payload(updated)
+                result.update(created=False, turnCreated=True)
                 return result
             case_id = uuid4()
             row = connection.execute(
                 """INSERT INTO community_case
-                   (id,discussion_id,discussion_url,title,state,draft_version,draft_answer,answer_state,citations,
-                    approval_version,correlation_id,idempotency_key,source_metadata)
-                   VALUES (%s,%s,%s,%s,'DRAFT_PENDING',1,%s,%s,%s,0,%s,%s,%s) RETURNING *""",
+                   (id,discussion_id,discussion_url,title,state,conversation_state,requester_user_id,last_seen_post_id,
+                    context_version,draft_version,draft_answer,answer_state,citations,approval_version,correlation_id,
+                    idempotency_key,source_metadata)
+                   VALUES (%s,%s,%s,%s,'DRAFT_PENDING',%s,%s,%s,1,1,%s,%s,%s,0,%s,%s,%s) RETURNING *""",
                 (case_id, request["discussionId"], request["discussionUrl"], request["title"],
+                 conversation_state_for_draft(draft), request["authorId"], post_id,
                  draft.get("draftAnswer"), draft.get("answerState"), json.dumps(draft.get("citations") or []),
                  correlation_id, idempotency_key,
                  json.dumps({"authorId": request["authorId"], "tagSlugs": request.get("tagSlugs") or [],
                              "evidenceLedger": draft.get("evidenceLedger") or {}})),
             ).fetchone()
             connection.execute(
+                """INSERT INTO community_turn
+                   (id,case_id,source_post_id,post_number,author_user_id,role,content,artifact_ids,correlation_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (uuid4(), case_id, post_id, request.get("postNumber"),
+                 request.get("postAuthorId") or request["authorId"], request.get("turnRole") or "REQUESTER",
+                 request.get("question") or "", json.dumps([str(item) for item in request.get("artifactIds") or []]),
+                 correlation_id),
+            )
+            connection.execute(
+                """INSERT INTO community_response
+                   (id,case_id,draft_version,state,answer,answer_state,correlation_id)
+                   VALUES (%s,%s,1,'DRAFT_PENDING',%s,%s,%s)""",
+                (uuid4(), case_id, draft.get("draftAnswer"), draft.get("answerState"), correlation_id),
+            )
+            connection.execute(
                 "INSERT INTO community_case_event (id,case_id,event_type,actor,correlation_id,details) VALUES (%s,%s,'DRAFT_CREATED','techflow',%s,%s)",
                 (uuid4(), case_id, correlation_id, json.dumps({"answerState": draft.get("answerState")})),
             )
             result = self._community_payload(row)
             result["created"] = True
+            result["turnCreated"] = True
+            return result
+
+    def community_turn_exists(self, discussion_id: str, source_post_id_value: str) -> bool:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM community_turn t JOIN community_case c ON c.id=t.case_id
+                   WHERE c.discussion_id=%s AND t.source_post_id=%s""",
+                (discussion_id, source_post_id_value),
+            ).fetchone()
+            return bool(row)
+
+    def list_community_turns(self, discussion_id: str) -> list[dict[str, Any]]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """SELECT t.* FROM community_turn t JOIN community_case c ON c.id=t.case_id
+                   WHERE c.discussion_id=%s ORDER BY t.post_number NULLS FIRST,t.created_at""",
+                (discussion_id,),
+            ).fetchall()
+            return [{
+                "turnId": row["id"], "caseId": row["case_id"], "sourcePostId": row["source_post_id"],
+                "postNumber": row["post_number"], "authorUserId": row["author_user_id"], "role": row["role"],
+                "content": row["content"], "artifactIds": row["artifact_ids"] or [],
+                "correlationId": row["correlation_id"], "createdAt": row["created_at"],
+            } for row in rows]
+
+    def record_community_turn(
+        self, request: dict[str, Any], idempotency_key: str, correlation_id: str
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM community_case WHERE discussion_id=%s FOR UPDATE", (request["discussionId"],)
+            ).fetchone()
+            if not row:
+                raise NotFoundError("community conversation not found")
+            post_id = source_post_id(request)
+            inserted = connection.execute(
+                """INSERT INTO community_turn
+                   (id,case_id,source_post_id,post_number,author_user_id,role,content,artifact_ids,correlation_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (case_id,source_post_id) DO NOTHING RETURNING id""",
+                (uuid4(), row["id"], post_id, request.get("postNumber"),
+                 request.get("postAuthorId") or request["authorId"], request.get("turnRole") or "STAFF",
+                 request.get("question") or "", json.dumps([str(item) for item in request.get("artifactIds") or []]),
+                 correlation_id),
+            ).fetchone()
+            if not inserted:
+                result = self._community_payload(row)
+                result["turnCreated"] = False
+                return result
+            reopened = row.get("conversation_state") == "RESOLVED" and request.get("turnRole") == "REQUESTER"
+            updated = connection.execute(
+                """UPDATE community_case SET last_seen_post_id=%s,context_version=context_version+1,
+                   conversation_state=CASE WHEN %s THEN 'ANALYZING' ELSE conversation_state END,
+                   resolved_post_id=CASE WHEN %s THEN NULL ELSE resolved_post_id END,
+                   resolved_by_user_id=CASE WHEN %s THEN NULL ELSE resolved_by_user_id END,
+                   resolved_at=CASE WHEN %s THEN NULL ELSE resolved_at END,
+                   reopened_at=CASE WHEN %s THEN now() ELSE reopened_at END,updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (post_id, reopened, reopened, reopened, reopened, reopened, row["id"]),
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (uuid4(), row["id"], "CONVERSATION_REOPENED" if reopened else "TURN_RECORDED",
+                 (request.get("turnRole") or "STAFF").lower(), idempotency_key, correlation_id,
+                 json.dumps({"sourcePostId": post_id})),
+            )
+            result = self._community_payload(updated)
+            result["turnCreated"] = True
+            return result
+
+    def sync_community_resolution(
+        self, request: dict[str, Any], idempotency_key: str, correlation_id: str
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute(
+                "SELECT * FROM community_case WHERE discussion_id=%s FOR UPDATE", (request["discussionId"],)
+            ).fetchone()
+            if not row:
+                raise NotFoundError("community conversation not found")
+            best_post = request.get("bestAnswerPostId")
+            best_user = request.get("bestAnswerUserId")
+            if best_post and best_user == row.get("requester_user_id"):
+                state, event_type = "RESOLVED", "RESOLVED_BY_REQUESTER"
+                changed = row.get("conversation_state") != state or row.get("resolved_post_id") != best_post
+                resolved_at = request.get("bestAnswerSetAt")
+            elif best_post:
+                state, event_type = "WAITING_RESOLUTION", "RESOLUTION_REVIEW_REQUIRED"
+                changed = row.get("resolved_post_id") != best_post or row.get("conversation_state") == "RESOLVED"
+                resolved_at = None
+            elif row.get("conversation_state") == "RESOLVED":
+                state, event_type, changed, resolved_at = "ANALYZING", "RESOLUTION_UNSET_REOPENED", True, None
+            else:
+                result = self._community_payload(row)
+                result["resolutionChanged"] = False
+                return result
+            updated = connection.execute(
+                """UPDATE community_case SET conversation_state=%s,resolved_post_id=%s,resolved_by_user_id=%s,
+                   resolved_at=CASE WHEN %s='RESOLVED' THEN COALESCE(%s,now()) ELSE NULL END,
+                   reopened_at=CASE WHEN %s='ANALYZING' THEN now() ELSE reopened_at END,updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (state, best_post, best_user, state, resolved_at, state, row["id"]),
+            ).fetchone()
+            if changed:
+                connection.execute(
+                    """INSERT INTO community_case_event
+                       (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    (uuid4(), row["id"], event_type, f"flarum:{best_user or row.get('requester_user_id') or 'unknown'}",
+                     idempotency_key, correlation_id, json.dumps({"bestAnswerPostId": best_post})),
+                )
+            result = self._community_payload(updated)
+            result["resolutionChanged"] = changed
             return result
 
     def get_community_case(self, case_id: UUID) -> dict[str, Any]:
@@ -1209,9 +1410,15 @@ class PostgresStore:
             state = target_state
             updated = connection.execute(
                 """UPDATE community_case SET state=%s,draft_answer=%s,reviewer=%s,approval_version=approval_version+1,
+                   conversation_state=CASE WHEN %s='REJECTED' THEN 'ANALYZING' ELSE conversation_state END,
                    approved_at=CASE WHEN %s='APPROVED' THEN now() ELSE NULL END,updated_at=now() WHERE id=%s RETURNING *""",
-                (state, answer, request["reviewer"], state, case_id),
+                (state, answer, request["reviewer"], state, state, case_id),
             ).fetchone()
+            connection.execute(
+                """UPDATE community_response SET state=CASE WHEN %s='REJECTED' THEN 'REJECTED' ELSE state END,
+                   answer=%s,reviewer=%s,updated_at=now() WHERE case_id=%s AND draft_version=%s""",
+                (state, answer, request["reviewer"], case_id, row["draft_version"]),
+            )
             connection.execute(
                 """INSERT INTO community_case_event
                    (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
@@ -1240,6 +1447,11 @@ class PostgresStore:
                 (review["postId"], review["postUrl"], case_id),
             ).fetchone()
             connection.execute(
+                """UPDATE community_response SET review_post_id=%s,review_post_url=%s,updated_at=now()
+                   WHERE case_id=%s AND draft_version=%s""",
+                (review["postId"], review["postUrl"], case_id, row["draft_version"]),
+            )
+            connection.execute(
                 """INSERT INTO community_case_event
                    (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
                    VALUES (%s,%s,'REVIEW_POST_CREATED','techflow-assistant',%s,%s,%s)""",
@@ -1263,18 +1475,55 @@ class PostgresStore:
             if row["state"] != "DRAFT_PENDING":
                 raise InvalidStateError("only pending review posts can be approved")
             updated = connection.execute(
-                """UPDATE community_case SET state='PUBLISHED',reviewer='flarum:moderator',
+                """UPDATE community_case SET state='PUBLISHED',conversation_state='WAITING_RESOLUTION',reviewer='flarum:moderator',
                    approval_version=approval_version+1,approved_at=now(),published_post_id=review_post_id,
                    published_post_url=review_post_url,published_at=now(),updated_at=now()
                    WHERE id=%s RETURNING *""",
                 (case_id,),
             ).fetchone()
             connection.execute(
+                """UPDATE community_response SET state='PUBLISHED',reviewer='flarum:moderator',published_at=now(),updated_at=now()
+                   WHERE case_id=%s AND draft_version=%s""",
+                (case_id, row["draft_version"]),
+            )
+            connection.execute(
                 """INSERT INTO community_case_event
                    (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
                    VALUES (%s,%s,'PUBLISHED','flarum:moderator',%s,%s,%s)""",
                 (uuid4(), case_id, idempotency_key, row["correlation_id"],
                  json.dumps({"approvalSurface": "FLARUM_APPROVAL"})),
+            )
+            return self._community_payload(updated)
+
+    def mark_community_review_missing(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute("SELECT * FROM community_case WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+            if not row:
+                raise NotFoundError("community case not found")
+            if row["state"] != "DRAFT_PENDING":
+                return self._community_payload(row)
+            updated = connection.execute(
+                """UPDATE community_case SET state='REJECTED',conversation_state='ANALYZING',
+                   reviewer='techflow:reconcile',updated_at=now() WHERE id=%s RETURNING *""",
+                (case_id,),
+            ).fetchone()
+            connection.execute(
+                """UPDATE community_response SET state='REJECTED',reviewer='techflow:reconcile',updated_at=now()
+                   WHERE case_id=%s AND draft_version=%s""",
+                (case_id, row["draft_version"]),
+            )
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'REVIEW_POST_MISSING','techflow:reconcile',%s,%s,%s)""",
+                (uuid4(), case_id, idempotency_key, row["correlation_id"],
+                 json.dumps({"reviewPostId": row.get("review_post_id")})),
             )
             return self._community_payload(updated)
 
@@ -1292,7 +1541,7 @@ class PostgresStore:
             if row["state"] != "APPROVED":
                 raise InvalidStateError("only approved drafts can be published")
             updated = connection.execute(
-                """UPDATE community_case SET state='PUBLISHED',published_post_id=%s,published_post_url=%s,
+                """UPDATE community_case SET state='PUBLISHED',conversation_state='WAITING_RESOLUTION',published_post_id=%s,published_post_url=%s,
                    published_at=now(),updated_at=now() WHERE id=%s RETURNING *""",
                 (publication["postId"], publication["postUrl"], case_id),
             ).fetchone()

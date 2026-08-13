@@ -111,6 +111,16 @@
       "path": "0010_flarum_review_post_up.sql",
       "sha256": "fcc99bd87b3bb8c482a894023133338012ee4c9355600eb4ad3ba94b51593c93",
       "bytes": 277
+    },
+    {
+      "path": "0011_community_conversation_down.sql",
+      "sha256": "1909739a55db579f385967bbd6530075ec99b2b1dfbb2b17624ca61638ff3e91",
+      "bytes": 625
+    },
+    {
+      "path": "0011_community_conversation_up.sql",
+      "sha256": "9250b23c8aa4cd46fa02edf0fd06e9d7ed24f1e5375b273421c11d99d7b5af0c",
+      "bytes": 2681
     }
   ]
 }

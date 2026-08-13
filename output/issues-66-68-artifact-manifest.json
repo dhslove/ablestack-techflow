@@ -1,0 +1,40 @@
+{
+  "issues": [
+    66,
+    67,
+    68
+  ],
+  "generatedAt": "2026-08-13T05:47:07.675617+00:00",
+  "artifacts": [
+    {
+      "path": "docs/plans/issues-66-68-community-conversation-design.md",
+      "bytes": 6992,
+      "sha256": "8ac18d02ac961891f41a6c6223e5c46a800c3a7219f5ca4c75169c007166f995"
+    },
+    {
+      "path": "docs/runbooks/community-conversation.md",
+      "bytes": 5581,
+      "sha256": "d922e4ac47215ccd5cf4d6e31332c34b507a19c200c30a9e3ae1a1d009e80f9c"
+    },
+    {
+      "path": "docs/reports/issues-66-68-community-conversation-validation.md",
+      "bytes": 5847,
+      "sha256": "e07c6fe3466bc1a9507369384e86de98dc54d763a98afecc4b0e5f6a09ab15ec"
+    },
+    {
+      "path": "output/pdf/techflow-community-conversation-report.pdf",
+      "bytes": 105980,
+      "sha256": "ae0517a739761bb83d750a16f78c0b00fca5a44a3ced024f61119b8c9f0c0e5e"
+    },
+    {
+      "path": "output/pdf/techflow-community-conversation-presentation.pdf",
+      "bytes": 606353,
+      "sha256": "8dbc19b1a20ced3da92d8fe9980b42584e99383cdce3aa200cc93978c9264bed"
+    },
+    {
+      "path": "output/presentation/techflow-community-conversation.pptx",
+      "bytes": 35362,
+      "sha256": "c1ab2c0d8b78f55daa6677acfcc39a3ace0d8be30082dd5c71d8faa155f6add0"
+    }
+  ]
+}

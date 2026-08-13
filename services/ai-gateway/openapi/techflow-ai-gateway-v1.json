@@ -3,7 +3,7 @@
   "info": {
     "title": "TechFlow AI Gateway",
     "description": "TechFlow AI Gateway with grounded Responses generation and deterministic retrieval.",
-    "version": "0.12.0"
+    "version": "0.13.0"
   },
   "paths": {
     "/healthz": {
@@ -1705,6 +1705,98 @@
               }
             ],
             "title": "Productversion"
+          },
+          "postId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postid"
+          },
+          "postNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postnumber"
+          },
+          "postAuthorId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:@-]{1,128}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postauthorid"
+          },
+          "turnRole": {
+            "type": "string",
+            "enum": [
+              "REQUESTER",
+              "STAFF",
+              "ASSISTANT"
+            ],
+            "title": "Turnrole",
+            "default": "REQUESTER"
+          },
+          "responseRequested": {
+            "type": "boolean",
+            "title": "Responserequested",
+            "default": true
+          },
+          "resolutionOnly": {
+            "type": "boolean",
+            "title": "Resolutiononly",
+            "default": false
+          },
+          "bestAnswerPostId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bestanswerpostid"
+          },
+          "bestAnswerUserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:@-]{1,128}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bestansweruserid"
+          },
+          "bestAnswerSetAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bestanswersetat"
           }
         },
         "additionalProperties": false,

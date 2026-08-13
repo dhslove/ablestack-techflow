@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from .provider import PROVIDER_PROFILES
+from .conversation import conversation_state_for_draft, source_post_id
 
 
 class StoreError(RuntimeError):
@@ -80,6 +81,10 @@ class Store(Protocol):
     def finish_evaluation_run(self, run_id: UUID, failed: bool = False) -> dict[str, Any]: ...
     def list_evaluation_results(self, run_id: UUID) -> list[dict[str, Any]]: ...
     def create_community_case(self, request: dict[str, Any], draft: dict[str, Any], idempotency_key: str, correlation_id: str) -> dict[str, Any]: ...
+    def community_turn_exists(self, discussion_id: str, source_post_id: str) -> bool: ...
+    def list_community_turns(self, discussion_id: str) -> list[dict[str, Any]]: ...
+    def record_community_turn(self, request: dict[str, Any], idempotency_key: str, correlation_id: str) -> dict[str, Any]: ...
+    def sync_community_resolution(self, request: dict[str, Any], idempotency_key: str, correlation_id: str) -> dict[str, Any]: ...
     def get_community_case(self, case_id: UUID) -> dict[str, Any]: ...
     def get_community_case_by_discussion(self, discussion_id: str) -> dict[str, Any]: ...
     def resolve_community_case(self, reference: str) -> dict[str, Any]: ...
@@ -88,6 +93,7 @@ class Store(Protocol):
     def decide_community_case(self, case_id: UUID, request: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def attach_community_review(self, case_id: UUID, review: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_review_approved(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]: ...
+    def mark_community_review_missing(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_published(self, case_id: UUID, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def upsert_chat_reviewer(self, user_id: str, username: str) -> dict[str, Any]: ...
     def list_chat_reviewers(self) -> list[dict[str, Any]]: ...
@@ -118,6 +124,8 @@ class MemoryStore:
         self._provider_calls: list[dict[str, Any]] = []
         self._community_cases: dict[UUID, dict[str, Any]] = {}
         self._community_by_discussion: dict[str, UUID] = {}
+        self._community_turns: dict[UUID, list[dict[str, Any]]] = {}
+        self._community_responses: dict[UUID, list[dict[str, Any]]] = {}
         self._community_events: list[dict[str, Any]] = []
         self._chat_reviewers: dict[str, dict[str, Any]] = {}
         self._idempotency: dict[tuple[str, str], dict[str, Any]] = {}
@@ -703,12 +711,53 @@ class MemoryStore:
         with self._lock:
             if repeated := self._repeat("create_community_case", idempotency_key):
                 repeated["created"] = False
+                repeated["turnCreated"] = False
                 return repeated
             discussion_id = request["discussionId"]
+            post_id = source_post_id(request)
             if discussion_id in self._community_by_discussion:
-                existing = deepcopy(self._community_cases[self._community_by_discussion[discussion_id]])
-                existing["created"] = False
-                return existing
+                case_id = self._community_by_discussion[discussion_id]
+                value = self._community_cases[case_id]
+                if any(item["sourcePostId"] == post_id for item in self._community_turns.get(case_id, [])):
+                    existing = deepcopy(value)
+                    existing.update(created=False, turnCreated=False)
+                    return self._remember("create_community_case", idempotency_key, existing)
+                turn = self._append_memory_turn(case_id, request, correlation_id)
+                was_resolved = value.get("conversationState") == "RESOLVED"
+                value.update(
+                    state="DRAFT_PENDING",
+                    conversationState=conversation_state_for_draft(draft),
+                    draftVersion=value["draftVersion"] + 1,
+                    draftAnswer=draft.get("draftAnswer"),
+                    answerState=draft.get("answerState"),
+                    citations=deepcopy(draft.get("citations") or []),
+                    evidenceLedger=deepcopy(draft.get("evidenceLedger") or {}),
+                    reviewPostId=None,
+                    reviewPostUrl=None,
+                    publishedPostId=None,
+                    publishedPostUrl=None,
+                    reviewer=None,
+                    lastSeenPostId=post_id,
+                    contextVersion=value.get("contextVersion", 0) + 1,
+                    reopenedAt=utc_now() if was_resolved else value.get("reopenedAt"),
+                    resolvedPostId=None if was_resolved else value.get("resolvedPostId"),
+                    resolvedByUserId=None if was_resolved else value.get("resolvedByUserId"),
+                    resolvedAt=None if was_resolved else value.get("resolvedAt"),
+                    updatedAt=utc_now(),
+                )
+                self._community_responses.setdefault(case_id, []).append({
+                    "draftVersion": value["draftVersion"], "state": "DRAFT_PENDING",
+                    "answer": value["draftAnswer"], "answerState": value["answerState"],
+                    "reviewPostId": None, "reviewPostUrl": None, "correlationId": correlation_id,
+                })
+                self._community_events.append({
+                    "caseId": case_id, "eventType": "CONVERSATION_REOPENED" if was_resolved else "FOLLOWUP_DRAFT_CREATED",
+                    "actor": "techflow", "createdAt": value["updatedAt"],
+                    "details": {"sourcePostId": turn["sourcePostId"], "draftVersion": value["draftVersion"]},
+                })
+                result = self._remember("create_community_case", idempotency_key, value)
+                result.update(created=False, turnCreated=True)
+                return result
             case_id = uuid4()
             value = {
                 "caseId": case_id, "discussionId": discussion_id, "discussionUrl": request["discussionUrl"],
@@ -718,16 +767,138 @@ class MemoryStore:
                 "evidenceLedger": deepcopy(draft.get("evidenceLedger") or {}),
                 "reviewer": None, "reviewPostId": None, "reviewPostUrl": None,
                 "publishedPostId": None, "publishedPostUrl": None,
+                "conversationState": conversation_state_for_draft(draft),
+                "requesterUserId": request["authorId"], "lastSeenPostId": post_id, "contextVersion": 1,
+                "resolvedPostId": None, "resolvedByUserId": None, "resolvedAt": None, "reopenedAt": None,
                 "correlationId": correlation_id, "createdAt": utc_now(), "updatedAt": utc_now(),
             }
             self._community_cases[case_id] = value
             self._community_by_discussion[discussion_id] = case_id
+            self._community_turns[case_id] = []
+            self._append_memory_turn(case_id, request, correlation_id)
+            self._community_responses[case_id] = [{
+                "draftVersion": 1, "state": "DRAFT_PENDING", "answer": value["draftAnswer"],
+                "answerState": value["answerState"], "reviewPostId": None, "reviewPostUrl": None,
+                "correlationId": correlation_id,
+            }]
             self._community_events.append({
                 "caseId": case_id, "eventType": "DRAFT_CREATED", "actor": "techflow",
                 "createdAt": value["createdAt"], "details": {"answerState": value["answerState"]},
             })
             result = self._remember("create_community_case", idempotency_key, value)
             result["created"] = True
+            result["turnCreated"] = True
+            return result
+
+    def _append_memory_turn(
+        self, case_id: UUID, request: dict[str, Any], correlation_id: str
+    ) -> dict[str, Any]:
+        turn = {
+            "turnId": uuid4(), "caseId": case_id, "sourcePostId": source_post_id(request),
+            "postNumber": request.get("postNumber"),
+            "authorUserId": request.get("postAuthorId") or request["authorId"],
+            "role": request.get("turnRole") or "REQUESTER", "content": request.get("question") or "",
+            "artifactIds": deepcopy(request.get("artifactIds") or []),
+            "correlationId": correlation_id, "createdAt": utc_now(),
+        }
+        self._community_turns.setdefault(case_id, []).append(turn)
+        return turn
+
+    def community_turn_exists(self, discussion_id: str, source_post_id_value: str) -> bool:
+        with self._lock:
+            case_id = self._community_by_discussion.get(discussion_id)
+            return bool(case_id and any(
+                item["sourcePostId"] == source_post_id_value for item in self._community_turns.get(case_id, [])
+            ))
+
+    def list_community_turns(self, discussion_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            case_id = self._community_by_discussion.get(discussion_id)
+            if not case_id:
+                return []
+            return deepcopy(self._community_turns.get(case_id, []))
+
+    def record_community_turn(
+        self, request: dict[str, Any], idempotency_key: str, correlation_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("record_community_turn", idempotency_key):
+                repeated["turnCreated"] = False
+                return repeated
+            case_id = self._community_by_discussion.get(request["discussionId"])
+            if not case_id:
+                raise NotFoundError("community conversation not found")
+            value = self._community_cases[case_id]
+            post_id = source_post_id(request)
+            if any(item["sourcePostId"] == post_id for item in self._community_turns.get(case_id, [])):
+                result = deepcopy(value)
+                result["turnCreated"] = False
+                return self._remember("record_community_turn", idempotency_key, result)
+            turn = self._append_memory_turn(case_id, request, correlation_id)
+            reopened = value.get("conversationState") == "RESOLVED" and turn["role"] == "REQUESTER"
+            value.update(
+                lastSeenPostId=post_id, contextVersion=value.get("contextVersion", 0) + 1,
+                updatedAt=utc_now(),
+            )
+            if reopened:
+                value.update(
+                    conversationState="ANALYZING", resolvedPostId=None, resolvedByUserId=None,
+                    resolvedAt=None, reopenedAt=value["updatedAt"],
+                )
+            self._community_events.append({
+                "caseId": case_id, "eventType": "CONVERSATION_REOPENED" if reopened else "TURN_RECORDED",
+                "actor": turn["role"].lower(), "createdAt": value["updatedAt"],
+                "details": {"sourcePostId": post_id},
+            })
+            result = self._remember("record_community_turn", idempotency_key, value)
+            result["turnCreated"] = True
+            return result
+
+    def sync_community_resolution(
+        self, request: dict[str, Any], idempotency_key: str, correlation_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("sync_community_resolution", idempotency_key):
+                return repeated
+            case_id = self._community_by_discussion.get(request["discussionId"])
+            if not case_id:
+                raise NotFoundError("community conversation not found")
+            value = self._community_cases[case_id]
+            best_post = request.get("bestAnswerPostId")
+            best_user = request.get("bestAnswerUserId")
+            requester = value.get("requesterUserId")
+            now = utc_now()
+            if best_post and best_user == requester:
+                changed = value.get("conversationState") != "RESOLVED" or value.get("resolvedPostId") != best_post
+                value.update(
+                    conversationState="RESOLVED", resolvedPostId=best_post, resolvedByUserId=best_user,
+                    resolvedAt=request.get("bestAnswerSetAt") or now, updatedAt=now,
+                )
+                event_type = "RESOLVED_BY_REQUESTER"
+            elif best_post:
+                changed = value.get("resolvedPostId") != best_post or value.get("conversationState") == "RESOLVED"
+                value.update(
+                    conversationState="WAITING_RESOLUTION", resolvedPostId=best_post,
+                    resolvedByUserId=best_user, resolvedAt=None, updatedAt=now,
+                )
+                event_type = "RESOLUTION_REVIEW_REQUIRED"
+            elif value.get("conversationState") == "RESOLVED":
+                changed = True
+                value.update(
+                    conversationState="ANALYZING", resolvedPostId=None, resolvedByUserId=None,
+                    resolvedAt=None, reopenedAt=now, updatedAt=now,
+                )
+                event_type = "RESOLUTION_UNSET_REOPENED"
+            else:
+                changed = False
+                event_type = "RESOLUTION_UNCHANGED"
+            if changed:
+                self._community_events.append({
+                    "caseId": case_id, "eventType": event_type, "actor": f"flarum:{best_user or requester or 'unknown'}",
+                    "createdAt": now, "details": {"bestAnswerPostId": best_post},
+                })
+            result = self._remember("sync_community_resolution", idempotency_key, value)
+            result["resolutionChanged"] = changed
             return result
 
     def get_community_case(self, case_id: UUID) -> dict[str, Any]:
@@ -785,7 +956,14 @@ class MemoryStore:
             value["draftAnswer"] = request.get("editedAnswer") or value.get("draftAnswer")
             value["reviewer"] = request["reviewer"]
             value["approvalVersion"] += 1
+            if value["state"] == "REJECTED":
+                value["conversationState"] = "ANALYZING"
             value["updatedAt"] = utc_now()
+            if self._community_responses.get(case_id):
+                self._community_responses[case_id][-1].update(
+                    state="REJECTED" if value["state"] == "REJECTED" else "DRAFT_PENDING",
+                    answer=value["draftAnswer"], reviewer=value["reviewer"],
+                )
             self._community_events.append({
                 "caseId": case_id, "eventType": value["state"], "actor": request["reviewer"],
                 "createdAt": value["updatedAt"],
@@ -803,6 +981,10 @@ class MemoryStore:
             if value.get("reviewPostId") and value["reviewPostId"] != review["postId"]:
                 raise ConflictError("community review post already attached")
             value.update(reviewPostId=review["postId"], reviewPostUrl=review["postUrl"], updatedAt=utc_now())
+            if self._community_responses.get(case_id):
+                self._community_responses[case_id][-1].update(
+                    reviewPostId=review["postId"], reviewPostUrl=review["postUrl"],
+                )
             self._community_events.append({
                 "caseId": case_id, "eventType": "REVIEW_POST_CREATED", "actor": "techflow-assistant",
                 "createdAt": value["updatedAt"], "details": deepcopy(review),
@@ -822,13 +1004,36 @@ class MemoryStore:
                 raise InvalidStateError("only pending review posts can be approved")
             value.update(
                 state="PUBLISHED", reviewer="flarum:moderator", approvalVersion=value["approvalVersion"] + 1,
-                publishedPostId=value["reviewPostId"], publishedPostUrl=value["reviewPostUrl"], updatedAt=utc_now(),
+                publishedPostId=value["reviewPostId"], publishedPostUrl=value["reviewPostUrl"],
+                conversationState="WAITING_RESOLUTION", updatedAt=utc_now(),
             )
+            if self._community_responses.get(case_id):
+                self._community_responses[case_id][-1].update(
+                    state="PUBLISHED", reviewer="flarum:moderator", publishedAt=value["updatedAt"],
+                )
             self._community_events.append({
                 "caseId": case_id, "eventType": "PUBLISHED", "actor": "flarum:moderator",
                 "createdAt": value["updatedAt"], "details": {"approvalSurface": "FLARUM_APPROVAL"},
             })
             return self._remember("approve_community_review", idempotency_key, value)
+
+    def mark_community_review_missing(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("missing_community_review", idempotency_key):
+                return repeated
+            value = self._community_cases.get(case_id)
+            if not value:
+                raise NotFoundError("community case not found")
+            if value["state"] != "DRAFT_PENDING":
+                return self._remember("missing_community_review", idempotency_key, value)
+            value.update(state="REJECTED", conversationState="ANALYZING", reviewer="techflow:reconcile", updatedAt=utc_now())
+            if self._community_responses.get(case_id):
+                self._community_responses[case_id][-1].update(state="REJECTED", reviewer="techflow:reconcile")
+            self._community_events.append({
+                "caseId": case_id, "eventType": "REVIEW_POST_MISSING", "actor": "techflow:reconcile",
+                "createdAt": value["updatedAt"], "details": {"reviewPostId": value.get("reviewPostId")},
+            })
+            return self._remember("missing_community_review", idempotency_key, value)
 
     def mark_community_published(self, case_id: UUID, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
         with self._lock:
@@ -840,7 +1045,8 @@ class MemoryStore:
             if value["state"] != "APPROVED":
                 raise InvalidStateError("only approved drafts can be published")
             value.update(state="PUBLISHED", publishedPostId=publication["postId"],
-                         publishedPostUrl=publication["postUrl"], updatedAt=utc_now())
+                         publishedPostUrl=publication["postUrl"], conversationState="WAITING_RESOLUTION",
+                         updatedAt=utc_now())
             self._community_events.append({
                 "caseId": case_id, "eventType": "PUBLISHED", "actor": "techflow",
                 "createdAt": value["updatedAt"], "details": deepcopy(publication),

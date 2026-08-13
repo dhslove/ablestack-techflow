@@ -12,6 +12,10 @@ from typing import Any
 from .store import InvalidBoundaryError
 
 
+class FlarumResourceNotFound(RuntimeError):
+    """A Flarum object was permanently removed or is no longer visible to the configured identity."""
+
+
 TAG_PROFILE_MAP = {
     "mold": "CLOUD_DIPLO",
     "ablestack-vm": "CLOUD_DIPLO",
@@ -96,7 +100,11 @@ class FlarumClient:
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
                 return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise FlarumResourceNotFound("Flarum resource not found") from exc
+            raise RuntimeError("Flarum request failed") from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise RuntimeError("Flarum request failed") from exc
 
     def publish_reply(self, discussion_id: str, answer: str, marker: str) -> dict[str, Any]:
@@ -153,8 +161,11 @@ class FlarumClient:
         post_id = str(payload["data"]["id"])
         return {"postId": post_id, "postUrl": f"{self.public_url}/d/{discussion_id}/{post_id}", "isApproved": False, "reused": False}
 
-    def review_post_is_approved(self, post_id: str) -> bool:
+    def review_post_is_approved(self, post_id: str) -> bool | None:
         if not post_id.isdigit():
             raise InvalidBoundaryError("invalid review post id")
-        payload = self._request(f"/api/posts/{post_id}", as_assistant=True)
+        try:
+            payload = self._request(f"/api/posts/{post_id}", as_assistant=True)
+        except FlarumResourceNotFound:
+            return None
         return (payload.get("data", {}).get("attributes") or {}).get("isApproved") is True

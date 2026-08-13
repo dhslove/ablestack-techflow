@@ -1,5 +1,18 @@
 # ABLESTACK TechFlow
 
+## Issues #66-#68 Community 지속 대화와 해결 상태
+
+Community Assist는 질문 한 건에 한 번 답하고 종료하지 않습니다. 질문자가 후속 댓글과 이미지, 로그 또는 로그 압축 파일을 추가하면 같은 Case의 대화 맥락으로 다시 분석하고, 담당자가 Community에서 전체 답변을 검토·승인합니다. 질문자가 Best Answer로 해결 표시를 할 때까지 맥락을 유지하며, 해결 표시가 해제되면 같은 Case를 다시 엽니다.
+
+사용자 답변은 별도 제목 없이 `증상`부터 시작하고, 적용 버전은 `ABLESTACK Diplo`, `ABLESTACK Europa`로 표시합니다. Citation·Repository·Commit 등 내부 근거는 사용자 본문에 노출하지 않습니다.
+
+- [지속 대화·해결 상태 설계](docs/plans/issues-66-68-community-conversation-design.md)
+- [배포·운영 Runbook](docs/runbooks/community-conversation.md)
+- [구현·E2E 검증 보고서](docs/reports/issues-66-68-community-conversation-validation.md)
+- [완료 보고서 PDF](output/pdf/techflow-community-conversation-report.pdf)
+- [검토 프레젠테이션 PDF](output/pdf/techflow-community-conversation-presentation.pdf)
+- [검토 프레젠테이션 PPTX](output/presentation/techflow-community-conversation.pptx)
+
 ## Issue #64 Community 원문 승인형 AI 답변
 
 Chat 길이 제한으로 전체 AI 답변을 검토할 수 없던 문제를 해결했습니다. 별도 일반 계정 `TechFlow-Assistant`가 Community에 전체 답변을 `승인 대기 중`으로 등록하고, Chat은 담당자에게 원문 검토 링크만 전달합니다. 관리자는 질문·답변·이미지·로그 압축 분석 내용을 Community에서 확인한 뒤 Flarum Approval로 공개를 결정합니다.

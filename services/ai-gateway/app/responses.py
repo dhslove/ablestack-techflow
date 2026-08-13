@@ -100,6 +100,11 @@ checks and resolution steps. unknowns are missing information, impact, and cauti
 define applicable versions. Write concise Korean for a general product user. Prefer short sentences and familiar
 words. If a technical term is essential, explain it at first use, such as "콘솔 연결(VNC)". Do not repeat the same
 fact in multiple sections. Cite every material diagnosis.
+The question can contain a chronological Community conversation. Preserve its context until the requester marks the
+discussion solved. Distinguish facts already supplied, actions already attempted, and their reported outcomes. Do
+not ask for the same material again. If essential runtime evidence is missing, keep the diagnosis conditional and
+write concrete requests for the requester in unknowns so the public projection can show an optional
+"추가로 필요한 정보" section.
 For citationsUsed and diagnosis evidenceIds, copy only exact citationId or artifactId values supplied in the request.
 For artifactEvidence, copy the exact supplied artifactId; never create, shorten, translate, or replace an identifier.
 For log findings, identify the supplied artifactId and the exact member path and line range shown in the evidence.

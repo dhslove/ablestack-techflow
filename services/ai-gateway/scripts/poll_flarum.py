@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import hashlib
 import json
 import mimetypes
 import os
@@ -56,35 +57,102 @@ def request_json(
         return json.loads(response.read().decode("utf-8"))
 
 
-def normalize(payload: dict, base_url: str) -> list[dict]:
+def normalize_discussions(payload: dict, base_url: str) -> list[dict]:
     included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
-    events = []
+    discussions = []
     for discussion in payload.get("data") or []:
         attrs = discussion.get("attributes") or {}
-        if int(attrs.get("commentCount") or 0) != 1:
-            continue
         relationships = discussion.get("relationships") or {}
         post_ref = ((relationships.get("firstPost") or {}).get("data") or {})
         user_ref = ((relationships.get("user") or {}).get("data") or {})
         tag_refs = ((relationships.get("tags") or {}).get("data") or [])
-        post = included.get((post_ref.get("type"), post_ref.get("id")), {})
         user = included.get((user_ref.get("type"), user_ref.get("id")), {})
-        parser = ContentParser()
-        parser.feed((post.get("attributes") or {}).get("contentHtml") or "")
-        events.append({
+        best_post_ref = ((relationships.get("bestAnswerPost") or {}).get("data") or {})
+        best_user_ref = ((relationships.get("bestAnswerUser") or {}).get("data") or {})
+        discussions.append({
             "discussionId": str(discussion["id"]),
             "discussionUrl": f"{base_url}/d/{discussion['id']}",
             "title": attrs.get("title") or "Community question",
-            "question": "\n".join(parser.text)[:4000],
             "authorId": str(user_ref.get("id") or (user.get("attributes") or {}).get("username") or "unknown"),
             "tagSlugs": [
                 (included.get((ref.get("type"), ref.get("id")), {}).get("attributes") or {}).get("slug")
                 for ref in tag_refs
                 if (included.get((ref.get("type"), ref.get("id")), {}).get("attributes") or {}).get("slug")
             ],
+            "firstPostId": str(post_ref.get("id") or ""),
+            "commentCount": int(attrs.get("commentCount") or 0),
+            "bestAnswerPostId": str(best_post_ref.get("id") or "") or None,
+            "bestAnswerUserId": str(best_user_ref.get("id") or "") or None,
+            "bestAnswerSetAt": attrs.get("bestAnswerSetAt"),
+        })
+    return discussions
+
+
+def normalize_posts(discussion: dict, payload: dict, assistant_user_id: str | None = None) -> list[dict]:
+    included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
+    events: list[dict] = []
+    for post in payload.get("data") or []:
+        attrs = post.get("attributes") or {}
+        if not attrs.get("contentHtml"):
+            continue
+        user_ref = (((post.get("relationships") or {}).get("user") or {}).get("data") or {})
+        user = included.get((user_ref.get("type"), user_ref.get("id")), {})
+        post_author = str(user_ref.get("id") or (user.get("attributes") or {}).get("username") or "unknown")
+        if assistant_user_id and post_author == assistant_user_id:
+            role = "ASSISTANT"
+        elif post_author == discussion["authorId"]:
+            role = "REQUESTER"
+        else:
+            role = "STAFF"
+        parser = ContentParser()
+        parser.feed(attrs.get("contentHtml") or "")
+        events.append({
+            "discussionId": discussion["discussionId"], "discussionUrl": discussion["discussionUrl"],
+            "title": discussion["title"], "question": "\n".join(parser.text)[:4000],
+            "authorId": discussion["authorId"], "postAuthorId": post_author,
+            "postId": str(post["id"]), "postNumber": int(attrs.get("number") or 1),
+            "turnRole": role, "responseRequested": role == "REQUESTER",
+            "resolutionOnly": False, "tagSlugs": discussion["tagSlugs"],
             "attachmentUrls": parser.links[:5],
         })
+    events.sort(key=lambda item: (item["postNumber"], int(item["postId"])))
     return events
+
+
+def normalize(payload: dict, base_url: str) -> list[dict]:
+    """Backward-compatible normalizer used by contract tests for first-post events."""
+    included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
+    events = []
+    for discussion in normalize_discussions(payload, base_url):
+        post = included.get(("posts", discussion["firstPostId"]), {})
+        if not post:
+            continue
+        post_payload = {"data": [{**post, "relationships": post.get("relationships") or {
+            "user": {"data": {"type": "users", "id": discussion["authorId"]}}
+        }}], "included": payload.get("included") or []}
+        events.extend(normalize_posts(discussion, post_payload))
+    return events
+
+
+def resolution_event(discussion: dict) -> dict:
+    return {
+        "discussionId": discussion["discussionId"], "discussionUrl": discussion["discussionUrl"],
+        "title": discussion["title"], "question": "Community 해결 상태가 변경되었습니다.",
+        "authorId": discussion["authorId"], "postAuthorId": discussion["authorId"],
+        "postId": discussion.get("bestAnswerPostId") or discussion.get("firstPostId"), "postNumber": 1,
+        "turnRole": "REQUESTER", "responseRequested": False, "resolutionOnly": True,
+        "bestAnswerPostId": discussion.get("bestAnswerPostId"),
+        "bestAnswerUserId": discussion.get("bestAnswerUserId"),
+        "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
+        "tagSlugs": discussion["tagSlugs"], "attachmentUrls": [],
+    }
+
+
+def resolution_event_id(discussion: dict) -> str:
+    best = discussion.get("bestAnswerPostId") or "unset"
+    identity = f"{discussion['discussionId']}|{best}|{discussion.get('bestAnswerSetAt') or 'none'}"
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return f"flarum-resolution-{discussion['discussionId']}-{best}-{digest}"
 
 
 def upload_artifacts(
@@ -135,31 +203,74 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     gateway_url = os.getenv("TECHFLOW_GATEWAY_URL", "http://gateway:8090")
     token = read_secret("TECHFLOW_FLARUM_API_KEY_FILE")
     assistant_user_id_file = os.getenv("TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE")
+    assistant_user_id = None
     if assistant_user_id_file:
         assistant_user_id = Path(assistant_user_id_file).read_text(encoding="utf-8").strip()
         if assistant_user_id.isdigit():
             token = f"{token}; userId={assistant_user_id}"
     webhook = read_secret("TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE")
-    api_url = base_url + "/api/discussions?sort=-createdAt&include=user,tags,firstPost&page%5Blimit%5D=50"
-    events = normalize(request_json(api_url, token=token), public_url)
-    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {"seen": []}
-    seen = set(state.get("seen") or [])
+    api_url = base_url + "/api/discussions?sort=-lastPostedAt&include=user,tags,firstPost,bestAnswerPost,bestAnswerUser&page%5Blimit%5D=50"
+    discussions = normalize_discussions(request_json(api_url, token=token), public_url)
+    state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    bootstrap_current = bootstrap_only or ("seen" in state and "seenPosts" not in state)
+    seen_posts = set(state.get("seenPosts") or [])
+    snapshots = state.get("discussions") or {}
     delivered = 0
-    for event in reversed(events):
-        discussion_id = event["discussionId"]
-        if discussion_id in seen:
-            continue
-        seen.add(discussion_id)
-        if bootstrap_only:
-            continue
-        correlation = f"community-{discussion_id}-{uuid4().hex[:12]}"
-        event["correlationId"] = correlation
-        event["eventId"] = f"flarum-discussion-{discussion_id}"
-        event["artifactIds"] = upload_artifacts(event, gateway_url, base_url, public_url, token, correlation)
-        request_json(webhook, data=event)
-        delivered += 1
+    resolutions = 0
+    for discussion in reversed(discussions):
+        discussion_id = discussion["discussionId"]
+        previous = snapshots.get(discussion_id) or {}
+        changed = (
+            not previous
+            or previous.get("commentCount") != discussion["commentCount"]
+            or previous.get("bestAnswerPostId") != discussion.get("bestAnswerPostId")
+            or previous.get("bestAnswerSetAt") != discussion.get("bestAnswerSetAt")
+        )
+        if changed:
+            posts_url = (
+                base_url + "/api/posts?" + urllib.parse.urlencode({
+                    "filter[discussion]": discussion_id, "sort": "createdAt", "include": "user", "page[limit]": "50"
+                })
+            )
+            for event in normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id):
+                post_id = event["postId"]
+                if post_id in seen_posts:
+                    continue
+                seen_posts.add(post_id)
+                if bootstrap_current:
+                    continue
+                correlation = f"community-{discussion_id}-{post_id}-{uuid4().hex[:8]}"
+                event["correlationId"] = correlation
+                event["eventId"] = f"flarum-post-{post_id}"
+                event["artifactIds"] = upload_artifacts(event, gateway_url, base_url, public_url, token, correlation)
+                request_json(webhook, data=event)
+                delivered += 1
+            resolution_changed = bool(previous) and (
+                previous.get("bestAnswerPostId") != discussion.get("bestAnswerPostId")
+                or previous.get("bestAnswerSetAt") != discussion.get("bestAnswerSetAt")
+            )
+            if resolution_changed and not bootstrap_current:
+                event = resolution_event(discussion)
+                correlation = f"community-resolution-{discussion_id}-{uuid4().hex[:8]}"
+                event.update(
+                    correlationId=correlation,
+                    eventId=resolution_event_id(discussion),
+                    artifactIds=[],
+                )
+                request_json(webhook, data=event)
+                delivered += 1
+                resolutions += 1
+        snapshots[discussion_id] = {
+            "commentCount": discussion["commentCount"],
+            "bestAnswerPostId": discussion.get("bestAnswerPostId"),
+            "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
+        }
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps({"seen": sorted(seen, key=int)[-1000:]}, separators=(",", ":")), encoding="utf-8")
+    ordered_posts = sorted(seen_posts, key=lambda value: int(value) if value.isdigit() else 0)[-5000:]
+    state_path.write_text(
+        json.dumps({"seenPosts": ordered_posts, "discussions": snapshots}, separators=(",", ":")),
+        encoding="utf-8",
+    )
     reconcile_id = uuid4().hex
     reconciliation = request_json(
         gateway_url.rstrip("/") + "/v1/community/reviews/reconcile",
@@ -167,9 +278,11 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         extra_headers={"X-Correlation-Id": f"community-reconcile-{reconcile_id}", "Idempotency-Key": f"community-reconcile-{reconcile_id}"},
     )
     return {
-        "observed": len(events), "delivered": delivered, "seen": len(seen),
+        "observed": len(discussions), "delivered": delivered, "seenPosts": len(seen_posts),
+        "resolutions": resolutions,
         "reviewsChecked": reconciliation.get("data", {}).get("checked", 0),
         "reviewsApproved": reconciliation.get("data", {}).get("approved", 0),
+        "reviewsMissing": reconciliation.get("data", {}).get("missing", 0),
         "reviewsRetried": reconciliation.get("data", {}).get("retried", 0),
         "reviewRetryFailed": reconciliation.get("data", {}).get("retryFailed", 0),
     }
