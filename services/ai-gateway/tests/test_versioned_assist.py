@@ -11,6 +11,7 @@ from app.versioned_assist import (
     PREVIEW_SOURCE_PROFILE,
     VERSIONED_SOURCE_PROFILES,
     coverage_payload,
+    evidence_priority,
     expand_retrieval_question,
     format_public_answer,
     projection_is_safe,
@@ -98,7 +99,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             "citations": [citation],
         }
         answer = format_public_answer(result) or ""
-        self.assertIn("가상화 런타임 상태 문제", answer)
+        self.assertIn("가상화 프로그램의 일시적인 상태 문제", answer)
         self.assertNotIn("operator://", answer)
         self.assertNotIn("sourceLocator", answer)
         self.assertTrue(projection_is_safe(answer), answer)
@@ -164,7 +165,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             },
             "citations": [],
         }) or ""
-        self.assertIn("현재 근거에서 확정된 원인은 없습니다.", answer)
+        self.assertIn("현재 근거에서 확인된 원인은 없습니다.", answer)
         self.assertIn("별도의 추가 고려사항은 확인되지 않았습니다.", answer)
         self.assertIn("차기 버전 비교는 적용 대상이 아닙니다.", answer)
 
@@ -181,6 +182,47 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         console = next(item for item in payload["cases"] if item["caseKey"] == "MOLD-CONSOLE-CONNECTING-001")
         self.assertEqual("Mold에서 가상머신의 콘솔 보기를 클릭하면 콘솔 화면이 표시되지만 \"연결중\"이라고 표시되고, 더 이상 화면을 보여주지 않습니다. 콘솔을 보려면 어떻게 해야 하나요?", console["question"])
         self.assertIn("query-vnc", console["requiredPublicGuidance"])
+
+    def test_product_first_evidence_priority_is_stable(self) -> None:
+        self.assertEqual((1, "ABLESTACK_DOCUMENTATION"), evidence_priority("SHARED_DOCS", "DOCUMENTATION"))
+        self.assertEqual((2, "ABLESTACK_SOURCE_CODE"), evidence_priority("CLOUD_DIPLO", "SOURCE_CODE"))
+        self.assertEqual(
+            (3, "OFFICIAL_PLATFORM_DOCUMENTATION"),
+            evidence_priority(CURATED_PLATFORM_PROFILE, "OFFICIAL_EXTERNAL_DOCUMENTATION"),
+        )
+        self.assertEqual(
+            (4, "APPROVED_EXTERNAL_REFERENCE"),
+            evidence_priority(CURATED_PLATFORM_PROFILE, "SUPPLEMENTAL_EXTERNAL_REFERENCE"),
+        )
+
+    def test_symptom_section_contains_only_user_observed_behavior(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "summary": "콘솔 창은 열리지만 연결중에서 멈추는 경우 브라우저 연결 문제일 가능성이 있습니다.",
+                "observedFacts": [
+                    "Mold에서 가상머신 콘솔 창은 표시되지만 연결중 상태에서 더 진행되지 않습니다.",
+                    "Mold의 기본 noVNC 뷰어는 Console Proxy VM을 통해 VNC 포트로 연결을 중계합니다.",
+                    "현재 릴리스는 WebSocket 연결 요청을 처리하며 세션 검증 실패 시 연결을 끊습니다.",
+                    "실제 WebSocket 응답 또는 관련 로그는 제공되지 않았습니다.",
+                ],
+                "diagnoses": [{"title": "QEMU 프로세스 내부의 VNC 통신 소켓이 이전 연결을 정리하지 못했습니다."}],
+                "recommendedActions": ["가상머신 상태를 확인한 뒤 라이브 마이그레이션을 실행합니다."],
+                "unknowns": ["여러 가상머신에서 같은 현상이 발생하는지 확인이 필요합니다."],
+                "currentAssessment": "CURRENT_RUNTIME_ISSUE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }
+        answer = format_public_answer(result) or ""
+        symptom = answer.split("### 증상", 1)[1].split("### 원인", 1)[0]
+        cause = answer.split("### 원인", 1)[1].split("### 해결 방법", 1)[0]
+        self.assertIn("콘솔 창은 표시되지만 연결중 상태에서 더 진행되지 않습니다", symptom)
+        for forbidden in ("가능성", "noVNC", "Console Proxy", "WebSocket", "로그는 제공", "확인해야"):
+            self.assertNotIn(forbidden, symptom)
+        self.assertIn("가상머신 실행 프로그램(QEMU)", cause)
+        self.assertNotIn("라이브 마이그레이션", cause)
 
 
 if __name__ == "__main__":

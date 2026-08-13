@@ -132,7 +132,9 @@ services:
       TECHFLOW_FLARUM_BASE_URL: ${TECHFLOW_FLARUM_BASE_URL:-https://community.ablecloud.io}
       TECHFLOW_FLARUM_PUBLIC_URL: ${TECHFLOW_FLARUM_PUBLIC_URL:-https://community.ablecloud.io}
       TECHFLOW_FLARUM_API_KEY_FILE: /run/secrets/flarum_api_key
+      TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE: /run/secrets/flarum_assistant_user_id
       TECHFLOW_COMMUNITY_PUBLISH_ENABLED: ${TECHFLOW_COMMUNITY_PUBLISH_ENABLED:-false}
+      TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED: ${TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED:-false}
       TECHFLOW_CHAT_BOT_ENABLED: ${TECHFLOW_CHAT_BOT_ENABLED:-false}
       TECHFLOW_CHAT_BASE_URL: ${TECHFLOW_CHAT_BASE_URL:-https://chat.ablecloud.io}
       TECHFLOW_CHAT_BOT_TOKEN_FILE: /run/secrets/chat_bot_token
@@ -143,6 +145,7 @@ services:
     secrets:
       - app_password
       - flarum_api_key
+      - flarum_assistant_user_id
       - chat_bot_token
       - community_approve_webhook
       - community_reject_webhook
@@ -255,6 +258,8 @@ secrets:
     file: ${TECHFLOW_RAG_FETCHER_PASSWORD_FILE:?set fetcher password file}
   flarum_api_key:
     file: ${TECHFLOW_FLARUM_API_KEY_SECRET_FILE:?set Flarum API key file}
+  flarum_assistant_user_id:
+    file: ${TECHFLOW_FLARUM_ASSISTANT_USER_ID_SECRET_FILE:?set Flarum assistant user ID file}
   community_ingest_webhook:
     file: ${TECHFLOW_COMMUNITY_INGEST_WEBHOOK_SECRET_FILE:?set Community ingest webhook file}
   community_approve_webhook:

@@ -166,6 +166,43 @@ class CommunityTests(unittest.TestCase):
             self.assertTrue(result["postUrl"].startswith("https://community.ablecloud.io/"))
             self.assertEqual(1, opened.call_count)
 
+    def test_assistant_review_reply_is_held_for_moderator_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            user_file = Path(directory) / "assistant-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            user_file.write_text("40", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), False,
+                str(user_file), True,
+            )
+            responses = [
+                FakeResponse({"data": []}),
+                FakeResponse({"data": {"id": "88", "attributes": {"isApproved": False}}}),
+            ]
+            with patch("urllib.request.urlopen", side_effect=responses) as opened:
+                result = client.publish_review_reply("901", "전체 검토 답변", "<!-- review -->")
+            self.assertFalse(result["isApproved"])
+            self.assertEqual("88", result["postId"])
+            create_request = opened.call_args_list[1].args[0]
+            self.assertEqual("Token " + "a" * 40 + "; userId=40", create_request.headers["Authorization"])
+
+    def test_memory_case_tracks_flarum_review_approval(self) -> None:
+        store = MemoryStore()
+        case = store.create_community_case(
+            self.payload(), {"draftAnswer": "전체 답변", "answerState": "ANSWERED", "citations": []},
+            "review-case-create", "review-case-correlation",
+        )
+        attached = store.attach_community_review(
+            case["caseId"], {"postId": "88", "postUrl": "https://community.ablecloud.io/d/901/88"},
+            "review-case-attach",
+        )
+        self.assertEqual("DRAFT_PENDING", attached["state"])
+        self.assertEqual("88", attached["reviewPostId"])
+        approved = store.mark_community_review_approved(case["caseId"], "review-case-approved")
+        self.assertEqual("PUBLISHED", approved["state"])
+        self.assertEqual("flarum:moderator", approved["reviewer"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,22 @@ class FakeFlows:
             )
 
 
+class FakeFlarumReview:
+    def __init__(self) -> None:
+        self.approved = False
+        self.posts: list[tuple[str, str, str]] = []
+
+    def publish_review_reply(self, discussion_id: str, answer: str, marker: str) -> dict:
+        self.posts.append((discussion_id, answer, marker))
+        return {"postId": "990", "postUrl": f"https://community.ablecloud.io/d/{discussion_id}/990", "isApproved": False}
+
+    def review_post_is_approved(self, post_id: str) -> bool:
+        return self.approved
+
+    def publish_reply(self, discussion_id: str, answer: str, marker: str) -> dict:
+        raise AssertionError("legacy publishing must not be used")
+
+
 def settings() -> Settings:
     return Settings(
         chat_bot_enabled=True,
@@ -205,12 +221,55 @@ class ChatEndpointTest(unittest.TestCase):
         )
         self.assertEqual(201, response.status_code)
         self.assertEqual(["7"], self.bot.sent[0][0])
-        self.assertIn("새 Community 글이 등록", self.bot.sent[0][1]["text"])
+        self.assertIn("새 Community 글의 AI 답변이 준비", self.bot.sent[0][1]["text"])
         self.assertIn("새 Community 질문", self.bot.sent[0][1]["text"])
         self.assertNotIn("Citation", json.dumps(self.bot.sent[0][1], ensure_ascii=False))
         self.assertEqual(["detail", "reject"], [
             action["name"] for action in self.bot.sent[0][1]["attachments"][0]["actions"]
         ])
+
+    def test_review_post_notification_links_full_answer_without_chat_truncation(self) -> None:
+        flarum = FakeFlarumReview()
+        review_settings = Settings(
+            flarum_api_key_file="/run/secrets/flarum_api_key",
+            flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+            community_review_post_enabled=True,
+            chat_bot_enabled=True,
+            chat_bot_token_file="/run/secrets/chat_bot_token",
+            chat_reviewer_usernames=("ceo",),
+            community_approve_webhook_file="/run/secrets/community_approve_webhook",
+            community_reject_webhook_file="/run/secrets/community_reject_webhook",
+        )
+        store = MemoryStore()
+        bot = FakeBot()
+        client = TestClient(create_app(
+            review_settings, store=store, chat_bot_client=bot,
+            community_flow_client=FakeFlows(store), flarum_client_instance=flarum,
+        ))
+        case = store.create_community_case(
+            {"discussionId": "990", "discussionUrl": "https://community.ablecloud.io/d/990",
+             "title": "첨부파일 질문", "question": "로그 압축을 확인해 주세요.", "authorId": "42",
+             "tagSlugs": ["mold"], "artifactIds": []},
+            {"draftAnswer": "전체 답변은 Community 원문에만 표시됩니다.", "answerState": "ANSWERED", "citations": []},
+            "review-link-create", "review-link-correlation",
+        )
+        attached = store.attach_community_review(
+            case["caseId"], {"postId": "990", "postUrl": "https://community.ablecloud.io/d/990/990"},
+            "review-link-attach",
+        )
+        message = case_card(attached, new_notification=True)
+        rendered = json.dumps(message, ensure_ascii=False)
+        self.assertIn("https://community.ablecloud.io/d/990/990", rendered)
+        self.assertNotIn(case["draftAnswer"], message["attachments"][0]["text"])
+        self.assertEqual(["detail"], [item["name"] for item in message["attachments"][0]["actions"]])
+        flarum.approved = True
+        reconciled = client.post(
+            "/v1/community/reviews/reconcile",
+            headers={"X-Correlation-Id": "review-reconcile-correlation", "Idempotency-Key": "review-reconcile-run"},
+            json={},
+        )
+        self.assertEqual(1, reconciled.json()["data"]["approved"])
+        self.assertEqual("PUBLISHED", store.get_community_case(case["caseId"])["state"])
 
     def test_approve_uses_chat_identity_and_publishes(self) -> None:
         reference = str(self.case["caseId"])[:8]

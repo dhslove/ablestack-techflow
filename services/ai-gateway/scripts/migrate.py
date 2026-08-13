@@ -89,8 +89,14 @@ def verify(connection: psycopg.Connection) -> None:
     ).fetchone()[0]
     if chat_tables != 1:
         raise SystemExit(f"Issue 22 schema mismatch expectedTables=1 actual={chat_tables}")
+    issue64_columns = connection.execute(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND "
+        "table_name='community_case' AND column_name IN ('review_post_id','review_post_url')"
+    ).fetchone()[0]
+    if issue64_columns != 2:
+        raise SystemExit(f"Issue 64 schema mismatch expectedColumns=2 actual={issue64_columns}")
     print(f"schema=valid tables={len(EXPECTED_TABLES)} extensions=2 sourceProfiles=9 "
-          "issue43Columns=8 issue45Columns=2 issue46Indexes=2 issue21Tables=2 issue22Tables=1")
+          "issue43Columns=8 issue45Columns=2 issue46Indexes=2 issue21Tables=2 issue22Tables=1 issue64Columns=2")
 
 
 def main() -> int:
@@ -106,6 +112,11 @@ def main() -> int:
             issue22_present = connection.execute(
                 "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='chat_reviewer_identity'"
             ).fetchone()
+            issue64_present = connection.execute(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='community_case' AND column_name='review_post_id'"
+            ).fetchone()
+            if issue64_present:
+                connection.execute((MIGRATIONS / "0010_flarum_review_post_down.sql").read_text(encoding="utf-8"))
             if issue22_present:
                 connection.execute((MIGRATIONS / "0009_chat_approval_down.sql").read_text(encoding="utf-8"))
             issue21_present = connection.execute(
@@ -159,6 +170,7 @@ def main() -> int:
         connection.execute((MIGRATIONS / "0007_reindex_fk_performance_up.sql").read_text(encoding="utf-8"))
         connection.execute((MIGRATIONS / "0008_community_assist_up.sql").read_text(encoding="utf-8"))
         connection.execute((MIGRATIONS / "0009_chat_approval_up.sql").read_text(encoding="utf-8"))
+        connection.execute((MIGRATIONS / "0010_flarum_review_post_up.sql").read_text(encoding="utf-8"))
         verify(connection)
     return 0
 

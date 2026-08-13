@@ -47,6 +47,15 @@ class SettingsTest(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             Settings(flarum_public_url="http://172.16.0.234").validate()
 
+    def test_review_post_requires_api_key_and_restricted_assistant_identity(self) -> None:
+        with self.assertRaises(ConfigurationError):
+            Settings(community_review_post_enabled=True).validate()
+        Settings(
+            community_review_post_enabled=True,
+            flarum_api_key_file="/run/secrets/flarum_api_key",
+            flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+        ).validate()
+
     def test_chat_bot_requires_all_runtime_secret_references(self) -> None:
         with self.assertRaises(ConfigurationError):
             Settings(chat_bot_enabled=True).validate()

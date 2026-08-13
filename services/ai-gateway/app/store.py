@@ -86,6 +86,8 @@ class Store(Protocol):
     def list_community_cases(self, states: tuple[str, ...] | None = None, limit: int = 10) -> list[dict[str, Any]]: ...
     def list_community_case_events(self, case_id: UUID, limit: int = 10) -> list[dict[str, Any]]: ...
     def decide_community_case(self, case_id: UUID, request: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
+    def attach_community_review(self, case_id: UUID, review: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
+    def mark_community_review_approved(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_published(self, case_id: UUID, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def upsert_chat_reviewer(self, user_id: str, username: str) -> dict[str, Any]: ...
     def list_chat_reviewers(self) -> list[dict[str, Any]]: ...
@@ -714,7 +716,8 @@ class MemoryStore:
                 "draftAnswer": draft.get("draftAnswer"), "answerState": draft.get("answerState"),
                 "citations": deepcopy(draft.get("citations") or []), "approvalVersion": 0,
                 "evidenceLedger": deepcopy(draft.get("evidenceLedger") or {}),
-                "reviewer": None, "publishedPostId": None, "publishedPostUrl": None,
+                "reviewer": None, "reviewPostId": None, "reviewPostUrl": None,
+                "publishedPostId": None, "publishedPostUrl": None,
                 "correlationId": correlation_id, "createdAt": utc_now(), "updatedAt": utc_now(),
             }
             self._community_cases[case_id] = value
@@ -789,6 +792,43 @@ class MemoryStore:
                 "details": {"draftVersion": value["draftVersion"], "note": request.get("note")},
             })
             return self._remember("decide_community_case", idempotency_key, value)
+
+    def attach_community_review(self, case_id: UUID, review: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("attach_community_review", idempotency_key):
+                return repeated
+            value = self._community_cases.get(case_id)
+            if not value:
+                raise NotFoundError("community case not found")
+            if value.get("reviewPostId") and value["reviewPostId"] != review["postId"]:
+                raise ConflictError("community review post already attached")
+            value.update(reviewPostId=review["postId"], reviewPostUrl=review["postUrl"], updatedAt=utc_now())
+            self._community_events.append({
+                "caseId": case_id, "eventType": "REVIEW_POST_CREATED", "actor": "techflow-assistant",
+                "createdAt": value["updatedAt"], "details": deepcopy(review),
+            })
+            return self._remember("attach_community_review", idempotency_key, value)
+
+    def mark_community_review_approved(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("approve_community_review", idempotency_key):
+                return repeated
+            value = self._community_cases.get(case_id)
+            if not value or not value.get("reviewPostId"):
+                raise NotFoundError("community review post not found")
+            if value["state"] == "PUBLISHED":
+                return self._remember("approve_community_review", idempotency_key, value)
+            if value["state"] != "DRAFT_PENDING":
+                raise InvalidStateError("only pending review posts can be approved")
+            value.update(
+                state="PUBLISHED", reviewer="flarum:moderator", approvalVersion=value["approvalVersion"] + 1,
+                publishedPostId=value["reviewPostId"], publishedPostUrl=value["reviewPostUrl"], updatedAt=utc_now(),
+            )
+            self._community_events.append({
+                "caseId": case_id, "eventType": "PUBLISHED", "actor": "flarum:moderator",
+                "createdAt": value["updatedAt"], "details": {"approvalSurface": "FLARUM_APPROVAL"},
+            })
+            return self._remember("approve_community_review", idempotency_key, value)
 
     def mark_community_published(self, case_id: UUID, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
         with self._lock:

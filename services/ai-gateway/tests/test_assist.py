@@ -226,12 +226,14 @@ class ComprehensiveOpenAITest(unittest.TestCase):
     def test_image_is_original_detail_and_storage_tools_are_disabled(self) -> None:
         responses = _Responses()
         adapter = OpenAIResponsesAdapter("unused", "unused", client=SimpleNamespace(responses=responses))
-        context = (ContextChunk("chunk-1", "D0", "ablecloud-team/ablestack-cloud", "ablestack-europa", "a" * 40, "x.java", "code"),)
+        context = (ContextChunk("chunk-1", "D0", "ablecloud-team/ablestack-docs", "main", "a" * 40, "guide.md", "doc", source_profile_id="SHARED_DOCS", source_kind="DOCUMENTATION"),)
         artifact = ImageArtifact("artifact-1", "image/png", PNG, "digest")
         result = adapter.generate_comprehensive(ComprehensiveResponsesRequest("query", "question", context, (artifact,), safety_identifier="tf-" + "a" * 61))
         user_content = responses.kwargs["input"][1]["content"]
         text_payload = json.loads(user_content[0]["text"])
         self.assertEqual("artifact-1", text_payload["artifacts"][0]["artifactId"])
+        self.assertEqual(1, text_payload["context"][0]["evidencePriority"])
+        self.assertEqual("ABLESTACK_DOCUMENTATION", text_payload["context"][0]["evidenceTier"])
         self.assertEqual("original", user_content[1]["detail"])
         self.assertTrue(user_content[1]["image_url"].startswith("data:image/png;base64,"))
         self.assertFalse(responses.kwargs["store"])

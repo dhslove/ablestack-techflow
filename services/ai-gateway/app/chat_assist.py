@@ -118,7 +118,9 @@ def case_text(value: dict[str, Any], *, include_answer: bool = True) -> str:
         f"상태 {value['state']} · AI 판정 {value.get('answerState') or '-'}",
         f"질문: {value['discussionUrl']}",
     ]
-    if include_answer:
+    if value.get("reviewPostUrl"):
+        lines.extend(["", "전체 답변 검토 및 승인:", value["reviewPostUrl"]])
+    elif include_answer:
         answer = (value.get("draftAnswer") or "근거 기준을 충족한 답변 초안이 없습니다.").strip()
         lines.extend(["", "초안:", answer[:3500]])
     return "\n".join(lines)[:7000]
@@ -159,17 +161,18 @@ def case_evidence_text(value: dict[str, Any]) -> str:
 def case_card(value: dict[str, Any], *, new_notification: bool = False) -> dict[str, Any]:
     reference, version = case_reference(value), value["draftVersion"]
     actions = [{"type": "button", "name": "detail", "value": f"detail:{reference}", "text": "상세", "style": "blue"}]
-    if value.get("draftAnswer"):
+    if value.get("draftAnswer") and not value.get("reviewPostUrl"):
         actions.append({"type": "button", "name": "approve", "value": f"approve:{reference}:{version}", "text": "승인·게시", "style": "green"})
-    actions.append({"type": "button", "name": "reject", "value": f"reject:{reference}:{version}", "text": "반려", "style": "red"})
+    if not value.get("reviewPostUrl"):
+        actions.append({"type": "button", "name": "reject", "value": f"reject:{reference}:{version}", "text": "반려", "style": "red"})
     text = case_text(value, include_answer=False)
     if new_notification:
-        text = "새 Community 글이 등록되어 검토가 필요합니다.\n\n" + text
+        text = "새 Community 글의 AI 답변이 준비되었습니다. Community 원문에서 검토하고 승인하세요.\n\n" + text
     return {
         "text": text,
         "attachments": [{
             "callback_id": f"community:{value['caseId']}:{version}",
-            "text": (value.get("draftAnswer") or "답변 초안 없음")[:1200],
+            "text": "전체 답변은 Community 검토 링크에서 확인합니다." if value.get("reviewPostUrl") else (value.get("draftAnswer") or "답변 초안 없음")[:1200],
             "actions": actions,
         }],
     }

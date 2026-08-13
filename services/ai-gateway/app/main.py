@@ -146,6 +146,7 @@ def create_app(
     responses_adapter: ResponsesAdapter | None = None,
     chat_bot_client: SynologyBotClient | None = None,
     community_flow_client: CommunityFlowClient | None = None,
+    flarum_client_instance: FlarumClient | None = None,
 ) -> FastAPI:
     runtime_settings = settings or Settings.from_env()
     runtime_settings.validate()
@@ -164,11 +165,13 @@ def create_app(
         max_compression_ratio=runtime_settings.artifact_max_compression_ratio,
         max_log_evidence_chars=runtime_settings.artifact_max_log_evidence_chars,
     )
-    flarum_client = FlarumClient(
+    flarum_client = flarum_client_instance or FlarumClient(
         runtime_settings.flarum_base_url,
         runtime_settings.flarum_public_url,
         runtime_settings.flarum_api_key_file,
         runtime_settings.community_publish_enabled,
+        runtime_settings.flarum_assistant_user_id_file,
+        runtime_settings.community_review_post_enabled,
     )
     runtime_chat_bot = chat_bot_client or SynologyBotClient(
         runtime_settings.chat_base_url, runtime_settings.chat_bot_token_file, runtime_settings.chat_bot_enabled,
@@ -605,7 +608,28 @@ def create_app(
         draft = {"draftAnswer": format_draft(result), "answerState": result.get("state"),
                  "citations": result.get("citations") or [], "evidenceLedger": evidence_ledger(result)}
         result = runtime_store.create_community_case(_model_data(request), draft, idempotency_key, correlation_id)
-        if runtime_settings.chat_bot_enabled and result.pop("created", False):
+        created = result.pop("created", False)
+        review_ready = not runtime_settings.community_review_post_enabled
+        if created and runtime_settings.community_review_post_enabled and result.get("draftAnswer"):
+            try:
+                marker = f"<!-- techflow-review:{result['caseId']}:v{result['draftVersion']} -->"
+                review = flarum_client.publish_review_reply(
+                    result["discussionId"], result["draftAnswer"], marker,
+                )
+                result = runtime_store.attach_community_review(
+                    result["caseId"], review, f"review-post-{result['caseId']}-v{result['draftVersion']}",
+                )
+                review_ready = True
+                _json_log(
+                    "community_review_post_created", correlationId=correlation_id,
+                    caseId=str(result["caseId"]), postId=result["reviewPostId"], isApproved=False,
+                )
+            except Exception as exc:
+                _json_log(
+                    "community_review_post_failed", correlationId=correlation_id,
+                    caseId=str(result["caseId"]), errorType=type(exc).__name__,
+                )
+        if runtime_settings.chat_bot_enabled and created and review_ready:
             reviewer_ids = [item["userId"] for item in runtime_store.list_chat_reviewers()]
             if not reviewer_ids:
                 _json_log(
@@ -629,8 +653,6 @@ def create_app(
                             )
                         else:
                             time.sleep(0.2 * attempt)
-        else:
-            result.pop("created", None)
         return _envelope(result, correlation_id)
 
     @application.get("/v1/community/cases/{caseId}", response_model=Envelope, operation_id="getCommunityCase")
@@ -646,6 +668,27 @@ def create_app(
         discussionId: str, correlation_id: Annotated[str, Depends(_correlation_id)]
     ) -> Envelope:
         return _envelope(runtime_store.get_community_case_by_discussion(discussionId), correlation_id)
+
+    @application.post(
+        "/v1/community/reviews/reconcile", response_model=Envelope,
+        operation_id="reconcileCommunityReviews",
+    )
+    def reconcile_community_reviews(
+        correlation_id: Annotated[str, Depends(_correlation_id)],
+        _: Annotated[str, Depends(_idempotency_key)],
+    ) -> Envelope:
+        checked = approved = 0
+        for item in runtime_store.list_community_cases(("DRAFT_PENDING",), 100):
+            post_id = str(item.get("reviewPostId") or "")
+            if not post_id:
+                continue
+            checked += 1
+            if flarum_client.review_post_is_approved(post_id):
+                runtime_store.mark_community_review_approved(
+                    item["caseId"], f"flarum-review-approved-{post_id}",
+                )
+                approved += 1
+        return _envelope({"checked": checked, "approved": approved}, correlation_id)
 
     @application.post("/v1/community/cases/{caseId}/decision", response_model=Envelope, operation_id="decideCommunityCase")
     def decide_community_case(

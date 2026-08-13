@@ -101,6 +101,16 @@
       "path": "0009_chat_approval_up.sql",
       "sha256": "d4fb59351aa8aa8b8c68f6a05d07b4a6653b5110bd8957d452c6c15324fa20ec",
       "bytes": 479
+    },
+    {
+      "path": "0010_flarum_review_post_down.sql",
+      "sha256": "8f354ba0ba2359d940d019ef88285af783286e19f58ccdd853a6e879d54d2fe0",
+      "bytes": 166
+    },
+    {
+      "path": "0010_flarum_review_post_up.sql",
+      "sha256": "fcc99bd87b3bb8c482a894023133338012ee4c9355600eb4ad3ba94b51593c93",
+      "bytes": 277
     }
   ]
 }

@@ -25,7 +25,7 @@ class CommunityPollerTests(unittest.TestCase):
                  "relationships": {}},
             ],
             "included": [
-                {"type": "posts", "id": "100", "attributes": {"contentHtml": "<p>VM 오류입니다.</p><a href='/assets/a.log'>log</a>"}},
+                {"type": "posts", "id": "100", "attributes": {"contentHtml": "<p>VM 오류입니다.</p><a href='/assets/screen.png'>image</a><a href='/assets/a.log'>log</a><a href='/assets/logs.zip'>archive</a>"}},
                 {"type": "users", "id": "7", "attributes": {"username": "tester"}},
                 {"type": "tags", "id": "3", "attributes": {"slug": "mold"}},
             ],
@@ -34,7 +34,10 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual(1, len(events))
         self.assertEqual("10", events[0]["discussionId"])
         self.assertEqual(["mold"], events[0]["tagSlugs"])
-        self.assertEqual(["/assets/a.log"], events[0]["attachmentUrls"])
+        self.assertEqual(
+            ["/assets/screen.png", "/assets/a.log", "/assets/logs.zip"],
+            events[0]["attachmentUrls"],
+        )
 
     def test_html_parser_does_not_execute_or_expand_markup(self) -> None:
         parser = poll_flarum.ContentParser()

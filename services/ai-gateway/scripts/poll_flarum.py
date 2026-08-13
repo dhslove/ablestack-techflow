@@ -34,13 +34,16 @@ def read_secret(name: str) -> str:
     return Path(os.environ[name]).read_text(encoding="utf-8").strip()
 
 
-def request_json(url: str, *, token: str | None = None, data: dict | None = None) -> dict:
+def request_json(
+    url: str, *, token: str | None = None, data: dict | None = None, extra_headers: dict[str, str] | None = None
+) -> dict:
     body = json.dumps(data, ensure_ascii=False).encode("utf-8") if data is not None else None
     headers = {"Accept": "application/vnd.api+json"}
     if token:
         headers["Authorization"] = f"Token {token}"
     if body is not None:
         headers["Content-Type"] = "application/json"
+    headers.update(extra_headers or {})
     with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers), timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -131,7 +134,17 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         delivered += 1
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps({"seen": sorted(seen, key=int)[-1000:]}, separators=(",", ":")), encoding="utf-8")
-    return {"observed": len(events), "delivered": delivered, "seen": len(seen)}
+    reconcile_id = uuid4().hex
+    reconciliation = request_json(
+        gateway_url.rstrip("/") + "/v1/community/reviews/reconcile",
+        data={},
+        extra_headers={"X-Correlation-Id": f"community-reconcile-{reconcile_id}", "Idempotency-Key": f"community-reconcile-{reconcile_id}"},
+    )
+    return {
+        "observed": len(events), "delivered": delivered, "seen": len(seen),
+        "reviewsChecked": reconciliation.get("data", {}).get("checked", 0),
+        "reviewsApproved": reconciliation.get("data", {}).get("approved", 0),
+    }
 
 
 def main() -> int:

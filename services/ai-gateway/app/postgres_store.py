@@ -1090,6 +1090,7 @@ class PostgresStore:
             "answerState": row["answer_state"], "citations": row["citations"] or [],
             "evidenceLedger": (row["source_metadata"] or {}).get("evidenceLedger") or {},
             "approvalVersion": row["approval_version"], "reviewer": row["reviewer"],
+            "reviewPostId": row.get("review_post_id"), "reviewPostUrl": row.get("review_post_url"),
             "publishedPostId": row["published_post_id"], "publishedPostUrl": row["published_post_url"],
             "correlationId": row["correlation_id"], "createdAt": row["created_at"], "updatedAt": row["updated_at"],
         }
@@ -1217,6 +1218,63 @@ class PostgresStore:
                    VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (uuid4(), case_id, state, request["reviewer"], idempotency_key, row["correlation_id"],
                  json.dumps({"draftVersion": row["draft_version"], "note": request.get("note")})),
+            )
+            return self._community_payload(updated)
+
+    def attach_community_review(self, case_id: UUID, review: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute("SELECT * FROM community_case WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+            if not row:
+                raise NotFoundError("community case not found")
+            if row.get("review_post_id") and row["review_post_id"] != review["postId"]:
+                raise ConflictError("community review post already attached")
+            updated = connection.execute(
+                """UPDATE community_case SET review_post_id=%s,review_post_url=%s,updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (review["postId"], review["postUrl"], case_id),
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'REVIEW_POST_CREATED','techflow-assistant',%s,%s,%s)""",
+                (uuid4(), case_id, idempotency_key, row["correlation_id"], json.dumps(review)),
+            )
+            return self._community_payload(updated)
+
+    def mark_community_review_approved(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute("SELECT * FROM community_case WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+            if not row or not row.get("review_post_id"):
+                raise NotFoundError("community review post not found")
+            if row["state"] == "PUBLISHED":
+                return self._community_payload(row)
+            if row["state"] != "DRAFT_PENDING":
+                raise InvalidStateError("only pending review posts can be approved")
+            updated = connection.execute(
+                """UPDATE community_case SET state='PUBLISHED',reviewer='flarum:moderator',
+                   approval_version=approval_version+1,approved_at=now(),published_post_id=review_post_id,
+                   published_post_url=review_post_url,published_at=now(),updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (case_id,),
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'PUBLISHED','flarum:moderator',%s,%s,%s)""",
+                (uuid4(), case_id, idempotency_key, row["correlation_id"],
+                 json.dumps({"approvalSurface": "FLARUM_APPROVAL"})),
             )
             return self._community_payload(updated)
 

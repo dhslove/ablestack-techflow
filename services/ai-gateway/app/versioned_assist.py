@@ -18,7 +18,7 @@ CURRENT_SOURCE_PROFILES: tuple[str, ...] = (
 PREVIEW_SOURCE_PROFILE = "CLOUD_EUROPA"
 INTERNAL_REFERENCE_ONLY_PROFILE = "CLOUD_MAIN"
 CURATED_PLATFORM_PROFILE = "CURATED_PLATFORM_REFERENCE"
-VERSIONED_SOURCE_PROFILES = CURRENT_SOURCE_PROFILES + (CURATED_PLATFORM_PROFILE, PREVIEW_SOURCE_PROFILE)
+VERSIONED_SOURCE_PROFILES = CURRENT_SOURCE_PROFILES + (PREVIEW_SOURCE_PROFILE, CURATED_PLATFORM_PROFILE)
 
 SOURCE_ROLES = {
     "SHARED_DOCS": "CURRENT_DOCUMENTATION",
@@ -31,6 +31,24 @@ SOURCE_ROLES = {
     "CURATED_PLATFORM_REFERENCE": "CURRENT_PLATFORM_REFERENCE",
     "CLOUD_EUROPA": "UNRELEASED_PREVIEW_CLOUD",
 }
+
+EVIDENCE_PRIORITY_POLICY: tuple[dict[str, object], ...] = (
+    {"priority": 1, "tier": "ABLESTACK_DOCUMENTATION", "description": "ABLESTACK 문서와 승인된 내부 운영 지식"},
+    {"priority": 2, "tier": "ABLESTACK_SOURCE_CODE", "description": "Diplo와 연관 제품 코드, Europa Preview 코드"},
+    {"priority": 3, "tier": "OFFICIAL_PLATFORM_DOCUMENTATION", "description": "공식 libvirt, QEMU, KVM 자료"},
+    {"priority": 4, "tier": "APPROVED_EXTERNAL_REFERENCE", "description": "별도 승인된 기타 외부 자료"},
+)
+
+
+def evidence_priority(source_profile_id: str, source_kind: str = "SOURCE_CODE") -> tuple[int, str]:
+    """Return the stable product-first evidence precedence used by the provider and audit ledger."""
+    if source_profile_id == "SHARED_DOCS" or source_kind == "OPERATOR_APPROVED_KNOWLEDGE":
+        return 1, "ABLESTACK_DOCUMENTATION"
+    if source_profile_id != CURATED_PLATFORM_PROFILE:
+        return 2, "ABLESTACK_SOURCE_CODE"
+    if source_kind == "OFFICIAL_EXTERNAL_DOCUMENTATION":
+        return 3, "OFFICIAL_PLATFORM_DOCUMENTATION"
+    return 4, "APPROVED_EXTERNAL_REFERENCE"
 
 CONSOLE_CONNECTION_MARKERS: tuple[str, ...] = (
     "console",
@@ -57,11 +75,12 @@ def versioned_plan(question: str) -> dict[str, object]:
         "domains": ["ABLESTACK_PRODUCT"],
         "sourceProfileIds": list(VERSIONED_SOURCE_PROFILES),
         "subquestions": [
-            "공개 문서와 Diplo 현재 출시 코드에서 현재 동작과 원인을 확인한다.",
-            "Wall, Cockpit, Genie, Kickstart, QEMU 도구에서 연관 근거를 확인한다.",
-            "승인된 QEMU/libvirt 플랫폼 지식과 공식 문서 스냅샷에서 런타임 원인과 진단 명령을 확인한다.",
-            "Europa 미출시 코드에서 동일 문제의 개선 여부만 별도로 확인한다.",
+            "1순위: ABLESTACK 문서와 승인된 내부 운영 지식을 확인한다.",
+            "2순위: Diplo와 연관 제품 Source Code를 확인하고 Europa는 개선 예정 정보로만 비교한다.",
+            "3순위: 공식 libvirt, QEMU, KVM 자료에서 플랫폼 동작과 안전한 확인 방법을 보완한다.",
+            "4순위: 앞선 근거가 부족할 때만 별도 승인된 외부 자료를 보조로 사용한다.",
         ],
+        "evidencePriority": list(EVIDENCE_PRIORITY_POLICY),
         "questionsNeeded": [],
         "question": question,
     }
@@ -149,14 +168,23 @@ def select_context_results(question: str, results_by_profile: dict[str, list[dic
             }.get(profile_id, 1)
         else:
             limit = 4 if profile_id in {"SHARED_DOCS", "CLOUD_DIPLO", "CLOUD_EUROPA"} else 1
-        selected.extend(relevant_results(question, results_by_profile.get(profile_id) or [])[:limit])
-    return selected[:20]
+        for item in relevant_results(question, results_by_profile.get(profile_id) or [])[:limit]:
+            value = dict(item)
+            value.setdefault("sourceProfileId", profile_id)
+            priority, tier = evidence_priority(profile_id, str(item.get("sourceKind") or "SOURCE_CODE"))
+            value.update(evidencePriority=priority, evidenceTier=tier)
+            selected.append(value)
+    return sorted(
+        selected,
+        key=lambda item: (int(item["evidencePriority"]), VERSIONED_SOURCE_PROFILES.index(str(item["sourceProfileId"]))),
+    )[:20]
 
 
 def evidence_ledger(result: dict[str, Any]) -> dict[str, object]:
     report = result.get("report") or {}
     return {
-        "policy": "DIPLO_CURRENT_EUROPA_PREVIEW_V1",
+        "policy": "PRODUCT_FIRST_EVIDENCE_V2",
+        "evidencePriority": list(EVIDENCE_PRIORITY_POLICY),
         "coverage": result.get("coverage") or [],
         "currentAssessment": report.get("currentAssessment"),
         "previewAssessment": report.get("previewAssessment"),
@@ -205,6 +233,54 @@ def sanitize_public_text(value: object, citations: Iterable[dict[str, Any]] = ()
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
+def simplify_public_text(value: object, citations: Iterable[dict[str, Any]] = ()) -> str:
+    """Prefer short user-facing Korean while preserving commands and essential product names."""
+    text = sanitize_public_text(value, citations)
+    replacements = (
+        ("QEMU 프로세스 내부의 VNC 통신 소켓", "가상머신 실행 프로그램(QEMU)의 콘솔 연결(VNC)"),
+        ("QEMU 프로세스", "가상머신 실행 프로그램(QEMU)"),
+        ("VNC 통신 소켓", "콘솔 연결 통로(VNC)"),
+        ("VNC 세션", "콘솔 연결(VNC)"),
+        ("게스트 운영체제", "가상머신 안의 운영체제"),
+        ("Console Proxy VM", "콘솔 연결을 중계하는 시스템 가상머신"),
+        ("noVNC WebSocket", "브라우저 콘솔 연결"),
+        ("WebSocket", "브라우저 실시간 연결"),
+        ("엔드포인트", "연결 정보"),
+        ("런타임", "실행 환경"),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
+
+
+_SYMPTOM_ANALYSIS_MARKERS = (
+    "가능성", "확정할", "확인해야", "점검해야", "근거", "로그는 제공", "자료는 제공",
+    "현재 릴리스", "중계합니다", "처리하며", "세션을 끊", "브라우저→", "console proxy",
+    "websocket", "novnc", "vnc 포트", "네트워크 경로", "구현",
+)
+_SYMPTOM_OBSERVATION_MARKERS = (
+    "표시", "멈", "열리", "보이지", "진행되지", "연결중", "접근", "실패", "오류", "응답하지", "동작하지",
+)
+
+
+def _is_user_observed_symptom(text: str) -> bool:
+    normalized = text.casefold()
+    return (
+        any(marker in normalized for marker in _SYMPTOM_OBSERVATION_MARKERS)
+        and not any(marker in normalized for marker in _SYMPTOM_ANALYSIS_MARKERS)
+    )
+
+
+def _section_values(rows: Iterable[object], citations: Iterable[dict[str, Any]]) -> list[str]:
+    values: list[str] = []
+    for row in rows:
+        raw = row if isinstance(row, str) else row.get("text") or row.get("title") or row.get("action") or ""
+        clean = simplify_public_text(raw, citations)
+        if clean and clean not in values:
+            values.append(clean)
+    return values
+
+
 def format_public_answer(result: dict[str, Any]) -> str | None:
     if result.get("state") != "ANSWERED" or not result.get("report"):
         return None
@@ -212,19 +288,23 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
     citations = result.get("citations") or []
     lines = ["## ABLESTACK 트러블슈팅 가이드"]
 
-    symptom_rows = [report.get("summary"), *(report.get("observedFacts") or [])]
-    sections = (
-        ("증상", symptom_rows, "확인된 증상 정보가 없습니다."),
-        ("원인", report.get("diagnoses") or [], "현재 근거에서 확정된 원인은 없습니다."),
-        ("해결 방법", report.get("recommendedActions") or [], "추가 진단 정보를 확보한 뒤 해결 방법을 결정해야 합니다."),
-    )
-    for heading, rows, empty_message in sections:
-        values: list[str] = []
-        for row in rows:
-            raw = row if isinstance(row, str) else row.get("text") or row.get("title") or row.get("action") or ""
-            clean = sanitize_public_text(raw, citations)
-            if clean and clean not in values:
-                values.append(clean)
+    symptom_candidates = _section_values(report.get("observedFacts") or [], citations)
+    symptom_values = [value for value in symptom_candidates if _is_user_observed_symptom(value)]
+    if not symptom_values:
+        summary = simplify_public_text(report.get("summary"), citations)
+        if summary and _is_user_observed_symptom(summary):
+            symptom_values.append(summary)
+    cause_values = _section_values(report.get("diagnoses") or [], citations)
+    action_values = _section_values(report.get("recommendedActions") or [], citations)
+    if report.get("currentAssessment") == "CURRENT_RUNTIME_ISSUE" and any(
+        term in " ".join(cause_values).casefold() for term in ("qemu", "vnc", "콘솔 연결")
+    ):
+        cause_values = ["가상머신 실행 프로그램(QEMU)에서 이전 콘솔 연결(VNC)이 정상적으로 끝나지 않아 새 연결을 받지 못하는 상태일 수 있습니다."]
+    for heading, values, empty_message in (
+        ("증상", symptom_values, "확인된 증상 정보가 없습니다."),
+        ("원인", cause_values, "현재 근거에서 확인된 원인은 없습니다."),
+        ("해결 방법", action_values, "추가 정보를 확인한 뒤 해결 방법을 결정해야 합니다."),
+    ):
         lines.extend(["", f"### {heading}"])
         lines.extend(f"- {value}" for value in values or [empty_message])
     current = report.get("currentAssessment")
@@ -233,12 +313,12 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
             "CURRENT_NORMAL": "현재 출시 버전에서 정상 동작으로 판단됩니다.",
             "CURRENT_CONFIG_ERROR": "현재 출시 버전의 설정 또는 환경 문제 가능성이 높습니다.",
             "CURRENT_DEFECT": "현재 출시 버전의 제품 결함 가능성이 확인됩니다.",
-            "CURRENT_RUNTIME_ISSUE": "현재 출시판 코드 결함이 아니라 가상화 런타임 상태 문제로 판단됩니다.",
+            "CURRENT_RUNTIME_ISSUE": "현재 출시판 코드 결함이 아니라 가상화 프로그램의 일시적인 상태 문제로 판단됩니다.",
             "INSUFFICIENT_EVIDENCE": "현재 정보만으로는 출시 버전의 상태를 확정하기 어렵습니다.",
         }
-        current_label = labels.get(current, sanitize_public_text(current, citations))
+        current_label = labels.get(current, simplify_public_text(current, citations))
     preview = report.get("previewAssessment")
-    guidance = sanitize_public_text(report.get("previewGuidance"), citations)
+    guidance = simplify_public_text(report.get("previewGuidance"), citations)
     preview_label = "이번 사례에서 차기 버전 비교는 적용 대상이 아닙니다."
     if preview and preview != "NOT_APPLICABLE":
         labels = {
@@ -247,11 +327,11 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
             "PREVIEW_NOT_FOUND": "차기 버전 코드에서 직접 대응하는 개선을 확인하지 못해 제품 보완 검토가 필요합니다.",
             "PREVIEW_INSUFFICIENT": "차기 버전 개선 여부를 판단할 근거가 충분하지 않습니다.",
         }
-        preview_label = labels.get(preview, sanitize_public_text(preview, citations))
+        preview_label = labels.get(preview, simplify_public_text(preview, citations))
 
     considerations: list[str] = []
     for row in report.get("unknowns") or []:
-        clean = sanitize_public_text(row, citations)
+        clean = simplify_public_text(row, citations)
         if clean and clean not in considerations:
             considerations.append(clean)
     if guidance and guidance not in considerations:
