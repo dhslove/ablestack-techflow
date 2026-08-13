@@ -68,6 +68,14 @@ class CommunityPollerTests(unittest.TestCase):
             ),
         )
 
+    def test_zip_filename_has_a_supported_inferred_media_type(self) -> None:
+        import mimetypes
+
+        self.assertIn(
+            mimetypes.guess_type("mold-console-logs.zip")[0],
+            {"application/zip", "application/x-zip-compressed"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

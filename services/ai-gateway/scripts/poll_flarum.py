@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 import json
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -106,6 +107,8 @@ def upload_artifacts(
         if len(content) > 10 * 1024 * 1024:
             continue
         filename = _attachment_filename(disposition, parsed.path)
+        if media_type in {"application/force-download", "application/octet-stream"}:
+            media_type = mimetypes.guess_type(filename)[0] or media_type
         upload = urllib.request.Request(
             gateway_url.rstrip("/") + "/v1/artifacts", data=content, method="POST",
             headers={"Content-Type": media_type, "X-Artifact-Filename": filename,
