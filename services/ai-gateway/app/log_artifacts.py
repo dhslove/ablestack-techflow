@@ -154,10 +154,22 @@ def _validate_limits(
     return total
 
 
+def _is_ignored_archive_metadata(name: str) -> bool:
+    """Ignore platform metadata that is never useful as technical-support evidence."""
+    parts = [part for part in name.replace("\\", "/").split("/") if part]
+    if not parts:
+        return False
+    basename = parts[-1]
+    return "__MACOSX" in parts or basename == ".DS_Store" or basename.startswith("._")
+
+
 def _read_zip(data: bytes, *, max_entries: int, max_extracted_bytes: int, max_ratio: int) -> list[tuple[str, bytes]]:
     try:
         with zipfile.ZipFile(BytesIO(data)) as archive:
-            infos = [item for item in archive.infolist() if not item.is_dir()]
+            infos = [
+                item for item in archive.infolist()
+                if not item.is_dir() and not _is_ignored_archive_metadata(item.filename)
+            ]
             if not infos or len(infos) > max_entries:
                 raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
             entries: list[tuple[str, bytes]] = []
@@ -203,7 +215,10 @@ def _read_tar_gz(
 ) -> list[tuple[str, bytes]]:
     try:
         with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as archive:
-            members = [item for item in archive.getmembers() if not item.isdir()]
+            members = [
+                item for item in archive.getmembers()
+                if not item.isdir() and not _is_ignored_archive_metadata(item.name)
+            ]
             if not members or len(members) > max_entries:
                 raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
             entries: list[tuple[str, bytes]] = []

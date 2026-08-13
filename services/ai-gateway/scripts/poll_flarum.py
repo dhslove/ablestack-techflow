@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from uuid import uuid4
@@ -144,7 +145,7 @@ def resolution_event(discussion: dict) -> dict:
         "bestAnswerPostId": discussion.get("bestAnswerPostId"),
         "bestAnswerUserId": discussion.get("bestAnswerUserId"),
         "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
-        "tagSlugs": discussion["tagSlugs"], "attachmentUrls": [],
+        "tagSlugs": discussion["tagSlugs"], "attachmentUrls": [], "artifactWarnings": [],
     }
 
 
@@ -157,8 +158,9 @@ def resolution_event_id(discussion: dict) -> str:
 
 def upload_artifacts(
     event: dict, gateway_url: str, base_url: str, public_url: str, token: str, correlation: str
-) -> list[str]:
-    ids = []
+) -> tuple[list[str], list[str]]:
+    ids: list[str] = []
+    warnings: list[str] = []
     for raw_url in event.pop("attachmentUrls", []):
         public_attachment_url = urllib.parse.urljoin(public_url + "/", raw_url)
         parsed = urllib.parse.urlparse(public_attachment_url)
@@ -168,11 +170,22 @@ def upload_artifacts(
         if parsed.query:
             internal_url = f"{internal_url}?{parsed.query}"
         req = urllib.request.Request(internal_url, headers={"Authorization": f"Token {token}"})
-        with urllib.request.urlopen(req, timeout=30) as response:
-            content = response.read(10 * 1024 * 1024 + 1)
-            media_type = response.headers.get_content_type()
-            disposition = response.headers.get("Content-Disposition") or ""
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                content = response.read(10 * 1024 * 1024 + 1)
+                media_type = response.headers.get_content_type()
+                disposition = response.headers.get("Content-Disposition") or ""
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {400, 404, 410, 413, 415, 422}:
+                raise
+            filename = _safe_warning_filename(
+                _attachment_filename((exc.headers or {}).get("Content-Disposition") or "", parsed.path)
+            )
+            warnings.append(f"첨부파일 {filename}을 내려받지 못했습니다. 파일을 확인해 다시 첨부해 주세요.")
+            continue
         if len(content) > 10 * 1024 * 1024:
+            filename = _safe_warning_filename(_attachment_filename(disposition, parsed.path))
+            warnings.append(f"첨부파일 {filename}이 10MB 제한을 초과했습니다. 필요한 로그만 줄여 다시 첨부해 주세요.")
             continue
         filename = _attachment_filename(disposition, parsed.path)
         if media_type in {"application/force-download", "application/octet-stream"}:
@@ -182,9 +195,17 @@ def upload_artifacts(
             headers={"Content-Type": media_type, "X-Artifact-Filename": filename,
                      "X-Artifact-Classification": "D0", "X-Correlation-Id": correlation},
         )
-        with urllib.request.urlopen(upload, timeout=30) as response:
-            ids.append(str(json.loads(response.read().decode("utf-8"))["data"]["artifactId"]))
-    return ids
+        try:
+            with urllib.request.urlopen(upload, timeout=30) as response:
+                ids.append(str(json.loads(response.read().decode("utf-8"))["data"]["artifactId"]))
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {400, 413, 415, 422}:
+                raise
+            warning_filename = _safe_warning_filename(filename)
+            warnings.append(
+                f"첨부파일 {warning_filename}을 안전하게 분석하지 못했습니다. UTF-8 텍스트 로그로 다시 압축해 첨부해 주세요."
+            )
+    return ids, warnings
 
 
 def _attachment_filename(content_disposition: str, path: str) -> str:
@@ -195,6 +216,22 @@ def _attachment_filename(content_disposition: str, path: str) -> str:
     if quoted:
         return Path(quoted.group(1)).name
     return Path(path).name or "community-artifact"
+
+
+def _safe_warning_filename(filename: str) -> str:
+    """Reduce untrusted attachment names to a short, single-line display value."""
+    basename = Path(filename.replace("\\", "/")).name
+    sanitized = re.sub(r"[^A-Za-z0-9._ -]", "_", basename).strip(" ._")
+    return (sanitized[:80] or "community-artifact")
+
+
+def _write_state(state_path: Path, seen_posts: set[str], snapshots: dict) -> None:
+    ordered_posts = sorted(seen_posts, key=lambda value: int(value) if value.isdigit() else 0)[-5000:]
+    payload = json.dumps({"seenPosts": ordered_posts, "discussions": snapshots}, separators=(",", ":"))
+    temporary = state_path.with_suffix(state_path.suffix + ".tmp")
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary.write_text(payload, encoding="utf-8")
+    temporary.replace(state_path)
 
 
 def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
@@ -217,6 +254,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     snapshots = state.get("discussions") or {}
     delivered = 0
     resolutions = 0
+    failed = 0
     for discussion in reversed(discussions):
         discussion_id = discussion["discussionId"]
         previous = snapshots.get(discussion_id) or {}
@@ -232,19 +270,38 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     "filter[discussion]": discussion_id, "sort": "createdAt", "include": "user", "page[limit]": "50"
                 })
             )
+            discussion_failed = False
             for event in normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id):
                 post_id = event["postId"]
                 if post_id in seen_posts:
                     continue
-                seen_posts.add(post_id)
                 if bootstrap_current:
+                    seen_posts.add(post_id)
+                    _write_state(state_path, seen_posts, snapshots)
                     continue
                 correlation = f"community-{discussion_id}-{post_id}-{uuid4().hex[:8]}"
                 event["correlationId"] = correlation
                 event["eventId"] = f"flarum-post-{post_id}"
-                event["artifactIds"] = upload_artifacts(event, gateway_url, base_url, public_url, token, correlation)
-                request_json(webhook, data=event)
-                delivered += 1
+                try:
+                    artifact_ids, artifact_warnings = upload_artifacts(
+                        event, gateway_url, base_url, public_url, token, correlation
+                    )
+                    event["artifactIds"] = artifact_ids
+                    event["artifactWarnings"] = artifact_warnings
+                    request_json(webhook, data=event)
+                    seen_posts.add(post_id)
+                    _write_state(state_path, seen_posts, snapshots)
+                    delivered += 1
+                except Exception as exc:
+                    failed += 1
+                    discussion_failed = True
+                    print(json.dumps({
+                        "event": "community_post_delivery_failed", "discussionId": discussion_id,
+                        "postId": post_id, "errorType": type(exc).__name__,
+                    }, separators=(",", ":")), flush=True)
+                    break
+            if discussion_failed:
+                continue
             resolution_changed = bool(previous) and (
                 previous.get("bestAnswerPostId") != discussion.get("bestAnswerPostId")
                 or previous.get("bestAnswerSetAt") != discussion.get("bestAnswerSetAt")
@@ -265,12 +322,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
             "bestAnswerPostId": discussion.get("bestAnswerPostId"),
             "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
         }
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    ordered_posts = sorted(seen_posts, key=lambda value: int(value) if value.isdigit() else 0)[-5000:]
-    state_path.write_text(
-        json.dumps({"seenPosts": ordered_posts, "discussions": snapshots}, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    _write_state(state_path, seen_posts, snapshots)
     reconcile_id = uuid4().hex
     reconciliation = request_json(
         gateway_url.rstrip("/") + "/v1/community/reviews/reconcile",
@@ -279,7 +331,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     )
     return {
         "observed": len(discussions), "delivered": delivered, "seenPosts": len(seen_posts),
-        "resolutions": resolutions,
+        "resolutions": resolutions, "failed": failed,
         "reviewsChecked": reconciliation.get("data", {}).get("checked", 0),
         "reviewsApproved": reconciliation.get("data", {}).get("approved", 0),
         "reviewsMissing": reconciliation.get("data", {}).get("missing", 0),

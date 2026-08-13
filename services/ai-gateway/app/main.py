@@ -11,7 +11,7 @@ import time
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -601,18 +601,33 @@ def create_app(
         idempotency_key: Annotated[str, Depends(_idempotency_key)],
     ) -> Envelope:
         event = _model_data(request)
+        if request.artifact_warnings:
+            event["question"] = request.question + "\n\n[첨부 처리 안내]\n" + "\n".join(
+                f"- {warning}" for warning in request.artifact_warnings
+            )
         post_id = source_post_id(event)
         if request.resolution_only:
             result = runtime_store.sync_community_resolution(event, idempotency_key, correlation_id)
             return _envelope(result, correlation_id)
+        retry_failed = False
         if runtime_store.community_turn_exists(request.discussion_id, post_id):
-            result = runtime_store.get_community_case_by_discussion(request.discussion_id)
-            result.update(created=False, turnCreated=False)
-            return _envelope(result, correlation_id)
+            current = runtime_store.get_community_case_by_discussion(request.discussion_id)
+            retry_failed = bool(
+                request.response_requested
+                and current.get("state") == "DRAFT_PENDING"
+                and current.get("answerState") == "FAILED"
+                and not current.get("draftAnswer")
+                and current.get("lastSeenPostId") == post_id
+            )
+            if not retry_failed:
+                current.update(created=False, turnCreated=False)
+                return _envelope(current, correlation_id)
         if not request.response_requested:
             result = runtime_store.record_community_turn(event, idempotency_key, correlation_id)
             return _envelope(result, correlation_id)
         turns = runtime_store.list_community_turns(request.discussion_id)
+        if retry_failed:
+            turns = [item for item in turns if item.get("sourcePostId") != post_id]
         conversation_question = build_conversation_question(request.title, turns, event)
         assist_request = ComprehensiveQueryRequest(
             queryId=uuid4(), question=conversation_question, actorId=f"community:{request.author_id}",
@@ -620,10 +635,18 @@ def create_app(
             locale="ko-KR", classification="D0",
         )
         result = _query_comprehensive(assist_request, correlation_id)
+        if result.get("state") == "FAILED":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "AI_PROVIDER_TEMPORARY_FAILURE", "message": "community draft generation will retry"},
+            )
         result["userQuestion"] = request.question
         draft = {"draftAnswer": format_draft(result), "answerState": result.get("state"),
                  "citations": result.get("citations") or [], "evidenceLedger": evidence_ledger(result)}
-        result = runtime_store.create_community_case(event, draft, idempotency_key, correlation_id)
+        if retry_failed:
+            result = runtime_store.retry_failed_community_case(event, draft, idempotency_key, correlation_id)
+        else:
+            result = runtime_store.create_community_case(event, draft, idempotency_key, correlation_id)
         created = result.pop("created", False)
         turn_created = result.pop("turnCreated", created)
         review_ready = not runtime_settings.community_review_post_enabled

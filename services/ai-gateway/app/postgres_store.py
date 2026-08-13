@@ -1217,6 +1217,58 @@ class PostgresStore:
             ).fetchone()
             return bool(row)
 
+    def retry_failed_community_case(
+        self, request: dict[str, Any], draft: dict[str, Any], idempotency_key: str, correlation_id: str
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                result = self._community_payload(repeated)
+                result.update(created=False, turnCreated=False)
+                return result
+            row = connection.execute(
+                "SELECT * FROM community_case WHERE discussion_id=%s FOR UPDATE", (request["discussionId"],)
+            ).fetchone()
+            post_id = source_post_id(request)
+            if not row:
+                raise NotFoundError("community conversation not found")
+            if not (
+                row["state"] == "DRAFT_PENDING"
+                and row.get("answer_state") == "FAILED"
+                and not row.get("draft_answer")
+                and row.get("last_seen_post_id") == post_id
+            ):
+                raise InvalidStateError("only the current failed community draft can be retried")
+            metadata = dict(row.get("source_metadata") or {})
+            metadata["evidenceLedger"] = draft.get("evidenceLedger") or {}
+            updated = connection.execute(
+                """UPDATE community_case SET conversation_state=%s,draft_answer=%s,answer_state=%s,
+                   citations=%s,correlation_id=%s,idempotency_key=%s,source_metadata=%s,updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (conversation_state_for_draft(draft), draft.get("draftAnswer"), draft.get("answerState"),
+                 json.dumps(draft.get("citations") or []), correlation_id, idempotency_key,
+                 json.dumps(metadata), row["id"]),
+            ).fetchone()
+            connection.execute(
+                """UPDATE community_response SET answer=%s,answer_state=%s,correlation_id=%s,updated_at=now()
+                   WHERE case_id=%s AND draft_version=%s""",
+                (draft.get("draftAnswer"), draft.get("answerState"), correlation_id,
+                 row["id"], row["draft_version"]),
+            )
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'FAILED_DRAFT_RETRIED','techflow',%s,%s,%s)""",
+                (uuid4(), row["id"], idempotency_key, correlation_id,
+                 json.dumps({"sourcePostId": post_id, "draftVersion": row["draft_version"]})),
+            )
+            result = self._community_payload(updated)
+            result.update(created=False, turnCreated=True)
+            return result
+
     def list_community_turns(self, discussion_id: str) -> list[dict[str, Any]]:
         with self._pool.connection() as connection:
             rows = connection.execute(

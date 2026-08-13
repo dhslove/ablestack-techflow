@@ -306,6 +306,33 @@ class CommunityTests(unittest.TestCase):
         self.assertFalse(duplicate["turnCreated"])
         self.assertEqual(2, duplicate["draftVersion"])
 
+    def test_failed_followup_draft_can_be_retried_without_duplicate_turn(self) -> None:
+        store = MemoryStore()
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42",
+                 "turnRole": "REQUESTER", "responseRequested": True}
+        store.create_community_case(
+            first, {"draftAnswer": "초기 답변", "answerState": "ANSWERED", "citations": []},
+            "retry-first-post", "retry-first-correlation",
+        )
+        followup = {**self.payload(), "question": "보완 로그입니다.", "postId": "101",
+                    "postNumber": 2, "postAuthorId": "42", "turnRole": "REQUESTER",
+                    "responseRequested": True, "artifactIds": []}
+        failed = store.create_community_case(
+            followup, {"draftAnswer": None, "answerState": "FAILED", "citations": []},
+            "retry-failed-post", "retry-failed-correlation",
+        )
+        self.assertEqual("FAILED", failed["answerState"])
+        retried = store.retry_failed_community_case(
+            followup, {"draftAnswer": "보완 로그를 반영한 답변", "answerState": "ANSWERED", "citations": []},
+            "retry-success-post", "retry-success-correlation",
+        )
+        self.assertTrue(retried["turnCreated"])
+        self.assertEqual(2, retried["draftVersion"])
+        self.assertEqual("ANSWERED", retried["answerState"])
+        self.assertEqual(2, len(store.list_community_turns("901")))
+        events = store.list_community_case_events(retried["caseId"], 10)
+        self.assertIn("FAILED_DRAFT_RETRIED", [item["eventType"] for item in events])
+
     def test_requester_best_answer_resolves_and_unset_reopens_conversation(self) -> None:
         store = MemoryStore()
         first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}

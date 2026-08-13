@@ -1693,6 +1693,16 @@
             "maxItems": 5,
             "title": "Artifactids"
           },
+          "artifactWarnings": {
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "minLength": 3
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Artifactwarnings"
+          },
           "productVersion": {
             "anyOf": [
               {

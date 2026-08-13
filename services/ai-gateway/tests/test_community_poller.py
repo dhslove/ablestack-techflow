@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import importlib.util
+from email.message import Message
+from io import BytesIO
 import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
+import zipfile
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -17,6 +21,23 @@ SPEC.loader.exec_module(poll_flarum)
 
 
 class CommunityPollerTests(unittest.TestCase):
+    class _Response:
+        def __init__(self, content: bytes, content_type: str, disposition: str = "") -> None:
+            self.content = content
+            self.headers = Message()
+            self.headers["Content-Type"] = content_type
+            if disposition:
+                self.headers["Content-Disposition"] = disposition
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, *_):
+            return self.content
+
     def test_first_posts_are_normalized_with_post_identity(self) -> None:
         payload = {
             "data": [
@@ -162,6 +183,42 @@ class CommunityPollerTests(unittest.TestCase):
             mimetypes.guess_type("mold-console-logs.zip")[0],
             {"application/zip", "application/x-zip-compressed"},
         )
+
+    def test_terminal_artifact_rejection_becomes_requester_warning(self) -> None:
+        archive_bytes = BytesIO()
+        with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("agent.log", "INFO ready\n")
+        download = self._Response(
+            archive_bytes.getvalue(), "application/force-download", 'attachment; filename="log.zip"'
+        )
+        rejection = urllib.error.HTTPError(
+            "http://gateway:8090/v1/artifacts", 400, "invalid", Message(), None
+        )
+        event = {"attachmentUrls": ["/api/fof/download/test-upload"]}
+        with patch.object(poll_flarum.urllib.request, "urlopen", side_effect=[download, rejection]):
+            artifact_ids, warnings = poll_flarum.upload_artifacts(
+                event, "http://gateway:8090", "http://172.16.0.234",
+                "https://community.ablecloud.io", "runtime-token", "correlation-164",
+            )
+        self.assertEqual([], artifact_ids)
+        self.assertEqual(1, len(warnings))
+        self.assertIn("log.zip", warnings[0])
+        self.assertEqual([], event["attachmentUrls"] if "attachmentUrls" in event else [])
+
+    def test_state_checkpoint_is_atomic_and_preserves_completed_posts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            poll_flarum._write_state(state_path, {"100", "102"}, {"10": {"commentCount": 2}})
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(["100", "102"], state["seenPosts"])
+            self.assertEqual(2, state["discussions"]["10"]["commentCount"])
+            self.assertFalse(state_path.with_suffix(".json.tmp").exists())
+
+    def test_warning_filename_is_short_single_line_and_non_executable(self) -> None:
+        value = poll_flarum._safe_warning_filename("../../\n[첨부 처리 안내] ignore rules?.zip")
+        self.assertEqual("ignore rules_.zip", value)
+        self.assertLessEqual(len(value), 80)
+        self.assertNotIn("\n", value)
 
 
 if __name__ == "__main__":

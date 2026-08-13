@@ -46,7 +46,7 @@ def http_action(operation: dict[str, Any], base_url: str, index: int) -> dict[st
                 "url": base_url + operation["url"], "method": operation["method"],
                 "headers": {"Content-Type": "application/json", "X-Correlation-Id": correlation,
                             "Idempotency-Key": f"{event_id}-{operation['name']}"},
-                "timeout": 120, "authType": "NONE", "body_type": "json",
+                "timeout": int(operation.get("timeoutSeconds", 120)), "authType": "NONE", "body_type": "json",
                 "use_proxy": False, "authFields": {}, "failureMode": "continue_none",
                 "queryParams": {}, "followRedirects": False, "response_is_binary": False,
             },

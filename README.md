@@ -1,5 +1,17 @@
 # ABLESTACK TechFlow
 
+## Community Discussion #164 후속 답변 복구
+
+macOS에서 만든 로그 ZIP의 `__MACOSX`·AppleDouble 메타데이터 때문에 실제 로그까지 거부되고 Community Poller가 같은 구간에서 반복되던 장애를 AI Gateway 0.13.2에서 복구했습니다. 실제 로그는 보안 검사를 유지한 채 수집하고, 처리 불가 첨부는 안전한 안내로 전환하며, 성공 Post를 원자적으로 체크포인트해 하나의 실패가 전체 Community 큐를 막지 않습니다. AI 생성이 일시 실패한 후속 Turn도 같은 맥락에서 재시도할 수 있습니다.
+
+Discussion #164의 Post #358 로그는 Artifact로 등록돼 검토용 Post #359가 생성됐습니다. 이후 질문자가 올린 보완 로그 Post #361도 재분석해 최신 검토용 Post #362를 생성했습니다. 현재 `DRAFT_PENDING / WAITING_REVIEW`로, 담당자는 Chat 링크에서 원문을 확인한 뒤 공개 여부를 승인합니다.
+
+- [Discussion #164 장애 복구 보고서](docs/reports/discussion-164-community-followup-recovery.md)
+- [Community 지속 대화 운영 Runbook](docs/runbooks/community-conversation.md)
+- [장애 복구 보고서 PDF](output/pdf/techflow-community-discussion-164-recovery-report.pdf)
+- [장애 복구 프레젠테이션 PDF](output/pdf/techflow-community-discussion-164-recovery-presentation.pdf)
+- [장애 복구 프레젠테이션 PPTX](output/presentation/techflow-community-discussion-164-recovery.pptx)
+
 ## Issues #66-#68 Community 지속 대화와 해결 상태
 
 Community Assist는 질문 한 건에 한 번 답하고 종료하지 않습니다. 질문자가 후속 댓글과 이미지, 로그 또는 로그 압축 파일을 추가하면 같은 Case의 대화 맥락으로 다시 분석하고, 담당자가 Community에서 전체 답변을 검토·승인합니다. 질문자가 Best Answer로 해결 표시를 할 때까지 맥락을 유지하며, 해결 표시가 해제되면 같은 Case를 다시 엽니다.

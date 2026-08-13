@@ -1,0 +1,32 @@
+{
+  "discussion": 164,
+  "issue": 67,
+  "generatedAt": "2026-08-13T07:08:16.852388+00:00",
+  "artifacts": [
+    {
+      "path": "docs/runbooks/community-conversation.md",
+      "bytes": 7952,
+      "sha256": "489eea2d480e9118b4c037fe116de8dd700d2fa683c9fd7a0b5465b80f207675"
+    },
+    {
+      "path": "docs/reports/discussion-164-community-followup-recovery.md",
+      "bytes": 7251,
+      "sha256": "78c5fd382fde7ebd9693f0156d3a8abc1e60ec03c5a3c58914a0d7d155c0d3bd"
+    },
+    {
+      "path": "output/pdf/techflow-community-discussion-164-recovery-report.pdf",
+      "bytes": 115340,
+      "sha256": "5f8259d571ddbb9efd1ca6b19febfe8a5bb330c93c959032f1674eff21970492"
+    },
+    {
+      "path": "output/pdf/techflow-community-discussion-164-recovery-presentation.pdf",
+      "bytes": 343331,
+      "sha256": "29865da7090b458de856e182e9f0b603b546332b2020df0eb2accb8f7b1d126c"
+    },
+    {
+      "path": "output/presentation/techflow-community-discussion-164-recovery.pptx",
+      "bytes": 26898,
+      "sha256": "c888585099c723fecc577ae0f49668d5b32075291ce408f21ba330f53bea407f"
+    }
+  ]
+}

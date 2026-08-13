@@ -13,6 +13,7 @@ secrets/
 # Generated research and rendering workspace
 tmp/
 *.pptx.inspect.ndjson
+node_modules/
 
 # Python bytecode
 __pycache__/

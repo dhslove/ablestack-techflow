@@ -81,6 +81,7 @@ class Store(Protocol):
     def finish_evaluation_run(self, run_id: UUID, failed: bool = False) -> dict[str, Any]: ...
     def list_evaluation_results(self, run_id: UUID) -> list[dict[str, Any]]: ...
     def create_community_case(self, request: dict[str, Any], draft: dict[str, Any], idempotency_key: str, correlation_id: str) -> dict[str, Any]: ...
+    def retry_failed_community_case(self, request: dict[str, Any], draft: dict[str, Any], idempotency_key: str, correlation_id: str) -> dict[str, Any]: ...
     def community_turn_exists(self, discussion_id: str, source_post_id: str) -> bool: ...
     def list_community_turns(self, discussion_id: str) -> list[dict[str, Any]]: ...
     def record_community_turn(self, request: dict[str, Any], idempotency_key: str, correlation_id: str) -> dict[str, Any]: ...
@@ -810,6 +811,47 @@ class MemoryStore:
             return bool(case_id and any(
                 item["sourcePostId"] == source_post_id_value for item in self._community_turns.get(case_id, [])
             ))
+
+    def retry_failed_community_case(
+        self, request: dict[str, Any], draft: dict[str, Any], idempotency_key: str, correlation_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("retry_failed_community_case", idempotency_key):
+                repeated.update(created=False, turnCreated=False)
+                return repeated
+            case_id = self._community_by_discussion.get(request["discussionId"])
+            if not case_id:
+                raise NotFoundError("community conversation not found")
+            value = self._community_cases[case_id]
+            post_id = source_post_id(request)
+            if not (
+                value.get("state") == "DRAFT_PENDING"
+                and value.get("answerState") == "FAILED"
+                and not value.get("draftAnswer")
+                and value.get("lastSeenPostId") == post_id
+            ):
+                raise InvalidStateError("only the current failed community draft can be retried")
+            value.update(
+                conversationState=conversation_state_for_draft(draft),
+                draftAnswer=draft.get("draftAnswer"), answerState=draft.get("answerState"),
+                citations=deepcopy(draft.get("citations") or []),
+                evidenceLedger=deepcopy(draft.get("evidenceLedger") or {}),
+                correlationId=correlation_id, updatedAt=utc_now(),
+            )
+            responses = self._community_responses.get(case_id) or []
+            if responses:
+                responses[-1].update(
+                    answer=value["draftAnswer"], answerState=value["answerState"],
+                    correlationId=correlation_id,
+                )
+            self._community_events.append({
+                "caseId": case_id, "eventType": "FAILED_DRAFT_RETRIED", "actor": "techflow",
+                "createdAt": value["updatedAt"],
+                "details": {"sourcePostId": post_id, "draftVersion": value["draftVersion"]},
+            })
+            result = self._remember("retry_failed_community_case", idempotency_key, value)
+            result.update(created=False, turnCreated=True)
+            return result
 
     def list_community_turns(self, discussion_id: str) -> list[dict[str, Any]]:
         with self._lock:

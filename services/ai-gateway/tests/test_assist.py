@@ -178,6 +178,19 @@ class ArtifactTest(unittest.TestCase):
             with self.assertRaises(InvalidBoundaryError):
                 store.put("binary.log", "text/plain", b"INFO\x00ERROR\n")
 
+    def test_macos_zip_metadata_is_ignored_without_rejecting_valid_logs(self) -> None:
+        archive_bytes = BytesIO()
+        with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("host/agent.log", "INFO VM start\nERROR migration failed\n")
+            archive.writestr("__MACOSX/._agent.log", b"\x00\x05\x16\x07Mac OS X\x00metadata")
+            archive.writestr(".DS_Store", b"\x00\x01binary metadata")
+        with tempfile.TemporaryDirectory() as root:
+            store = ArtifactStore(root, retention_hours=1, max_bytes=1024 * 1024)
+            record = store.put("log.zip", "application/zip", archive_bytes.getvalue())
+            self.assertEqual("LOG", record.kind)
+            self.assertEqual(1, record.entry_count)
+            self.assertGreater(record.extracted_bytes or 0, 0)
+
     def test_log_upload_api_returns_normalization_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             client = TestClient(create_app(Settings(artifact_root=root), MemoryStore()))
