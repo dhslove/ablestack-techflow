@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -24,10 +25,16 @@ class ContentParser(HTMLParser):
             self.text.append(data.strip())
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "a":
-            href = dict(attrs).get("href")
-            if href:
-                self.links.append(href)
+        attributes = dict(attrs)
+        href = attributes.get("href") if tag == "a" else None
+        source = attributes.get("src") if tag == "img" else None
+        upload_uuid = attributes.get("data-fof-upload-download-uuid")
+        candidates = [href, source]
+        if upload_uuid:
+            candidates.append(f"/api/fof/download/{urllib.parse.quote(upload_uuid, safe='')}")
+        for candidate in candidates:
+            if candidate and candidate not in self.links:
+                self.links.append(candidate)
 
 
 def read_secret(name: str) -> str:
@@ -95,9 +102,10 @@ def upload_artifacts(
         with urllib.request.urlopen(req, timeout=30) as response:
             content = response.read(10 * 1024 * 1024 + 1)
             media_type = response.headers.get_content_type()
+            disposition = response.headers.get("Content-Disposition") or ""
         if len(content) > 10 * 1024 * 1024:
             continue
-        filename = Path(parsed.path).name or "community-artifact"
+        filename = _attachment_filename(disposition, parsed.path)
         upload = urllib.request.Request(
             gateway_url.rstrip("/") + "/v1/artifacts", data=content, method="POST",
             headers={"Content-Type": media_type, "X-Artifact-Filename": filename,
@@ -108,11 +116,26 @@ def upload_artifacts(
     return ids
 
 
+def _attachment_filename(content_disposition: str, path: str) -> str:
+    encoded = re.search(r"filename\*=UTF-8''([^;]+)", content_disposition, re.IGNORECASE)
+    if encoded:
+        return Path(urllib.parse.unquote(encoded.group(1))).name
+    quoted = re.search(r'filename="([^"]+)"', content_disposition, re.IGNORECASE)
+    if quoted:
+        return Path(quoted.group(1)).name
+    return Path(path).name or "community-artifact"
+
+
 def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     base_url = os.getenv("TECHFLOW_FLARUM_BASE_URL", "https://community.ablecloud.io").rstrip("/")
     public_url = os.getenv("TECHFLOW_FLARUM_PUBLIC_URL", "https://community.ablecloud.io").rstrip("/")
     gateway_url = os.getenv("TECHFLOW_GATEWAY_URL", "http://gateway:8090")
     token = read_secret("TECHFLOW_FLARUM_API_KEY_FILE")
+    assistant_user_id_file = os.getenv("TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE")
+    if assistant_user_id_file:
+        assistant_user_id = Path(assistant_user_id_file).read_text(encoding="utf-8").strip()
+        if assistant_user_id.isdigit():
+            token = f"{token}; userId={assistant_user_id}"
     webhook = read_secret("TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE")
     api_url = base_url + "/api/discussions?sort=-createdAt&include=user,tags,firstPost&page%5Blimit%5D=50"
     events = normalize(request_json(api_url, token=token), public_url)

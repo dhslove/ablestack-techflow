@@ -45,5 +45,29 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual(["질문", "ignore()"], parser.text)
 
 
+    def test_flarum_image_and_uuid_download_are_collected(self) -> None:
+        parser = poll_flarum.ContentParser()
+        parser.feed(
+            '<p><img src="https://community.ablecloud.io/assets/screen.png"></p>'
+            '<div data-fof-upload-download-uuid="02ff7411-173c-4d9a-98b6-e3359d890d04">logs.zip</div>'
+        )
+        self.assertEqual(
+            [
+                "https://community.ablecloud.io/assets/screen.png",
+                "/api/fof/download/02ff7411-173c-4d9a-98b6-e3359d890d04",
+            ],
+            parser.links,
+        )
+
+    def test_download_filename_prefers_content_disposition(self) -> None:
+        self.assertEqual(
+            "mold-console-logs.zip",
+            poll_flarum._attachment_filename(
+                'attachment; filename="mold-console-logs.zip"',
+                "/api/fof/download/uuid",
+            ),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
