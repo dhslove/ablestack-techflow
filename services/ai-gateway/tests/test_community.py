@@ -186,6 +186,25 @@ class CommunityTests(unittest.TestCase):
             self.assertEqual("88", result["postId"])
             create_request = opened.call_args_list[1].args[0]
             self.assertEqual("Token " + "a" * 40 + "; userId=40", create_request.headers["Authorization"])
+            lookup_request = opened.call_args_list[0].args[0]
+            self.assertEqual("Token " + "a" * 40 + "; userId=40", lookup_request.headers["Authorization"])
+
+    def test_review_approval_poll_uses_assistant_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            user_file = Path(directory) / "assistant-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            user_file.write_text("40", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), False,
+                str(user_file), True,
+            )
+            with patch("urllib.request.urlopen", return_value=FakeResponse({
+                "data": {"id": "88", "attributes": {"isApproved": False}},
+            })) as opened:
+                self.assertFalse(client.review_post_is_approved("88"))
+            request = opened.call_args.args[0]
+            self.assertEqual("Token " + "a" * 40 + "; userId=40", request.headers["Authorization"])
 
     def test_review_reply_ignores_matching_marker_from_a_different_author(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

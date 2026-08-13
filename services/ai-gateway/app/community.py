@@ -125,7 +125,9 @@ class FlarumClient:
         if not self.review_post_enabled:
             raise InvalidBoundaryError("community review posting is disabled")
         query = urllib.parse.urlencode({"filter[discussion]": discussion_id, "page[limit]": "50"})
-        existing = self._request(f"/api/posts?{query}")
+        # Use the assistant identity for both idempotency lookup and approval polling.
+        # Anonymous/unbound API-key reads cannot see Flarum's private unapproved posts.
+        existing = self._request(f"/api/posts?{query}", as_assistant=True)
         assistant_user_id = self._assistant_user_id()
         for item in existing.get("data") or []:
             attributes = item.get("attributes") or {}
@@ -154,5 +156,5 @@ class FlarumClient:
     def review_post_is_approved(self, post_id: str) -> bool:
         if not post_id.isdigit():
             raise InvalidBoundaryError("invalid review post id")
-        payload = self._request(f"/api/posts/{post_id}")
+        payload = self._request(f"/api/posts/{post_id}", as_assistant=True)
         return (payload.get("data", {}).get("attributes") or {}).get("isApproved") is True
