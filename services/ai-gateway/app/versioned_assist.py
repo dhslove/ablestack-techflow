@@ -233,9 +233,46 @@ def sanitize_public_text(value: object, citations: Iterable[dict[str, Any]] = ()
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
+_OPERATIONAL_PREFIX = re.compile(r"^\s*((?:\[[^\]\r\n]+\]\s*)+)(.*)$", re.DOTALL)
+_PUBLIC_ROLE_LABELS = (
+    ("호스트 관리자", "서버 관리자는"),
+    ("서버 관리자", "서버 관리자는"),
+    ("네트워크 관리자", "네트워크 관리자는"),
+    ("관리자", "관리자는"),
+)
+_INTERNAL_OPERATIONAL_LABELS = {
+    "읽기 전용", "읽기전용", "변경 없음", "변경없음", "변경", "호스트 관리자", "서버 관리자",
+    "네트워크 관리자", "관리자", "read-only", "readonly", "no change", "non-mutating",
+}
+
+
+def naturalize_operational_prefix(value: str) -> str:
+    """Convert internal action metadata into a sentence a product user can understand."""
+    match = _OPERATIONAL_PREFIX.match(value)
+    if not match:
+        return value
+    labels = [part.strip() for part in re.findall(r"\[([^\]]+)\]", match.group(1))]
+    tokens = {
+        token.strip().casefold()
+        for label in labels
+        for token in re.split(r"[·,/|+]", label)
+        if token.strip()
+    }
+    allowed = {item.casefold() for item in _INTERNAL_OPERATIONAL_LABELS}
+    if not tokens or not tokens.issubset(allowed):
+        return value
+    body = match.group(2).strip()
+    for label, subject in _PUBLIC_ROLE_LABELS:
+        if label.casefold() in tokens:
+            if body.startswith(subject):
+                return body
+            return f"{subject} {body}"
+    return body
+
+
 def simplify_public_text(value: object, citations: Iterable[dict[str, Any]] = ()) -> str:
     """Prefer short user-facing Korean while preserving commands and essential product names."""
-    text = sanitize_public_text(value, citations)
+    text = naturalize_operational_prefix(sanitize_public_text(value, citations))
     replacements = (
         ("QEMU 프로세스 내부의 VNC 통신 소켓", "가상머신 실행 프로그램(QEMU)의 콘솔 연결(VNC)"),
         ("QEMU 프로세스", "가상머신 실행 프로그램(QEMU)"),

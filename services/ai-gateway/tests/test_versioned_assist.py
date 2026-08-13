@@ -18,6 +18,7 @@ from app.versioned_assist import (
     projection_is_safe,
     relevant_results,
     sanitize_public_text,
+    simplify_public_text,
     select_context_results,
     versioned_plan,
 )
@@ -120,6 +121,62 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         )
         self.assertEqual("QEMU 상태를 확인합니다. 다음 조치를 수행합니다.", answer)
         self.assertNotIn("내부 근거", answer)
+
+    def test_internal_action_labels_are_removed_from_public_answer(self) -> None:
+        rows = [
+            (
+                "[변경 없음] DB에서 template ID를 직접 수정하지 마십시오.",
+                "DB에서 template ID를 직접 수정하지 마십시오.",
+            ),
+            (
+                "[읽기 전용·호스트 관리자] PYHVS5에서 D-Bus 상태를 확인하십시오.",
+                "서버 관리자는 PYHVS5에서 D-Bus 상태를 확인하십시오.",
+            ),
+            (
+                "[읽기 전용·네트워크 관리자] 원본 호스트에서 대상 포트 연결을 확인하십시오.",
+                "네트워크 관리자는 원본 호스트에서 대상 포트 연결을 확인하십시오.",
+            ),
+            (
+                "[읽기 전용] Mold에서 호스트 상태를 확인하십시오.",
+                "Mold에서 호스트 상태를 확인하십시오.",
+            ),
+        ]
+        for source, expected in rows:
+            with self.subTest(source=source):
+                answer = simplify_public_text(source)
+                self.assertEqual(expected, answer)
+                self.assertNotIn("[", answer)
+
+    def test_user_meaningful_bracket_prefix_is_preserved(self) -> None:
+        self.assertEqual(
+            "[주의] 서비스가 중단될 수 있습니다.",
+            simplify_public_text("[주의] 서비스가 중단될 수 있습니다."),
+        )
+
+    def test_ongoing_answer_naturalizes_internal_action_labels(self) -> None:
+        answer = format_public_answer({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "마이그레이션이 완료되지 않았습니다.",
+                "observedFacts": ["가상머신 마이그레이션이 실패했습니다."],
+                "diagnoses": [{"title": "현재 로그만으로 원인을 확정하기 어렵습니다."}],
+                "recommendedActions": [
+                    "[변경 없음] DB에서 template ID를 직접 수정하지 마십시오.",
+                    "[읽기 전용·호스트 관리자] PYHVS5에서 D-Bus 상태를 확인하십시오.",
+                    "[읽기 전용·네트워크 관리자] 원본 호스트에서 대상 포트 연결을 확인하십시오.",
+                ],
+                "unknowns": [],
+                "currentAssessment": "INSUFFICIENT_EVIDENCE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }) or ""
+        self.assertNotIn("[변경 없음]", answer)
+        self.assertNotIn("[읽기 전용", answer)
+        self.assertIn("DB에서 template ID를 직접 수정하지 마십시오.", answer)
+        self.assertIn("서버 관리자는 PYHVS5에서 D-Bus 상태를 확인하십시오.", answer)
+        self.assertIn("네트워크 관리자는 원본 호스트에서 대상 포트 연결을 확인하십시오.", answer)
 
     def test_public_projection_removes_internal_lineage(self) -> None:
         citation = {

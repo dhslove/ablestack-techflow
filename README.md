@@ -18,7 +18,7 @@ Chat은 더 이상 승인 채널이 아닙니다. 자동 답변 게시, Knowledg
 
 macOS에서 만든 로그 ZIP의 `__MACOSX`·AppleDouble 메타데이터 때문에 실제 로그까지 거부되고 Community Poller가 같은 구간에서 반복되던 장애를 AI Gateway 0.13.2에서 복구했습니다. 실제 로그는 보안 검사를 유지한 채 수집하고, 처리 불가 첨부는 안전한 안내로 전환하며, 성공 Post를 원자적으로 체크포인트해 하나의 실패가 전체 Community 큐를 막지 않습니다. AI 생성이 일시 실패한 후속 Turn도 같은 맥락에서 재시도할 수 있습니다.
 
-Discussion #164의 Post #358 로그와 보완 로그 Post #361은 같은 Conversation으로 분석합니다. 0.14.0부터 기존 승인 대기 초안도 대화체로 바꿔 자동 공개하고, 이후 질문자가 해결 답변을 선택하면 별도의 Knowledge Base 최종본을 생성합니다.
+Discussion #164의 Post #358 로그와 보완 로그 Post #361은 같은 Conversation으로 분석합니다. 0.14.0부터 기존 승인 대기 초안도 대화체로 바꿔 자동 공개하고, 0.14.1부터는 `읽기 전용`, `변경 없음` 같은 내부 작업 분류를 사용자 답변에 표시하지 않습니다. 이후 질문자가 해결 답변을 선택하면 별도의 Knowledge Base 최종본을 생성합니다.
 
 - [Discussion #164 장애 복구 보고서](docs/reports/discussion-164-community-followup-recovery.md)
 - [Community 지속 대화 운영 Runbook](docs/runbooks/community-conversation.md)

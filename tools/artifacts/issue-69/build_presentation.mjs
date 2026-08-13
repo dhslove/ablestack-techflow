@@ -42,7 +42,7 @@ addSlide([
   textbox("Community 자동 답변과\n해결 기반 Knowledge Base", 64, 150, 1100, 192, 58, true, C.white),
   textbox("승인 대기 제거 · 쉬운 대화 · 해결 후 최종 문서", 70, 388, 1030, 52, 28, false, "#CBD5E1"),
   rect(70, 506, 440, 78, C.blue, "result"),
-  textbox("AI Gateway 0.14.0", 88, 518, 404, 52, 26, true, C.white, "center"),
+  textbox("AI Gateway 0.14.1", 88, 518, 404, 52, 26, true, C.white, "center"),
   textbox("Issue #69 · 2026-08-13", 824, 642, 390, 28, 17, false, "#94A3B8", "right"),
 ], ["docs/reports/issue-69-community-auto-publish-kb-validation.md"]);
 
@@ -105,7 +105,7 @@ addSlide([
   textbox("완료", 64, 70, 260, 56, 28, true, C.cyan),
   textbox("사용자는 바로 답을 받고,\n해결된 대화만 지식이 됩니다", 64, 162, 1100, 158, 54, true, C.white),
   rect(68, 396, 2, 186, C.cyan, "left-rule"),
-  textbox("AI Gateway 0.14.0 · Migration 0012 · OpenAI", 96, 396, 1030, 44, 24, true, C.white),
+  textbox("AI Gateway 0.14.1 · Migration 0012 · OpenAI", 96, 396, 1030, 44, 24, true, C.white),
   textbox("Process · Database · Vector ready", 96, 456, 1030, 40, 21, false, "#CBD5E1"),
   textbox("백업 1.76 GB · 루트 여유 927 GB · 보호 서비스 무변경", 96, 510, 1030, 40, 21, false, "#CBD5E1"),
   textbox("PR #65는 구현 검토를 위해 Draft 상태를 유지합니다", 684, 642, 530, 28, 17, false, "#94A3B8", "right"),

@@ -138,8 +138,12 @@ classify CURRENT_RUNTIME_ISSUE rather than a product defect. State that the gues
 healthy because the symptom affects the VNC console path. Recommend an ABLESTACK-managed live migration first for
 an in-service workload after compatibility and capacity checks; use stop then start as the fallback and disclose
 its service interruption. Put safe read-only CLI checks from the supplied evidence before state-changing actions.
-Never invent a command. Label commands by privilege and read-only/change impact, use <VM> placeholders, and never
-include secrets. Direct virsh migration of an ABLESTACK-managed VM is not the default because it can bypass product
+Never invent a command. Write every action as a natural, user-facing sentence. Do not prefix an action with internal
+workflow labels such as "[read-only]", "[no change]", "[host administrator]", "[network administrator]", or any
+combination of them. When responsibility or risk matters, explain it in the sentence instead, for example "Ask the
+server administrator to run the following status check" or "Do not change the template ID directly in the database."
+Use <VM> placeholders for commands and never include secrets. Direct virsh migration of an ABLESTACK-managed VM is
+not the default because it can bypass product
 state; use Mold or an approved product API. Treat Console Proxy, WebSocket, DNS, and firewall checks as the fallback
 when the QEMU reset actions fail or several VMs are affected simultaneously.
 When CURRENT_RUNTIME_ISSUE is supported and there is no released-product defect to compare, previewAssessment MUST

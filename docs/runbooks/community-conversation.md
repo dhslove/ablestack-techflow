@@ -13,6 +13,8 @@
 
 진행 중 답변에는 고정된 문서 형식을 강제하지 않는다. 해결 후 KB에만 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전`을 사용하며 별도 제목은 붙이지 않는다.
 
+`읽기 전용`, `변경 없음`, `호스트 관리자`, `네트워크 관리자`는 내부 작업 분류 정보이므로 사용자 답변의 제목이나 접두어로 노출하지 않는다. 담당자와 위험 안내가 필요하면 `서버 관리자는 다음 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 실제 의미를 문장 안에 설명한다.
+
 ## 2. 상태 확인
 
 ```sql
@@ -116,9 +118,17 @@ TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED=false
 TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED=true
 ```
 
-5. Gateway와 Poller만 0.14.0 이미지로 교체한다.
-6. Health에서 `version=0.14.0`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+5. Gateway와 Poller만 0.14.1 이미지로 교체한다.
+6. Health에서 `version=0.14.1`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
 7. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
+
+OpenAI 시험 환경에서는 재생성 명령에 `compose.openai.override.yml`을 반드시 포함한다. 기본 `compose.yml`만 사용하면 Gateway가 안전 기본값인 Mock Provider로 기동한다.
+
+```bash
+docker compose --env-file .env \
+  -f compose.yml -f compose.openai.override.yml \
+  up -d --no-deps --force-recreate gateway community-poller
+```
 
 ## 9. 장애 대응
 

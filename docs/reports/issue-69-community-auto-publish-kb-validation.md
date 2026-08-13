@@ -2,7 +2,7 @@
 
 - 검증일: 2026-08-13
 - 환경: TechFlow 시험 서버, ABLESTACK Community, Synology Chat
-- 릴리스: TechFlow AI Gateway 0.14.0
+- 릴리스: TechFlow AI Gateway 0.14.1
 - 구현 PR: [#65](https://github.com/ablecloud-team/ablestack-techflow/pull/65)
 - 실제 후속 질문: [Discussion #164](https://community.ablecloud.io/d/164-gasangmeosin-sijag-mic-maigeureisyeon-oryu)
 - 자동 게시·KB E2E: [Discussion #165](https://community.ablecloud.io/d/165-techflow-knowledge-base)
@@ -12,6 +12,8 @@
 Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신규 질문과 후속 질문에 바로 답변하고, Chat은 승인 대신 게시 결과와 원문 링크를 담당자에게 알려주는 관찰 채널로 동작한다.
 
 진행 중 답변은 더 이상 매번 `증상·원인·해결 방법·추가 고려사항·적용 버전`을 강제하지 않는다. 전문 엔지니어가 플랫폼을 처음 접한 사용자에게 설명하듯 현재 판단, 안전한 확인 순서, 추가로 필요한 정보와 다음 행동을 쉬운 문장으로 안내한다. 질문자가 해결 답변을 선택한 뒤에만 해당 답변과 전체 대화를 다시 종합해 Knowledge Base 최종본을 게시한다.
+
+0.14.1에서는 `[읽기 전용]`, `[변경 없음]`, `[호스트 관리자]`, `[네트워크 관리자]`처럼 내부 실행 정책을 나타내는 접두어도 사용자 답변에서 제거했다. 안전성 판단은 내부에 유지하되, 사용자가 알아야 할 내용만 `서버 관리자는 D-Bus 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 자연스러운 문장으로 전달한다.
 
 ## 2. 최종 동작
 
@@ -26,6 +28,17 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 | Chat | 게시·KB·실패 상태와 원문 링크 알림 |
 | 내부 근거 | Community에는 숨기고 `근거 <Case>`에서만 조회 |
 | Ops 승인 | 인프라 변경 승인 정책은 그대로 유지 |
+
+### 2.1 내부 작업 분류 비노출
+
+| AI 원문 | 사용자 공개 문장 |
+| --- | --- |
+| `[변경 없음] DB에서 template ID를 직접 수정하지 마십시오.` | `DB에서 template ID를 직접 수정하지 마십시오.` |
+| `[읽기 전용·호스트 관리자] PYHVS5에서 D-Bus 상태를 확인하십시오.` | `서버 관리자는 PYHVS5에서 D-Bus 상태를 확인하십시오.` |
+| `[읽기 전용·네트워크 관리자] 원본 호스트에서 대상 포트 연결을 확인하십시오.` | `네트워크 관리자는 원본 호스트에서 대상 포트 연결을 확인하십시오.` |
+| `[읽기 전용] Mold에서 호스트 상태를 확인하십시오.` | `Mold에서 호스트 상태를 확인하십시오.` |
+
+모델 지침에서 내부 라벨 생성을 금지하고, 모델이 기존 형식으로 응답하더라도 공개 직전 변환 계층에서 제거하는 이중 방어를 적용했다. `[주의]`처럼 사용자에게 실제 의미가 있는 표시는 유지한다.
 
 ## 3. 실제 E2E
 
@@ -105,17 +118,19 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 
 | 항목 | 결과 |
 | --- | --- |
-| Python 단위·통합 테스트 | 210건 전체 통과 |
+| Python 단위·통합 테스트 | 213건 전체 통과 |
 | OpenAPI | 34 Operations |
 | DB Migration | 24 Tables, KB Columns 6, 검증 통과 |
 | Gateway Health | Process·Database·Vector `ready`, Provider `openai` |
-| Gateway Version | 0.14.0 |
+| Gateway Version | 0.14.1 |
 | Discussion #164 후속 자동 답변 | Post #365, 공개 완료 |
 | Discussion #165 근거 부족 자동 답변 | Post #367, 공개 완료 |
 | Discussion #165 KB | Post #368, Version 1 |
 | Chat 담당자 | 자동 게시 알림 전송 확인 |
 | 내부 근거·Marker 공개 | 0건 |
 | 루트 디스크 | 1005G 중 37G 사용, 927G 여유 |
+
+0.14.1 시험 서버 검증에서는 공개 변환 함수를 실제 Gateway Container에서 실행해 네 가지 내부 접두어가 모두 제거되는 것을 확인했다. Health는 `provider=openai`, `version=0.14.1`, Process·Database·Vector `ready`이다. Poller는 재시작 직후 일시적인 `URLError` 한 건을 기록했지만 다음 Poll에서 `failed=0`으로 정상화됐다.
 
 ## 7. 배포·복구 자산
 
@@ -125,6 +140,10 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 - DB 덤프: 1,756,637,470 bytes
 - SHA-256: `9efb843ee23d1076c5da5cfc91aa6a5adcde58997a05949dd82edfac321ef565`
 - 배포 이미지: `techflow/ai-gateway:issue-69-community-auto-publish-kb`
+
+0.14.1 코드 전용 배포 전 백업은 `/home/ablecloud/techflow-ai-gateway/backups/issue69-labels-predeploy-20260813T083224Z`에 보관했다. `runtime-source.tgz` SHA-256은 `d91b59daf8a2b6a67237fa2fc645b8eabc2fc322c6c4f0612445b5282757590e`이며, 직전 Gateway Image ID와 보호 서비스 상태도 함께 기록했다. DB Schema와 데이터는 변경하지 않았다.
+
+최초 재생성 검증에서 기본 Compose만 사용해 Provider가 `mock`으로 기동한 것을 발견했다. 즉시 `compose.openai.override.yml`을 포함해 Gateway와 Poller를 다시 생성했고 최종 Health의 `provider=openai`를 확인했다. 이 재발 방지 조건을 운영 Runbook의 필수 명령으로 추가했다.
 
 Rollback은 자동 게시 환경값을 끄고 Gateway·Poller를 이전 이미지로 되돌린 뒤, 필요할 때 Migration `0012 down`을 적용한다. 이미 공개된 Community 답변과 KB는 자동 삭제하지 않는다.
 
@@ -141,3 +160,4 @@ Issue #69의 완료 기준을 충족했다.
 5. KB는 선택 Post와 연결되고 멱등하게 한 번만 게시된다.
 6. Chat은 승인 없이 게시 상태를 관찰한다.
 7. 사용자 본문에는 내부 근거와 시스템 Marker가 노출되지 않는다.
+8. 내부 작업 분류는 공개되지 않고 필요한 담당자·주의사항만 자연어로 전달된다.
