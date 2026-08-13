@@ -1,11 +1,13 @@
 # TechFlow AI Gateway
 
-## v0.14.1 구현 범위
+## v0.14.2 구현 범위
 
 - Community 질문과 후속 질문에 AI-Assistant가 관리자 승인 없이 바로 답변합니다.
 - 진행 중 답변은 고정 보고서 서식 대신, 전문 엔지니어가 제품을 처음 접한 사용자에게 설명하는 쉬운 대화형 문장으로 제공합니다.
 - 질문자가 해결 답변을 선택할 때까지 같은 Discussion의 질문·답변·첨부파일 맥락을 유지합니다.
 - 해결 답변이 선택되면 선택된 답변과 전체 대화를 다시 검토해 제목 없는 Knowledge Base 최종본을 게시합니다.
+- Knowledge Base 공개가 확인되면 해당 KB Post를 Flarum의 최종 Best Answer로 지정하고 재조회로 일치 여부를 검증합니다.
+- 최초 해결 답변 Post는 KB 생성 원본으로 보존하며, KB 최종 솔루션 지정 시각과 selector ID를 감사 이력에 남깁니다.
 - Synology Chat은 승인 채널이 아니라 자동 게시·실패·Knowledge Base 생성 상태를 확인하는 운영 관찰 채널로 사용합니다.
 - 내부 Citation과 상세 근거는 Community에 공개하지 않고, 연결된 운영자의 `근거 <Case>` 명령으로만 확인합니다.
 

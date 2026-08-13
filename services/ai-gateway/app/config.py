@@ -36,6 +36,7 @@ class Settings:
     flarum_public_url: str = "https://community.ablecloud.io"
     flarum_api_key_file: str | None = None
     flarum_assistant_user_id_file: str | None = None
+    flarum_solution_selector_user_id_file: str | None = None
     community_publish_enabled: bool = False
     community_review_post_enabled: bool = False
     community_auto_publish_enabled: bool = False
@@ -72,6 +73,7 @@ class Settings:
             flarum_public_url=os.getenv("TECHFLOW_FLARUM_PUBLIC_URL", "https://community.ablecloud.io").rstrip("/"),
             flarum_api_key_file=os.getenv("TECHFLOW_FLARUM_API_KEY_FILE") or None,
             flarum_assistant_user_id_file=os.getenv("TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE") or None,
+            flarum_solution_selector_user_id_file=os.getenv("TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE") or None,
             community_publish_enabled=os.getenv("TECHFLOW_COMMUNITY_PUBLISH_ENABLED", "false").lower() == "true",
             community_review_post_enabled=os.getenv("TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED", "false").lower() == "true",
             community_auto_publish_enabled=os.getenv("TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED", "false").lower() == "true",
@@ -133,9 +135,10 @@ class Settings:
             )
         if self.community_auto_publish_enabled and not (
             self.community_publish_enabled and self.flarum_api_key_file and self.flarum_assistant_user_id_file
+            and self.flarum_solution_selector_user_id_file
         ):
             raise ConfigurationError(
-                "automatic Community publication requires publishing, API key and assistant identity"
+                "automatic Community publication requires publishing, API key, assistant identity and solution selector identity"
             )
         if self.community_auto_publish_enabled and self.community_review_post_enabled:
             raise ConfigurationError("automatic publication and review posting are mutually exclusive")
@@ -162,6 +165,7 @@ class Settings:
             "artifact_max_archive_entries={!r}, artifact_max_compression_ratio={!r}, "
             "artifact_max_log_evidence_chars={!r}, flarum_base_url={!r}, flarum_public_url={!r}, "
             "flarum_api_key_file=<redacted>, flarum_assistant_user_id_file=<redacted>, "
+            "flarum_solution_selector_user_id_file=<redacted>, "
             "community_publish_enabled={!r}, community_review_post_enabled={!r}, community_auto_publish_enabled={!r}, chat_bot_enabled={!r}, "
             "chat_base_url={!r}, chat_bot_token_file=<redacted>, chat_reviewer_usernames=<redacted>, "
             "community_approve_webhook_file=<redacted>, community_reject_webhook_file=<redacted>)"

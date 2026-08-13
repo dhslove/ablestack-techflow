@@ -54,6 +54,7 @@ class SettingsTest(unittest.TestCase):
             community_review_post_enabled=True,
             flarum_api_key_file="/run/secrets/flarum_api_key",
             flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+            flarum_solution_selector_user_id_file="/run/secrets/flarum_solution_selector_user_id",
         ).validate()
 
     def test_auto_publish_requires_publish_identity_and_excludes_review_mode(self) -> None:
@@ -63,12 +64,14 @@ class SettingsTest(unittest.TestCase):
             community_auto_publish_enabled=True, community_publish_enabled=True,
             flarum_api_key_file="/run/secrets/flarum_api_key",
             flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+            flarum_solution_selector_user_id_file="/run/secrets/flarum_solution_selector_user_id",
         ).validate()
         with self.assertRaises(ConfigurationError):
             Settings(
                 community_auto_publish_enabled=True, community_publish_enabled=True,
                 community_review_post_enabled=True, flarum_api_key_file="/run/secrets/flarum_api_key",
                 flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+                flarum_solution_selector_user_id_file="/run/secrets/flarum_solution_selector_user_id",
             ).validate()
 
     def test_chat_bot_requires_all_runtime_secret_references(self) -> None:

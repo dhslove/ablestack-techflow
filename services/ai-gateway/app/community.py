@@ -119,6 +119,7 @@ class FlarumClient:
         enabled: bool,
         assistant_user_id_file: str | None = None,
         review_post_enabled: bool = False,
+        solution_selector_user_id_file: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.public_url = public_url.rstrip("/")
@@ -126,16 +127,20 @@ class FlarumClient:
         self.enabled = enabled
         self.assistant_user_id_file = assistant_user_id_file
         self.review_post_enabled = review_post_enabled
+        self.solution_selector_user_id_file = solution_selector_user_id_file
 
-    def _authorization(self, *, as_assistant: bool = False) -> str:
+    def _authorization(self, *, as_assistant: bool = False, as_solution_selector: bool = False) -> str:
         if not self.api_key_file:
             raise InvalidBoundaryError("community publishing is disabled")
         key = Path(self.api_key_file).read_text(encoding="utf-8").strip()
         if len(key) != 40:
             raise InvalidBoundaryError("invalid Flarum API key boundary")
-        if not as_assistant:
+        if as_assistant and as_solution_selector:
+            raise InvalidBoundaryError("ambiguous Flarum actor identity")
+        if not as_assistant and not as_solution_selector:
             return f"Token {key}"
-        return f"Token {key}; userId={self._assistant_user_id()}"
+        user_id = self._assistant_user_id() if as_assistant else self._solution_selector_user_id()
+        return f"Token {key}; userId={user_id}"
 
     def _assistant_user_id(self) -> str:
         if not self.assistant_user_id_file:
@@ -145,14 +150,28 @@ class FlarumClient:
             raise InvalidBoundaryError("invalid Flarum assistant identity boundary")
         return user_id
 
+    def _solution_selector_user_id(self) -> str:
+        if not self.solution_selector_user_id_file:
+            raise InvalidBoundaryError("Flarum solution selector identity is not configured")
+        user_id = Path(self.solution_selector_user_id_file).read_text(encoding="utf-8").strip()
+        if not user_id.isdigit() or int(user_id) < 1:
+            raise InvalidBoundaryError("invalid Flarum solution selector identity boundary")
+        return user_id
+
     def _request(
-        self, path: str, method: str = "GET", body: bytes | None = None, *, as_assistant: bool = False
+        self, path: str, method: str = "GET", body: bytes | None = None, *,
+        as_assistant: bool = False, as_solution_selector: bool = False,
     ) -> dict[str, Any]:
         if not self.enabled and not self.review_post_enabled:
             raise InvalidBoundaryError("community publishing is disabled")
         request = urllib.request.Request(
             f"{self.base_url}{path}", data=body, method=method,
-            headers={"Authorization": self._authorization(as_assistant=as_assistant), "Content-Type": "application/json", "Accept": "application/vnd.api+json"},
+            headers={
+                "Authorization": self._authorization(
+                    as_assistant=as_assistant, as_solution_selector=as_solution_selector,
+                ),
+                "Content-Type": "application/json", "Accept": "application/vnd.api+json",
+            },
         )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
@@ -248,6 +267,42 @@ class FlarumClient:
         }, ensure_ascii=False).encode("utf-8")
         payload = self._request("/api/posts", "POST", body, as_assistant=True)
         return self._ensure_public(discussion_id, payload["data"], reused=False)
+
+    def select_solution(self, discussion_id: str, post_id: str) -> dict[str, Any]:
+        """Select and verify the published Knowledge Base post as Flarum's final solution."""
+        if not self.enabled:
+            raise InvalidBoundaryError("community publishing is disabled")
+        if not discussion_id.isdigit() or not post_id.isdigit():
+            raise InvalidBoundaryError("invalid Flarum discussion or post identifier")
+        path = f"/api/discussions/{discussion_id}?include=bestAnswerPost,bestAnswerUser"
+        current = self._request(path, as_solution_selector=True)
+        current_relationships = ((current.get("data") or {}).get("relationships") or {})
+        current_best = str(
+            ((((current_relationships.get("bestAnswerPost") or {}).get("data") or {}).get("id")) or "")
+        )
+        reused = current_best == post_id
+        if not reused:
+            body = json.dumps({
+                "data": {
+                    "type": "discussions", "id": discussion_id,
+                    "attributes": {"bestAnswerPostId": int(post_id)},
+                }
+            }).encode("utf-8")
+            self._request(
+                f"/api/discussions/{discussion_id}", "PATCH", body, as_solution_selector=True,
+            )
+            current = self._request(path, as_solution_selector=True)
+        relationships = ((current.get("data") or {}).get("relationships") or {})
+        selected_post = str((((relationships.get("bestAnswerPost") or {}).get("data") or {}).get("id") or ""))
+        selected_user = str((((relationships.get("bestAnswerUser") or {}).get("data") or {}).get("id") or "")) or None
+        if selected_post != post_id:
+            raise RuntimeError("Flarum did not select the Knowledge Base post as the final solution")
+        return {
+            "postId": selected_post,
+            "postUrl": f"{self.public_url}/d/{discussion_id}/{selected_post}",
+            "selectedByUserId": selected_user,
+            "reused": reused,
+        }
 
     def _ensure_public(self, discussion_id: str, item: dict[str, Any], *, reused: bool) -> dict[str, Any]:
         post_id = str(item["id"])

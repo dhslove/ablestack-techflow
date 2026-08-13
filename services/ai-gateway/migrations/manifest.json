@@ -131,6 +131,16 @@
       "path": "0012_community_auto_publish_kb_up.sql",
       "sha256": "bc6d6f0c4feb10c9944af31180258b4dae50cc5c98c287c12011286ba1a823d9",
       "bytes": 632
+    },
+    {
+      "path": "0013_community_kb_solution_down.sql",
+      "sha256": "0f9a64e597e3ccb7ed2d8083b024f8474412103c46942343a7b14a775904ea8e",
+      "bytes": 161
+    },
+    {
+      "path": "0013_community_kb_solution_up.sql",
+      "sha256": "86d9005e92b1639036b4e7bc0db89032220fc9fbb8d4050150816ad3633177f0",
+      "bytes": 191
     }
   ]
 }

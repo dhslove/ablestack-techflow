@@ -169,7 +169,7 @@ def case_card(value: dict[str, Any], *, notification_type: str | None = None) ->
     text = case_text(value, include_answer=False)
     notices = {
         "published": "Community에 AI 답변을 자동 게시했습니다. 링크에서 내용과 대화 흐름을 확인해 주세요.",
-        "knowledge": "질문자가 해결 표시를 완료해 최종 Knowledge Base를 게시했습니다.",
+        "knowledge": "최종 Knowledge Base를 게시하고 Discussion의 솔루션으로 지정했습니다.",
         "review": "이전 승인 방식의 Community 검토 글이 생성됐습니다.",
     }
     if notification_type in notices:

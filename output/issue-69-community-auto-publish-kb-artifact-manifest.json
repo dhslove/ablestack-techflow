@@ -1,26 +1,26 @@
 {
   "issue": 69,
-  "generatedAt": "2026-08-13T08:34:53.932639+00:00",
+  "generatedAt": "2026-08-13T12:31:04.152543+00:00",
   "artifacts": [
     {
       "path": "docs/reports/issue-69-community-auto-publish-kb-validation.md",
-      "bytes": 10708,
-      "sha256": "abf945c9aa58e76380ae752b895815c6769f28b7ae05b32183d944db4ed76401"
+      "bytes": 12941,
+      "sha256": "612fa48f58193622f5e9406d4e83e774bbe857b1411ca661a8db0b2602655f3c"
     },
     {
       "path": "output/pdf/techflow-community-auto-publish-kb-report.pdf",
-      "bytes": 135510,
-      "sha256": "86c1701482dd72260302f75eccd1eeabcbc167b301b7c2c7ee9527229dfd1d94"
+      "bytes": 139648,
+      "sha256": "339a9ba9282a7e340d7a057d71c71677c5d8a86cb565533701adf87444b54536"
     },
     {
       "path": "output/presentation/techflow-community-auto-publish-kb.pptx",
-      "bytes": 27804,
-      "sha256": "a769464f9c42ab1c54af0eece55ae0cdfb937bba9bc838a5585f621ed6767e03"
+      "bytes": 27733,
+      "sha256": "51d53079b9692b52bc904bf05fd9fec210ba1c11c0203847929e003ed56f37c8"
     },
     {
       "path": "output/pdf/techflow-community-auto-publish-kb-presentation.pdf",
-      "bytes": 383546,
-      "sha256": "39af184b7eecbe25e9d413982e618f34a847a86c403161fc3892d319a5ceec7e"
+      "bytes": 385947,
+      "sha256": "89a671e4985c68d4216b19730ba8f116e5fcb8855f80f1c0c293409c460bf87e"
     }
   ]
 }

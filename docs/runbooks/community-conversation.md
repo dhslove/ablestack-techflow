@@ -9,7 +9,8 @@
 5. Chat Bot이 게시 결과와 Community 링크를 담당자에게 알린다.
 6. 질문자가 추가 정보를 올리면 같은 Case에서 분석과 답변을 반복한다.
 7. 질문자가 Best Answer를 선택하면 해당 답변 중심의 Knowledge Base 최종본을 게시한다.
-8. 해결 표시가 해제되거나 후속 질문이 생기면 같은 Case를 다시 연다.
+8. KB 공개를 확인한 뒤 해당 KB Post를 최종 Best Answer로 지정하고 Flarum 재조회 결과가 일치하는지 확인한다.
+9. 해결 표시가 해제되거나 후속 질문이 생기면 같은 Case를 다시 연다.
 
 진행 중 답변에는 고정된 문서 형식을 강제하지 않는다. 해결 후 KB에만 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전`을 사용하며 별도 제목은 붙이지 않는다.
 
@@ -21,7 +22,9 @@
 SELECT discussion_id, state, conversation_state, context_version,
        last_seen_post_id, published_post_id, resolved_post_id,
        knowledge_base_post_id, knowledge_base_source_post_id,
-       knowledge_base_version, knowledge_base_published_at
+       knowledge_base_version, knowledge_base_published_at,
+       knowledge_base_solution_selected_at,
+       knowledge_base_solution_selected_by_user_id
 FROM community_case
 ORDER BY updated_at DESC
 LIMIT 20;
@@ -32,7 +35,7 @@ LIMIT 20;
 - 답변 생성 중: `DRAFT_PENDING / ANALYZING`
 - 정보 요청 답변 게시: `PUBLISHED / WAITING_RESOLUTION`
 - 일반 답변 게시: `PUBLISHED / WAITING_RESOLUTION`
-- 질문자 해결 선택: `PUBLISHED / RESOLVED`, `knowledge_base_post_id` 존재
+- 질문자 해결 선택 및 KB 최종 지정: `PUBLISHED / RESOLVED`, `knowledge_base_post_id`와 `knowledge_base_solution_selected_at` 존재
 - 해결 해제 또는 후속 질문: `PUBLISHED / ANALYZING`
 
 ## 3. 로그 확인
@@ -42,7 +45,7 @@ docker logs --since 10m techflow-ai-gateway-community-poller-1 \
   | grep -E 'community_poll_completed|community_post_delivery_failed'
 
 docker logs --since 10m techflow-ai-gateway-gateway-1 \
-  | grep -E 'community_answer_auto_published|community_knowledge_base_published|community_chat_notification'
+  | grep -E 'community_answer_auto_published|community_knowledge_base_published|community_knowledge_base_solution_selected|community_chat_notification'
 ```
 
 정상 기준:
@@ -50,6 +53,7 @@ docker logs --since 10m techflow-ai-gateway-gateway-1 \
 - Poller `failed=0`
 - 일반 답변: `community_answer_auto_published`
 - 해결 최종본: `community_knowledge_base_published`
+- KB 최종 솔루션 지정: `community_knowledge_base_solution_selected`
 - Chat: `community_chat_notification_sent`
 
 ## 4. Chat 사용
@@ -103,24 +107,31 @@ KB는 질문자의 Best Answer 선택을 해결 신호로 사용한다.
 적용 버전
 ```
 
+6. 통합 API Key와 별도 selector identity로 Discussion의 `bestAnswerPostId`를 KB Post ID로 변경한다.
+7. `bestAnswerPost`를 즉시 재조회해 KB Post와 일치할 때만 `KNOWLEDGE_BASE_SOLUTION_SELECTED`를 기록한다.
+
+질문자가 처음 선택한 해결 답변은 `resolved_post_id`와 `knowledge_base_source_post_id`로 유지한다. 최종 Best Answer는 `knowledge_base_post_id`가 되며, 두 값을 서로 덮어쓰지 않는다.
+
 질문자가 해결 선택을 해제하면 기존 KB 기록은 감사 이력에 보존하되 활성 KB 연결은 지우고 Conversation을 재개한다.
 
 ## 8. 배포
 
 1. Gateway 소스, Compose와 DB를 백업한다.
 2. Secret은 존재와 권한만 확인하고 값을 출력하지 않는다.
-3. Migration `0012_community_auto_publish_kb_up.sql`을 적용한다.
+3. Migration `0012_community_auto_publish_kb_up.sql`과 `0013_community_kb_solution_up.sql`을 적용한다.
 4. 환경 설정을 다음처럼 변경한다.
 
 ```dotenv
 TECHFLOW_COMMUNITY_PUBLISH_ENABLED=true
 TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED=false
 TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED=true
+TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE=/run/secrets/flarum_solution_selector_user_id
 ```
 
-5. Gateway와 Poller만 0.14.1 이미지로 교체한다.
-6. Health에서 `version=0.14.1`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
-7. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
+5. `TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_SECRET_FILE`은 Best Answer 변경 권한이 있는 Flarum 관리자 ID 파일을 가리키게 한다. 시험 서버에서는 검증된 관리자 User 1을 사용한다.
+6. Gateway와 Poller만 0.14.2 이미지로 교체한다.
+7. Health에서 `version=0.14.2`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+8. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
 OpenAI 시험 환경에서는 재생성 명령에 `compose.openai.override.yml`을 반드시 포함한다. 기본 `compose.yml`만 사용하면 Gateway가 안전 기본값인 Mock Provider로 기동한다.
 
@@ -137,6 +148,7 @@ docker compose --env-file .env \
 | 답변 생성 후 공개되지 않음 | `community_answer_auto_publish_failed`, Flarum Post 상태 | API 권한과 Assistant ID를 확인하고 동일 Post 이벤트 재시도 |
 | 같은 답변이 중복 게시됨 | 본문 Marker와 Case Draft Version | Marker 검색 권한과 Post 조회 범위 확인 |
 | 해결 표시 후 KB가 없음 | `resolved_post_id`, KB 실패 로그 | 선택 사용자와 최초 질문자 일치 여부, AI 응답과 Flarum API 확인 |
+| KB는 있으나 최종 솔루션이 아님 | `knowledge_base_solution_selected_at`, `community_knowledge_base_solution_selection_failed`, Flarum `bestAnswerPost` | selector identity 권한을 확인하고 동일 해결 이벤트를 재시도한다. 기존 KB Post는 재사용한다. |
 | Chat 알림만 실패 | `community_chat_notification_failed` | Community 게시 상태를 먼저 확인하고 Chat Bot 연결 복구 |
 | 후속 질문이 새 Case로 생성됨 | `discussion_id`, `community_turn` | Poller Discussion ID와 Post ID 정규화 확인 |
 | 첨부가 큐를 막음 | Artifact HTTP 상태, Poller Seen 상태 | 영구 오류는 안전 경고로, 일시 오류는 재시도로 분리 |

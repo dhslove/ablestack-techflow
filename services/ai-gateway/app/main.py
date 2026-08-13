@@ -174,6 +174,7 @@ def create_app(
         runtime_settings.community_publish_enabled,
         runtime_settings.flarum_assistant_user_id_file,
         runtime_settings.community_review_post_enabled,
+        runtime_settings.flarum_solution_selector_user_id_file,
     )
     runtime_chat_bot = chat_bot_client or SynologyBotClient(
         runtime_settings.chat_base_url, runtime_settings.chat_bot_token_file, runtime_settings.chat_bot_enabled,
@@ -613,60 +614,87 @@ def create_app(
                 runtime_settings.community_auto_publish_enabled
                 and result.get("conversationState") == "RESOLVED"
                 and result.get("resolvedPostId")
-                and result.get("knowledgeBaseSourcePostId") != result.get("resolvedPostId")
             ):
-                turns = runtime_store.list_community_turns(request.discussion_id)
-                knowledge_question = build_knowledge_base_question(
-                    request.title, turns, str(result["resolvedPostId"]),
-                )
-                artifact_ids: list[UUID] = []
-                for turn in reversed(turns):
-                    for artifact_id in reversed(turn.get("artifactIds") or []):
-                        value = UUID(str(artifact_id))
-                        if value not in artifact_ids:
-                            artifact_ids.append(value)
+                knowledge_completed_now = False
+                if result.get("knowledgeBaseSourcePostId") != result.get("resolvedPostId"):
+                    turns = runtime_store.list_community_turns(request.discussion_id)
+                    knowledge_question = build_knowledge_base_question(
+                        request.title, turns, str(result["resolvedPostId"]),
+                    )
+                    artifact_ids: list[UUID] = []
+                    for turn in reversed(turns):
+                        for artifact_id in reversed(turn.get("artifactIds") or []):
+                            value = UUID(str(artifact_id))
+                            if value not in artifact_ids:
+                                artifact_ids.append(value)
+                            if len(artifact_ids) == 5:
+                                break
                         if len(artifact_ids) == 5:
                             break
-                    if len(artifact_ids) == 5:
-                        break
-                knowledge_result = _query_comprehensive(
-                    ComprehensiveQueryRequest(
-                        queryId=uuid4(), question=knowledge_question,
-                        actorId=f"community-kb:{request.author_id}",
-                        productVersion=request.product_version or "diplo",
-                        artifactIds=artifact_ids, locale="ko-KR", classification="D0",
-                    ),
-                    correlation_id,
-                )
-                knowledge_answer = format_knowledge_base(knowledge_result)
-                if knowledge_result.get("state") == "FAILED" or not knowledge_answer:
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail={"code": "KNOWLEDGE_BASE_GENERATION_FAILED", "message": "resolved conversation synthesis will retry"},
+                    knowledge_result = _query_comprehensive(
+                        ComprehensiveQueryRequest(
+                            queryId=uuid4(), question=knowledge_question,
+                            actorId=f"community-kb:{request.author_id}",
+                            productVersion=request.product_version or "diplo",
+                            artifactIds=artifact_ids, locale="ko-KR", classification="D0",
+                        ),
+                        correlation_id,
                     )
-                marker = f"<!-- techflow-kb:{result['caseId']}:resolved:{result['resolvedPostId']} -->"
-                try:
-                    publication = flarum_client.publish_assistant_reply(
-                        result["discussionId"], knowledge_answer, marker,
-                    )
-                    result = runtime_store.mark_community_knowledge_published(
-                        result["caseId"], knowledge_answer, publication,
-                        f"knowledge-base-{result['caseId']}-{result['resolvedPostId']}",
-                    )
-                    _json_log(
-                        "community_knowledge_base_published", correlationId=correlation_id,
-                        caseId=str(result["caseId"]), postId=result["knowledgeBasePostId"],
-                    )
-                except Exception as exc:
-                    _json_log(
-                        "community_knowledge_base_publish_failed", correlationId=correlation_id,
-                        caseId=str(result["caseId"]), errorType=type(exc).__name__,
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail={"code": "KNOWLEDGE_BASE_PUBLICATION_FAILED", "message": "Knowledge Base publication will retry"},
-                    ) from exc
-                if runtime_settings.chat_bot_enabled:
+                    knowledge_answer = format_knowledge_base(knowledge_result)
+                    if knowledge_result.get("state") == "FAILED" or not knowledge_answer:
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail={"code": "KNOWLEDGE_BASE_GENERATION_FAILED", "message": "resolved conversation synthesis will retry"},
+                        )
+                    marker = f"<!-- techflow-kb:{result['caseId']}:resolved:{result['resolvedPostId']} -->"
+                    try:
+                        publication = flarum_client.publish_assistant_reply(
+                            result["discussionId"], knowledge_answer, marker,
+                        )
+                        result = runtime_store.mark_community_knowledge_published(
+                            result["caseId"], knowledge_answer, publication,
+                            f"knowledge-base-{result['caseId']}-{result['resolvedPostId']}",
+                        )
+                        _json_log(
+                            "community_knowledge_base_published", correlationId=correlation_id,
+                            caseId=str(result["caseId"]), postId=result["knowledgeBasePostId"],
+                        )
+                    except Exception as exc:
+                        _json_log(
+                            "community_knowledge_base_publish_failed", correlationId=correlation_id,
+                            caseId=str(result["caseId"]), errorType=type(exc).__name__,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail={"code": "KNOWLEDGE_BASE_PUBLICATION_FAILED", "message": "Knowledge Base publication will retry"},
+                        ) from exc
+                if result.get("knowledgeBasePostId") and not result.get("knowledgeBaseSolutionSelectedAt"):
+                    try:
+                        selection = flarum_client.select_solution(
+                            result["discussionId"], result["knowledgeBasePostId"],
+                        )
+                        result = runtime_store.mark_community_knowledge_solution_selected(
+                            result["caseId"], selection,
+                            f"knowledge-solution-{result['caseId']}-{result['knowledgeBasePostId']}",
+                        )
+                        _json_log(
+                            "community_knowledge_base_solution_selected", correlationId=correlation_id,
+                            caseId=str(result["caseId"]), postId=result["knowledgeBasePostId"],
+                        )
+                        knowledge_completed_now = True
+                    except Exception as exc:
+                        _json_log(
+                            "community_knowledge_base_solution_selection_failed", correlationId=correlation_id,
+                            caseId=str(result["caseId"]), errorType=type(exc).__name__,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail={
+                                "code": "KNOWLEDGE_BASE_SOLUTION_SELECTION_FAILED",
+                                "message": "Knowledge Base final solution selection will retry",
+                            },
+                        ) from exc
+                if runtime_settings.chat_bot_enabled and knowledge_completed_now:
                     reviewer_ids = [item["userId"] for item in runtime_store.list_chat_reviewers()]
                     if reviewer_ids:
                         try:

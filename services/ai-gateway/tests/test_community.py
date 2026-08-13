@@ -223,6 +223,54 @@ class CommunityTests(unittest.TestCase):
             self.assertEqual("PATCH", opened.call_args_list[2].args[0].method)
             self.assertEqual("Token " + "a" * 40, opened.call_args_list[2].args[0].headers["Authorization"])
 
+    def test_knowledge_base_post_is_selected_and_verified_as_solution(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            selector_file = Path(directory) / "solution-selector-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            selector_file.write_text("1", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), True,
+                solution_selector_user_id_file=str(selector_file),
+            )
+            responses = [
+                FakeResponse({"data": {"relationships": {"bestAnswerPost": {"data": {"id": "200"}}}}}),
+                FakeResponse({"data": {"id": "901"}}),
+                FakeResponse({"data": {"relationships": {
+                    "bestAnswerPost": {"data": {"id": "201"}},
+                    "bestAnswerUser": {"data": {"id": "1"}},
+                }}}),
+            ]
+            with patch("urllib.request.urlopen", side_effect=responses) as opened:
+                result = client.select_solution("901", "201")
+            self.assertEqual("201", result["postId"])
+            self.assertEqual("1", result["selectedByUserId"])
+            self.assertFalse(result["reused"])
+            patched = opened.call_args_list[1].args[0]
+            self.assertEqual("PATCH", patched.method)
+            payload = json.loads(patched.data.decode("utf-8"))
+            self.assertEqual(201, payload["data"]["attributes"]["bestAnswerPostId"])
+            self.assertEqual("Token " + "a" * 40 + "; userId=1", patched.headers["Authorization"])
+
+    def test_solution_selection_reuses_already_selected_knowledge_base(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            selector_file = Path(directory) / "solution-selector-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            selector_file.write_text("1", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), True,
+                solution_selector_user_id_file=str(selector_file),
+            )
+            response = FakeResponse({"data": {"relationships": {
+                "bestAnswerPost": {"data": {"id": "201"}},
+                "bestAnswerUser": {"data": {"id": "1"}},
+            }}})
+            with patch("urllib.request.urlopen", return_value=response) as opened:
+                result = client.select_solution("901", "201")
+            self.assertTrue(result["reused"])
+            self.assertEqual(1, opened.call_count)
+
     def test_assistant_review_reply_is_held_for_moderator_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             key_file = Path(directory) / "key"
@@ -450,6 +498,25 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(1, published["knowledgeBaseVersion"])
         self.assertTrue(knowledge.startswith("### 증상"))
         self.assertNotIn("담당자 승인", knowledge)
+
+        selected = store.mark_community_knowledge_solution_selected(
+            published["caseId"],
+            {"postId": "201", "postUrl": "https://community.ablecloud.io/d/901/201",
+             "selectedByUserId": "1", "reused": False},
+            "kb-solution-selected",
+        )
+        self.assertIsNotNone(selected["knowledgeBaseSolutionSelectedAt"])
+        self.assertEqual("1", selected["knowledgeBaseSolutionSelectedByUserId"])
+        events = store.list_community_case_events(selected["caseId"], 10)
+        self.assertIn("KNOWLEDGE_BASE_SOLUTION_SELECTED", [item["eventType"] for item in events])
+
+        confirmed = store.sync_community_resolution(
+            {**first, "bestAnswerPostId": "201", "bestAnswerUserId": "1"},
+            "kb-solution-confirmed", "kb-solution-confirmed-correlation",
+        )
+        self.assertEqual("RESOLVED", confirmed["conversationState"])
+        self.assertEqual("200", confirmed["resolvedPostId"])
+        self.assertEqual("201", confirmed["knowledgeBasePostId"])
 
     def test_legacy_review_publication_can_be_migrated_once_to_auto_publish(self) -> None:
         store = MemoryStore()

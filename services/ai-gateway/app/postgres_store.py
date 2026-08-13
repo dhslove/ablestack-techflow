@@ -1104,6 +1104,8 @@ class PostgresStore:
             "knowledgeBaseAnswer": row.get("knowledge_base_answer"),
             "knowledgeBaseVersion": row.get("knowledge_base_version") or 0,
             "knowledgeBasePublishedAt": row.get("knowledge_base_published_at"),
+            "knowledgeBaseSolutionSelectedAt": row.get("knowledge_base_solution_selected_at"),
+            "knowledgeBaseSolutionSelectedByUserId": row.get("knowledge_base_solution_selected_by_user_id"),
             "correlationId": row["correlation_id"], "createdAt": row["created_at"], "updatedAt": row["updated_at"],
         }
 
@@ -1157,12 +1159,15 @@ class PostgresStore:
                        knowledge_base_post_url=CASE WHEN %s THEN NULL ELSE knowledge_base_post_url END,
                        knowledge_base_source_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_source_post_id END,
                        knowledge_base_answer=CASE WHEN %s THEN NULL ELSE knowledge_base_answer END,
+                       knowledge_base_solution_selected_at=CASE WHEN %s THEN NULL ELSE knowledge_base_solution_selected_at END,
+                       knowledge_base_solution_selected_by_user_id=CASE WHEN %s THEN NULL ELSE knowledge_base_solution_selected_by_user_id END,
                        correlation_id=%s,idempotency_key=%s,source_metadata=%s,updated_at=now()
                        WHERE id=%s RETURNING *""",
                     (conversation_state_for_draft(draft), draft_version, draft.get("draftAnswer"),
                      draft.get("answerState"), json.dumps(draft.get("citations") or []), post_id,
                      was_resolved, was_resolved, was_resolved, was_resolved,
-                     was_resolved, was_resolved, was_resolved, was_resolved, correlation_id, idempotency_key,
+                     was_resolved, was_resolved, was_resolved, was_resolved, was_resolved, was_resolved,
+                     correlation_id, idempotency_key,
                      json.dumps(metadata), row["id"]),
                 ).fetchone()
                 connection.execute(
@@ -1329,10 +1334,13 @@ class PostgresStore:
                    knowledge_base_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_post_id END,
                    knowledge_base_post_url=CASE WHEN %s THEN NULL ELSE knowledge_base_post_url END,
                    knowledge_base_source_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_source_post_id END,
-                   knowledge_base_answer=CASE WHEN %s THEN NULL ELSE knowledge_base_answer END,updated_at=now()
+                   knowledge_base_answer=CASE WHEN %s THEN NULL ELSE knowledge_base_answer END,
+                   knowledge_base_solution_selected_at=CASE WHEN %s THEN NULL ELSE knowledge_base_solution_selected_at END,
+                   knowledge_base_solution_selected_by_user_id=CASE WHEN %s THEN NULL ELSE knowledge_base_solution_selected_by_user_id END,
+                   updated_at=now()
                    WHERE id=%s RETURNING *""",
                 (post_id, reopened, reopened, reopened, reopened, reopened,
-                 reopened, reopened, reopened, reopened, row["id"]),
+                 reopened, reopened, reopened, reopened, reopened, reopened, row["id"]),
             ).fetchone()
             connection.execute(
                 """INSERT INTO community_case_event
@@ -1363,31 +1371,54 @@ class PostgresStore:
                 raise NotFoundError("community conversation not found")
             best_post = request.get("bestAnswerPostId")
             best_user = request.get("bestAnswerUserId")
-            if best_post and best_user == row.get("requester_user_id"):
+            knowledge_post = row.get("knowledge_base_post_id")
+            if best_post and knowledge_post and best_post == knowledge_post:
+                state, event_type = "RESOLVED", "KNOWLEDGE_BASE_SOLUTION_CONFIRMED"
+                changed = (
+                    row.get("conversation_state") != state
+                    or row.get("knowledge_base_solution_selected_at") is None
+                )
+                resolved_at = row.get("resolved_at")
+                preserve_resolution = True
+            elif best_post and best_user == row.get("requester_user_id"):
                 state, event_type = "RESOLVED", "RESOLVED_BY_REQUESTER"
                 changed = row.get("conversation_state") != state or row.get("resolved_post_id") != best_post
                 resolved_at = request.get("bestAnswerSetAt")
+                preserve_resolution = False
             elif best_post:
                 state, event_type = "WAITING_RESOLUTION", "RESOLUTION_REVIEW_REQUIRED"
                 changed = row.get("resolved_post_id") != best_post or row.get("conversation_state") == "RESOLVED"
                 resolved_at = None
+                preserve_resolution = False
             elif row.get("conversation_state") == "RESOLVED":
                 state, event_type, changed, resolved_at = "ANALYZING", "RESOLUTION_UNSET_REOPENED", True, None
+                preserve_resolution = False
             else:
                 result = self._community_payload(row)
                 result["resolutionChanged"] = False
                 return result
             updated = connection.execute(
-                """UPDATE community_case SET conversation_state=%s,resolved_post_id=%s,resolved_by_user_id=%s,
+                """UPDATE community_case SET conversation_state=%s,
+                   resolved_post_id=CASE WHEN %s THEN resolved_post_id ELSE %s END,
+                   resolved_by_user_id=CASE WHEN %s THEN resolved_by_user_id ELSE %s END,
                    resolved_at=CASE WHEN %s='RESOLVED' THEN COALESCE(%s,now()) ELSE NULL END,
                    reopened_at=CASE WHEN %s='ANALYZING' THEN now() ELSE reopened_at END,
                    knowledge_base_post_id=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_post_id END,
                    knowledge_base_post_url=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_post_url END,
                    knowledge_base_source_post_id=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_source_post_id END,
                    knowledge_base_answer=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_answer END,
+                   knowledge_base_solution_selected_at=CASE
+                       WHEN %s='ANALYZING' THEN NULL
+                       WHEN %s THEN COALESCE(%s,now())
+                       ELSE NULL END,
+                   knowledge_base_solution_selected_by_user_id=CASE
+                       WHEN %s THEN %s ELSE NULL END,
                    updated_at=now()
                    WHERE id=%s RETURNING *""",
-                (state, best_post, best_user, state, resolved_at, state, state, state, state, state, row["id"]),
+                (state, preserve_resolution, best_post, preserve_resolution, best_user,
+                 state, resolved_at, state, state, state, state, state,
+                 state, preserve_resolution, request.get("bestAnswerSetAt"),
+                 preserve_resolution, best_user, row["id"]),
             ).fetchone()
             if changed:
                 connection.execute(
@@ -1684,7 +1715,9 @@ class PostgresStore:
             updated = connection.execute(
                 """UPDATE community_case SET knowledge_base_post_id=%s,knowledge_base_post_url=%s,
                    knowledge_base_source_post_id=resolved_post_id,knowledge_base_answer=%s,
-                   knowledge_base_version=knowledge_base_version+1,knowledge_base_published_at=now(),updated_at=now()
+                   knowledge_base_version=knowledge_base_version+1,knowledge_base_published_at=now(),
+                   knowledge_base_solution_selected_at=NULL,
+                   knowledge_base_solution_selected_by_user_id=NULL,updated_at=now()
                    WHERE id=%s RETURNING *""",
                 (publication["postId"], publication["postUrl"], answer, case_id),
             ).fetchone()
@@ -1694,6 +1727,37 @@ class PostgresStore:
                    VALUES (%s,%s,'KNOWLEDGE_BASE_PUBLISHED','techflow-assistant',%s,%s,%s)""",
                 (uuid4(), case_id, idempotency_key, row["correlation_id"],
                  json.dumps({**publication, "resolvedPostId": row["resolved_post_id"]})),
+            )
+            return self._community_payload(updated)
+
+    def mark_community_knowledge_solution_selected(
+        self, case_id: UUID, selection: dict[str, Any], idempotency_key: str
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute("SELECT * FROM community_case WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+            if not row:
+                raise NotFoundError("community case not found")
+            if row.get("conversation_state") != "RESOLVED" or not row.get("knowledge_base_post_id"):
+                raise InvalidStateError("knowledge base solution selection requires a published knowledge base")
+            if str(selection.get("postId")) != str(row["knowledge_base_post_id"]):
+                raise ConflictError("selected solution does not match the knowledge base post")
+            updated = connection.execute(
+                """UPDATE community_case SET knowledge_base_solution_selected_at=now(),
+                   knowledge_base_solution_selected_by_user_id=%s,updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (selection.get("selectedByUserId"), case_id),
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'KNOWLEDGE_BASE_SOLUTION_SELECTED','techflow-integration',%s,%s,%s)""",
+                (uuid4(), case_id, idempotency_key, row["correlation_id"], json.dumps(selection)),
             )
             return self._community_payload(updated)
 

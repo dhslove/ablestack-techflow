@@ -15,6 +15,7 @@ UP_0006 = (ROOT / "migrations" / "0006_orchestration_correlation_up.sql").read_t
 UP_0007 = (ROOT / "migrations" / "0007_reindex_fk_performance_up.sql").read_text(encoding="utf-8")
 UP_0011 = (ROOT / "migrations" / "0011_community_conversation_up.sql").read_text(encoding="utf-8")
 UP_0012 = (ROOT / "migrations" / "0012_community_auto_publish_kb_up.sql").read_text(encoding="utf-8")
+UP_0013 = (ROOT / "migrations" / "0013_community_kb_solution_up.sql").read_text(encoding="utf-8")
 DOWN_0001 = (ROOT / "migrations" / "0001_schema_down.sql").read_text(encoding="utf-8")
 DOWN_0002 = (ROOT / "migrations" / "0002_source_registry_down.sql").read_text(encoding="utf-8")
 DOWN_0003 = (ROOT / "migrations" / "0003_source_mirror_down.sql").read_text(encoding="utf-8")
@@ -115,6 +116,10 @@ class MigrationContractTest(unittest.TestCase):
             "knowledge_base_answer", "knowledge_base_version", "knowledge_base_published_at",
         ):
             self.assertIn(column, UP_0012)
+
+    def test_knowledge_base_final_solution_selection_is_audited(self) -> None:
+        self.assertIn("knowledge_base_solution_selected_at", UP_0013)
+        self.assertIn("knowledge_base_solution_selected_by_user_id", UP_0013)
 
 
 if __name__ == "__main__":

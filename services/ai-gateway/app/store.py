@@ -98,6 +98,7 @@ class Store(Protocol):
     def mark_community_published(self, case_id: UUID, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_auto_published(self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_knowledge_published(self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
+    def mark_community_knowledge_solution_selected(self, case_id: UUID, selection: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def upsert_chat_reviewer(self, user_id: str, username: str) -> dict[str, Any]: ...
     def list_chat_reviewers(self) -> list[dict[str, Any]]: ...
 
@@ -750,6 +751,8 @@ class MemoryStore:
                     knowledgeBasePostUrl=None if was_resolved else value.get("knowledgeBasePostUrl"),
                     knowledgeBaseSourcePostId=None if was_resolved else value.get("knowledgeBaseSourcePostId"),
                     knowledgeBaseAnswer=None if was_resolved else value.get("knowledgeBaseAnswer"),
+                    knowledgeBaseSolutionSelectedAt=None if was_resolved else value.get("knowledgeBaseSolutionSelectedAt"),
+                    knowledgeBaseSolutionSelectedByUserId=None if was_resolved else value.get("knowledgeBaseSolutionSelectedByUserId"),
                     updatedAt=utc_now(),
                 )
                 self._community_responses.setdefault(case_id, []).append({
@@ -780,6 +783,7 @@ class MemoryStore:
                 "knowledgeBasePostId": None, "knowledgeBasePostUrl": None,
                 "knowledgeBaseSourcePostId": None, "knowledgeBaseAnswer": None,
                 "knowledgeBaseVersion": 0, "knowledgeBasePublishedAt": None,
+                "knowledgeBaseSolutionSelectedAt": None, "knowledgeBaseSolutionSelectedByUserId": None,
                 "correlationId": correlation_id, "createdAt": utc_now(), "updatedAt": utc_now(),
             }
             self._community_cases[case_id] = value
@@ -896,6 +900,7 @@ class MemoryStore:
                     conversationState="ANALYZING", resolvedPostId=None, resolvedByUserId=None,
                     resolvedAt=None, reopenedAt=value["updatedAt"], knowledgeBasePostId=None,
                     knowledgeBasePostUrl=None, knowledgeBaseSourcePostId=None, knowledgeBaseAnswer=None,
+                    knowledgeBaseSolutionSelectedAt=None, knowledgeBaseSolutionSelectedByUserId=None,
                 )
             self._community_events.append({
                 "caseId": case_id, "eventType": "CONVERSATION_REOPENED" if reopened else "TURN_RECORDED",
@@ -920,18 +925,37 @@ class MemoryStore:
             best_user = request.get("bestAnswerUserId")
             requester = value.get("requesterUserId")
             now = utc_now()
-            if best_post and best_user == requester:
+            knowledge_post = value.get("knowledgeBasePostId")
+            if best_post and knowledge_post and best_post == knowledge_post:
+                changed = (
+                    value.get("conversationState") != "RESOLVED"
+                    or value.get("knowledgeBaseSolutionSelectedAt") is None
+                )
+                value.update(
+                    conversationState="RESOLVED",
+                    knowledgeBaseSolutionSelectedAt=request.get("bestAnswerSetAt") or now,
+                    knowledgeBaseSolutionSelectedByUserId=best_user,
+                    updatedAt=now,
+                )
+                event_type = "KNOWLEDGE_BASE_SOLUTION_CONFIRMED"
+            elif best_post and best_user == requester:
                 changed = value.get("conversationState") != "RESOLVED" or value.get("resolvedPostId") != best_post
                 value.update(
                     conversationState="RESOLVED", resolvedPostId=best_post, resolvedByUserId=best_user,
-                    resolvedAt=request.get("bestAnswerSetAt") or now, updatedAt=now,
+                    resolvedAt=request.get("bestAnswerSetAt") or now,
+                    knowledgeBaseSolutionSelectedAt=None,
+                    knowledgeBaseSolutionSelectedByUserId=None,
+                    updatedAt=now,
                 )
                 event_type = "RESOLVED_BY_REQUESTER"
             elif best_post:
                 changed = value.get("resolvedPostId") != best_post or value.get("conversationState") == "RESOLVED"
                 value.update(
                     conversationState="WAITING_RESOLUTION", resolvedPostId=best_post,
-                    resolvedByUserId=best_user, resolvedAt=None, updatedAt=now,
+                    resolvedByUserId=best_user, resolvedAt=None,
+                    knowledgeBaseSolutionSelectedAt=None,
+                    knowledgeBaseSolutionSelectedByUserId=None,
+                    updatedAt=now,
                 )
                 event_type = "RESOLUTION_REVIEW_REQUIRED"
             elif value.get("conversationState") == "RESOLVED":
@@ -940,7 +964,8 @@ class MemoryStore:
                     conversationState="ANALYZING", resolvedPostId=None, resolvedByUserId=None,
                     resolvedAt=None, reopenedAt=now, knowledgeBasePostId=None,
                     knowledgeBasePostUrl=None, knowledgeBaseSourcePostId=None,
-                    knowledgeBaseAnswer=None, updatedAt=now,
+                    knowledgeBaseAnswer=None, knowledgeBaseSolutionSelectedAt=None,
+                    knowledgeBaseSolutionSelectedByUserId=None, updatedAt=now,
                 )
                 event_type = "RESOLUTION_UNSET_REOPENED"
             else:
@@ -1156,7 +1181,8 @@ class MemoryStore:
                 knowledgeBasePostId=publication["postId"], knowledgeBasePostUrl=publication["postUrl"],
                 knowledgeBaseSourcePostId=value["resolvedPostId"], knowledgeBaseAnswer=answer,
                 knowledgeBaseVersion=value.get("knowledgeBaseVersion", 0) + 1,
-                knowledgeBasePublishedAt=now, updatedAt=now,
+                knowledgeBasePublishedAt=now, knowledgeBaseSolutionSelectedAt=None,
+                knowledgeBaseSolutionSelectedByUserId=None, updatedAt=now,
             )
             self._community_events.append({
                 "caseId": case_id, "eventType": "KNOWLEDGE_BASE_PUBLISHED", "actor": "techflow-assistant",
@@ -1164,6 +1190,31 @@ class MemoryStore:
                 "details": {**deepcopy(publication), "resolvedPostId": value["resolvedPostId"]},
             })
             return self._remember("publish_community_knowledge", idempotency_key, value)
+
+    def mark_community_knowledge_solution_selected(
+        self, case_id: UUID, selection: dict[str, Any], idempotency_key: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("select_community_knowledge_solution", idempotency_key):
+                return repeated
+            value = self._community_cases.get(case_id)
+            if not value:
+                raise NotFoundError("community case not found")
+            if value.get("conversationState") != "RESOLVED" or not value.get("knowledgeBasePostId"):
+                raise InvalidStateError("knowledge base solution selection requires a published knowledge base")
+            if str(selection.get("postId")) != str(value["knowledgeBasePostId"]):
+                raise ConflictError("selected solution does not match the knowledge base post")
+            now = utc_now()
+            value.update(
+                knowledgeBaseSolutionSelectedAt=now,
+                knowledgeBaseSolutionSelectedByUserId=selection.get("selectedByUserId"),
+                updatedAt=now,
+            )
+            self._community_events.append({
+                "caseId": case_id, "eventType": "KNOWLEDGE_BASE_SOLUTION_SELECTED",
+                "actor": "techflow-integration", "createdAt": now, "details": deepcopy(selection),
+            })
+            return self._remember("select_community_knowledge_solution", idempotency_key, value)
 
     def upsert_chat_reviewer(self, user_id: str, username: str) -> dict[str, Any]:
         with self._lock:
