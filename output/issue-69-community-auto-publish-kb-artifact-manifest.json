@@ -1,0 +1,26 @@
+{
+  "issue": 69,
+  "generatedAt": "2026-08-13T08:12:22.463973+00:00",
+  "artifacts": [
+    {
+      "path": "docs/reports/issue-69-community-auto-publish-kb-validation.md",
+      "bytes": 8038,
+      "sha256": "7c0a1ab281c39611a471fb1fdd354a737c42ecef9325f577c634cf06cd73bc2d"
+    },
+    {
+      "path": "output/pdf/techflow-community-auto-publish-kb-report.pdf",
+      "bytes": 119737,
+      "sha256": "d14c50c926e24e720cd1eebdc6d6be58eaaf6da23f08e9817fcb9554c0d2dc0e"
+    },
+    {
+      "path": "output/presentation/techflow-community-auto-publish-kb.pptx",
+      "bytes": 27798,
+      "sha256": "3ec9b4afc7487d24a720e0dcaefcc80ec23b36a7f1ecb0f1cd006d3dd84d91dd"
+    },
+    {
+      "path": "output/pdf/techflow-community-auto-publish-kb-presentation.pdf",
+      "bytes": 383534,
+      "sha256": "c0fd0f3a638b8525b03d4b898f88b789ad20b6c50a188440db55701d5a446656"
+    }
+  ]
+}

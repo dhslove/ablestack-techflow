@@ -1,4 +1,4 @@
-"""Synology Chat Bot boundary for Community review and approval."""
+"""Synology Chat Bot boundary for Community publication observability."""
 
 from __future__ import annotations
 
@@ -95,15 +95,13 @@ def parse_command(event: ChatEvent) -> tuple[str, list[str]]:
 
 def help_text() -> str:
     return (
-        "TechFlow Community 승인 명령\n"
-        "• 연결 - 현재 Chat 계정을 승인 담당자로 연결\n"
-        "• 대기 - 승인 대기 목록\n"
+        "TechFlow Community 확인 명령\n"
+        "• 연결 - 현재 Chat 계정을 게시 알림 수신자로 연결\n"
+        "• 대기 - 처리 중이거나 실패한 답변 확인\n"
         "• 상세 <Discussion ID 또는 Case 앞 8자>\n"
         "• 근거 <Discussion ID 또는 Case 앞 8자> - 내부 검토 근거 표시\n"
-        "• 승인 <Case> <Version>\n"
-        "• 수정 <Case> <Version> <최종 답변>\n"
-        "• 반려 <Case> <Version> <사유>\n"
-        "• 이력 [Case]"
+        "• 이력 [Case]\n\n"
+        "답변은 승인 없이 Community에 바로 게시됩니다. Chat은 게시 상태를 확인하는 용도로 사용합니다."
     )
 
 
@@ -113,13 +111,17 @@ def case_reference(value: dict[str, Any]) -> str:
 
 def case_text(value: dict[str, Any], *, include_answer: bool = True) -> str:
     lines = [
-        f"[Community 검토] {value['title']}",
+        f"[Community 처리 상태] {value['title']}",
         f"Case {case_reference(value)} · Discussion #{value['discussionId']} · Version {value['draftVersion']}",
-        f"상태 {value['state']} · AI 판정 {value.get('answerState') or '-'}",
+        f"게시 상태 {value['state']} · 대화 상태 {value.get('conversationState') or '-'} · AI 판정 {value.get('answerState') or '-'}",
         f"질문: {value['discussionUrl']}",
     ]
-    if value.get("reviewPostUrl"):
-        lines.extend(["", "전체 답변 검토 및 승인:", value["reviewPostUrl"]])
+    if value.get("knowledgeBasePostUrl"):
+        lines.extend(["", "최종 Knowledge Base:", value["knowledgeBasePostUrl"]])
+    elif value.get("publishedPostUrl"):
+        lines.extend(["", "게시된 답변:", value["publishedPostUrl"]])
+    elif value.get("reviewPostUrl"):
+        lines.extend(["", "이전 방식의 검토 글:", value["reviewPostUrl"]])
     elif include_answer:
         answer = (value.get("draftAnswer") or "근거 기준을 충족한 답변 초안이 없습니다.").strip()
         lines.extend(["", "초안:", answer[:3500]])
@@ -158,21 +160,25 @@ def case_evidence_text(value: dict[str, Any]) -> str:
     return "\n".join(lines)[:7000]
 
 
-def case_card(value: dict[str, Any], *, new_notification: bool = False) -> dict[str, Any]:
+def case_card(value: dict[str, Any], *, notification_type: str | None = None) -> dict[str, Any]:
     reference, version = case_reference(value), value["draftVersion"]
-    actions = [{"type": "button", "name": "detail", "value": f"detail:{reference}", "text": "상세", "style": "blue"}]
-    if value.get("draftAnswer") and not value.get("reviewPostUrl"):
-        actions.append({"type": "button", "name": "approve", "value": f"approve:{reference}:{version}", "text": "승인·게시", "style": "green"})
-    if not value.get("reviewPostUrl"):
-        actions.append({"type": "button", "name": "reject", "value": f"reject:{reference}:{version}", "text": "반려", "style": "red"})
+    actions = [
+        {"type": "button", "name": "detail", "value": f"detail:{reference}", "text": "상태 확인", "style": "blue"},
+        {"type": "button", "name": "evidence", "value": f"evidence:{reference}", "text": "내부 근거", "style": "default"},
+    ]
     text = case_text(value, include_answer=False)
-    if new_notification:
-        text = "새 Community 글의 AI 답변이 준비되었습니다. Community 원문에서 검토하고 승인하세요.\n\n" + text
+    notices = {
+        "published": "Community에 AI 답변을 자동 게시했습니다. 링크에서 내용과 대화 흐름을 확인해 주세요.",
+        "knowledge": "질문자가 해결 표시를 완료해 최종 Knowledge Base를 게시했습니다.",
+        "review": "이전 승인 방식의 Community 검토 글이 생성됐습니다.",
+    }
+    if notification_type in notices:
+        text = f"{notices[notification_type]}\n\n{text}"
     return {
         "text": text,
         "attachments": [{
             "callback_id": f"community:{value['caseId']}:{version}",
-            "text": "전체 답변은 Community 검토 링크에서 확인합니다." if value.get("reviewPostUrl") else (value.get("draftAnswer") or "답변 초안 없음")[:1200],
+            "text": "Chat에는 상태만 표시합니다. 전체 답변은 Community 링크에서 확인하세요.",
             "actions": actions,
         }],
     }

@@ -42,7 +42,7 @@
     {"id": "TB05", "from": "runtime", "to": "state-stores", "requiredControls": ["C09", "C10"]},
     {"id": "TB06", "from": "knowledge-sources", "to": "rag-ingestion", "requiredControls": ["C11", "C12", "C13"]},
     {"id": "TB07", "from": "rag-gateway", "to": "ai-provider", "requiredControls": ["C14", "C15"]},
-    {"id": "TB08", "from": "ai-output", "to": "human-approval", "requiredControls": ["C16", "C17"]},
+    {"id": "TB08", "from": "ai-output", "to": "public-community", "requiredControls": ["C16", "C29", "C30"]},
     {"id": "TB09", "from": "techflow-core", "to": "activepieces", "requiredControls": ["C18", "C19"]},
     {"id": "TB10", "from": "techflow-core", "to": "ablestack-api", "requiredControls": ["C20", "C21"]},
     {"id": "TB11", "from": "operator", "to": "management-planes", "requiredControls": ["C22", "C23"]}
@@ -64,7 +64,7 @@
     {"id": "C14", "name": "approved-provider-data-contract", "owner": "product-security"},
     {"id": "C15", "name": "prompt-data-minimization", "owner": "rag-gateway"},
     {"id": "C16", "name": "mandatory-citation-and-abstention", "owner": "rag-gateway"},
-    {"id": "C17", "name": "human-approval-for-publication", "owner": "techflow-core"},
+    {"id": "C17", "name": "human-approval-for-state-changing-operations", "owner": "techflow-core"},
     {"id": "C18", "name": "policy-owned-by-core", "owner": "techflow-core"},
     {"id": "C19", "name": "immutable-flow-version", "owner": "activepieces-release"},
     {"id": "C20", "name": "command-idempotency-and-preconditions", "owner": "techflow-core-ablestack-api"},
@@ -75,7 +75,9 @@
     {"id": "C25", "name": "bounded-retention-and-log-rotation", "owner": "operations"},
     {"id": "C26", "name": "dependency-image-model-version-lock", "owner": "release"},
     {"id": "C27", "name": "cost-rate-concurrency-limits", "owner": "techflow-core-runtime"},
-    {"id": "C28", "name": "security-review-and-private-advisory", "owner": "security"}
+    {"id": "C28", "name": "security-review-and-private-advisory", "owner": "security"},
+    {"id": "C29", "name": "public-output-redaction-and-safe-projection", "owner": "rag-gateway"},
+    {"id": "C30", "name": "automatic-publication-audit-and-chat-observability", "owner": "techflow-core-operations"}
   ],
   "threats": [
     {"id": "T01", "name": "spoofed-webhook-callback", "assets": ["A02", "A04"], "boundaries": ["TB01", "TB02"], "likelihood": 4, "impact": 5, "controls": ["C01", "C02", "C03"], "residualLikelihood": 1, "residualImpact": 4, "tests": ["forged-signature", "modified-body", "wrong-organization"]},
@@ -88,10 +90,10 @@
     {"id": "T08", "name": "flow-policy-approval-bypass", "assets": ["A03", "A08"], "boundaries": ["TB09", "TB10"], "likelihood": 4, "impact": 5, "controls": ["C17", "C18", "C19", "C20"], "residualLikelihood": 1, "residualImpact": 5, "tests": ["unapproved-flow-version", "approval-snapshot-change", "policy-denial"]},
     {"id": "T09", "name": "payload-log-run-history-leak", "assets": ["A04", "A07"], "boundaries": ["TB03", "TB05"], "likelihood": 4, "impact": 4, "controls": ["C05", "C15", "C23", "C25"], "residualLikelihood": 1, "residualImpact": 4, "tests": ["raw-payload-absent", "allowed-field-log", "retention-expiry"]},
     {"id": "T10", "name": "backup-disclosure-corruption", "assets": ["A02", "A05"], "boundaries": ["TB05", "TB11"], "likelihood": 4, "impact": 5, "controls": ["C10", "C23", "C24", "C25"], "residualLikelihood": 1, "residualImpact": 5, "tests": ["secret-excluded", "checksum-valid", "isolated-restore", "retention-expiry"]},
-    {"id": "T11", "name": "direct-indirect-prompt-injection", "assets": ["A06", "A07", "A08"], "boundaries": ["TB06", "TB08"], "likelihood": 5, "impact": 4, "controls": ["C11", "C12", "C16", "C17", "C18"], "residualLikelihood": 2, "residualImpact": 3, "tests": ["malicious-document-instruction", "system-policy-preserved", "tool-call-denied"]},
+    {"id": "T11", "name": "direct-indirect-prompt-injection", "assets": ["A06", "A07", "A08"], "boundaries": ["TB06", "TB08"], "likelihood": 5, "impact": 4, "controls": ["C11", "C12", "C16", "C18", "C29", "C30"], "residualLikelihood": 2, "residualImpact": 3, "tests": ["malicious-document-instruction", "system-policy-preserved", "tool-call-denied", "public-output-redacted"]},
     {"id": "T12", "name": "knowledge-poisoning-provenance-forgery", "assets": ["A06", "A07"], "boundaries": ["TB06"], "likelihood": 4, "impact": 4, "controls": ["C11", "C12", "C13", "C24"], "residualLikelihood": 1, "residualImpact": 5, "tests": ["unapproved-source", "hash-change", "quarantine-before-index"]},
     {"id": "T13", "name": "classification-tenant-retrieval-leak", "assets": ["A06", "A07"], "boundaries": ["TB06", "TB07"], "likelihood": 5, "impact": 5, "controls": ["C13", "C14", "C15", "C24"], "residualLikelihood": 2, "residualImpact": 3, "tests": ["classification-filter-before-search", "d2-d3-blocked", "cross-scope-query"]},
-    {"id": "T14", "name": "hallucination-unsupported-answer", "assets": ["A07"], "boundaries": ["TB08"], "likelihood": 4, "impact": 4, "controls": ["C16", "C17"], "residualLikelihood": 2, "residualImpact": 3, "tests": ["missing-source-abstention", "conflicting-source-abstention", "citation-version-present"]},
+    {"id": "T14", "name": "hallucination-unsupported-answer", "assets": ["A07"], "boundaries": ["TB08"], "likelihood": 4, "impact": 4, "controls": ["C16", "C29", "C30"], "residualLikelihood": 2, "residualImpact": 3, "tests": ["missing-source-abstention", "conflicting-source-abstention", "citation-version-present", "publication-event-audited"]},
     {"id": "T15", "name": "excessive-ai-agency", "assets": ["A07", "A08"], "boundaries": ["TB08", "TB09", "TB10"], "likelihood": 5, "impact": 5, "controls": ["C17", "C18", "C20", "C21"], "residualLikelihood": 1, "residualImpact": 5, "tests": ["ai-output-cannot-execute", "human-approval-required", "api-authorization-rechecked"]},
     {"id": "T16", "name": "queue-model-cost-resource-exhaustion", "assets": ["A04", "A07", "A09"], "boundaries": ["TB03", "TB07"], "likelihood": 3, "impact": 5, "controls": ["C04", "C27"], "residualLikelihood": 2, "residualImpact": 3, "tests": ["size-limit", "rate-limit", "concurrency-limit", "budget-limit", "timeout"]},
     {"id": "T17", "name": "provider-retention-training-disclosure", "assets": ["A06", "A07"], "boundaries": ["TB07"], "likelihood": 4, "impact": 5, "controls": ["C13", "C14", "C15"], "residualLikelihood": 1, "residualImpact": 5, "tests": ["approved-provider-only", "d2-d3-not-sent", "retention-setting-recorded"]},

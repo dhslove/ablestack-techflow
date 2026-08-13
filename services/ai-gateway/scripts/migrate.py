@@ -105,9 +105,17 @@ def verify(connection: psycopg.Connection) -> None:
     ).fetchone()[0]
     if conversation_columns != 8:
         raise SystemExit(f"Community conversation schema mismatch expectedColumns=8 actual={conversation_columns}")
+    knowledge_columns = connection.execute(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND "
+        "table_name='community_case' AND column_name IN "
+        "('knowledge_base_post_id','knowledge_base_post_url','knowledge_base_source_post_id',"
+        "'knowledge_base_answer','knowledge_base_version','knowledge_base_published_at')"
+    ).fetchone()[0]
+    if knowledge_columns != 6:
+        raise SystemExit(f"Community Knowledge Base schema mismatch expectedColumns=6 actual={knowledge_columns}")
     print(f"schema=valid tables={len(EXPECTED_TABLES)} extensions=2 sourceProfiles=9 "
           "issue43Columns=8 issue45Columns=2 issue46Indexes=2 communityTables=4 issue22Tables=1 "
-          "issue64Columns=2 conversationColumns=8")
+          "issue64Columns=2 conversationColumns=8 knowledgeColumns=6")
 
 
 def main() -> int:
@@ -129,6 +137,12 @@ def main() -> int:
             conversation_present = connection.execute(
                 "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='community_turn'"
             ).fetchone()
+            knowledge_present = connection.execute(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='community_case' "
+                "AND column_name='knowledge_base_post_id'"
+            ).fetchone()
+            if knowledge_present:
+                connection.execute((MIGRATIONS / "0012_community_auto_publish_kb_down.sql").read_text(encoding="utf-8"))
             if conversation_present:
                 connection.execute((MIGRATIONS / "0011_community_conversation_down.sql").read_text(encoding="utf-8"))
             if issue64_present:
@@ -188,6 +202,7 @@ def main() -> int:
         connection.execute((MIGRATIONS / "0009_chat_approval_up.sql").read_text(encoding="utf-8"))
         connection.execute((MIGRATIONS / "0010_flarum_review_post_up.sql").read_text(encoding="utf-8"))
         connection.execute((MIGRATIONS / "0011_community_conversation_up.sql").read_text(encoding="utf-8"))
+        connection.execute((MIGRATIONS / "0012_community_auto_publish_kb_up.sql").read_text(encoding="utf-8"))
         verify(connection)
     return 0
 

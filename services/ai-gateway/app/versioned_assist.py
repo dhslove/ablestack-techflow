@@ -294,7 +294,81 @@ def _is_causal_artifact_finding(value: str) -> bool:
 
 
 def format_public_answer(result: dict[str, Any]) -> str | None:
+    """Render an ongoing Community reply in a friendly engineer-to-user voice.
+
+    Ongoing support replies intentionally avoid the fixed Knowledge Base section
+    template. They explain the current assessment, offer the safest next steps,
+    and ask only for information that is still needed.
+    """
+    citations = result.get("citations") or []
     if result.get("state") == "NEEDS_INFORMATION":
+        needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
+        lines = [
+            "확인을 도와드리겠습니다. 다만 지금 알려주신 내용만으로는 원인을 단정하기 어렵습니다.",
+            "아래 정보를 알려주시면 앞서 주신 내용과 함께 확인해서 다음 조치를 안내하겠습니다.",
+            "",
+        ]
+        lines.extend(f"- {simplify_public_text(item, citations)}" for item in needed)
+        return "\n".join(line for line in lines if line is not None).strip()
+    if result.get("state") == "ABSTAINED":
+        needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
+        lines = [
+            "확인을 도와드리겠습니다. 현재 자료만으로는 원인을 안전하게 하나로 좁히기 어려워 몇 가지 확인이 더 필요합니다.",
+            "우선 사용 중인 ABLESTACK Diplo 버전과 문제가 발생한 시각을 알려주세요. 가능하면 같은 시각의 관리 서버·호스트 로그나 화면 캡처도 함께 올려주세요.",
+        ]
+        if needed:
+            lines.extend(["", "특히 아래 내용을 확인해 주시면 좋습니다."])
+            lines.extend(f"- {simplify_public_text(item, citations)}" for item in needed[:6])
+        lines.extend(["", "자료를 댓글로 남겨주시면 지금 질문의 맥락을 유지해서 다음 확인 순서를 이어서 안내하겠습니다."])
+        return "\n".join(lines).strip()
+    if result.get("state") != "ANSWERED" or not result.get("report"):
+        return None
+
+    report = result["report"]
+    summary = simplify_public_text(report.get("summary"), citations)
+    diagnoses = _section_values(report.get("diagnoses") or [], citations)
+    actions = _section_values(report.get("recommendedActions") or [], citations)
+    unknowns = _section_values(report.get("unknowns") or [], citations)
+    artifact_findings = _section_values(report.get("artifactEvidence") or [], citations)
+    lines: list[str] = []
+
+    if summary:
+        lines.append(summary)
+    elif diagnoses:
+        lines.append(f"확인해 보니 {diagnoses[0]}")
+        diagnoses = diagnoses[1:]
+    else:
+        lines.append("말씀해 주신 현상을 기준으로 확인해 보겠습니다.")
+
+    if report.get("currentAssessment") == "CURRENT_RUNTIME_ISSUE":
+        lines.extend([
+            "",
+            "현재 자료로는 ABLESTACK 제품 코드의 오류라기보다 가상화 프로그램이 일시적으로 정상 상태를 잃은 문제에 가깝습니다.",
+        ])
+
+    if diagnoses:
+        lines.extend(["", "현재는 다음 원인을 먼저 살펴보는 것이 좋습니다."])
+        lines.extend(f"- {value}" for value in diagnoses[:3])
+    if artifact_findings:
+        lines.extend(["", "첨부해 주신 자료에서는 다음 내용을 확인했습니다."])
+        lines.extend(f"- {value}" for value in artifact_findings[:3])
+    if actions:
+        lines.extend(["", "먼저 아래 순서대로 확인해 주세요."])
+        lines.extend(f"{index}. {value}" for index, value in enumerate(actions[:6], 1))
+    if unknowns:
+        lines.extend([
+            "",
+            "확인을 이어가기 위해 아래 정보를 알려주세요. 이미 제공한 내용은 다시 보내지 않으셔도 됩니다.",
+        ])
+        lines.extend(f"- {value}" for value in unknowns[:6])
+    if not actions and not unknowns:
+        lines.extend(["", "진행 결과를 알려주시면 같은 맥락에서 다음 확인을 이어가겠습니다."])
+    return "\n".join(lines).strip()
+
+
+def format_knowledge_base(result: dict[str, Any]) -> str | None:
+    """Render the resolved conversation as a stable Knowledge Base article body."""
+    if result.get("state") in {"NEEDS_INFORMATION", "ABSTAINED"}:
         needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
         question = simplify_public_text(result.get("userQuestion"), [])
         lines = [
@@ -403,7 +477,7 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
     else:
         lines.append("- 현재 적용 기준: ABLESTACK Diplo(현재 출시판) - 판정 정보가 없습니다.")
     lines.append(f"- 차기 참고 기준: ABLESTACK Europa(미출시 Preview) - {preview_label}")
-    lines.extend(["", "> 이 답변은 ABLESTACK TechFlow가 제품 자료와 구현을 종합 검토한 뒤 담당자 승인을 거쳐 제공합니다."])
+    lines.extend(["", "> 이 문서는 질문자가 해결 답변으로 선택한 내용을 중심으로 TechFlow가 대화를 정리한 Knowledge Base입니다."])
     return "\n".join(line for line in lines if line is not None).strip()
 
 

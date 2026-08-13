@@ -1,10 +1,24 @@
 # ABLESTACK TechFlow
 
+## Issue #69 Community 자동 답변과 해결 기반 Knowledge Base
+
+Community Assist는 이제 관리자 승인 없이 `TechFlow-Assistant`가 답변을 바로 공개합니다. 진행 중 답변은 전문 엔지니어가 플랫폼을 처음 접한 사용자에게 설명하듯 쉽고 친절하게 작성하고, 필요한 확인 사항과 다음 행동을 자연스럽게 안내합니다. 질문자가 Best Answer를 선택하면 선택된 해결 답변과 전체 대화를 종합해 `증상·원인·해결 방법·추가 고려사항·적용 버전`의 Knowledge Base 최종본을 별도로 게시합니다.
+
+Chat은 더 이상 승인 채널이 아닙니다. 자동 답변 게시, Knowledge Base 게시, 실패 상태와 Community 원문 링크를 담당자에게 알려 정상 동작을 관찰하는 채널입니다. 인프라를 변경하는 TechFlow Ops의 승인 정책은 이번 변경 대상이 아닙니다.
+
+- [자동 게시·Knowledge Base 설계](docs/plans/issue-69-community-auto-publish-kb-design.md)
+- [아키텍처 결정 ADR-0010](docs/adr/0010-community-auto-publish-knowledge-base.md)
+- [배포·운영 Runbook](docs/runbooks/community-conversation.md)
+- [구현·검증 보고서](docs/reports/issue-69-community-auto-publish-kb-validation.md)
+- [완료 보고서 PDF](output/pdf/techflow-community-auto-publish-kb-report.pdf)
+- [발표자료 PDF](output/pdf/techflow-community-auto-publish-kb-presentation.pdf)
+- [발표자료 PPTX](output/presentation/techflow-community-auto-publish-kb.pptx)
+
 ## Community Discussion #164 후속 답변 복구
 
 macOS에서 만든 로그 ZIP의 `__MACOSX`·AppleDouble 메타데이터 때문에 실제 로그까지 거부되고 Community Poller가 같은 구간에서 반복되던 장애를 AI Gateway 0.13.2에서 복구했습니다. 실제 로그는 보안 검사를 유지한 채 수집하고, 처리 불가 첨부는 안전한 안내로 전환하며, 성공 Post를 원자적으로 체크포인트해 하나의 실패가 전체 Community 큐를 막지 않습니다. AI 생성이 일시 실패한 후속 Turn도 같은 맥락에서 재시도할 수 있습니다.
 
-Discussion #164의 Post #358 로그는 Artifact로 등록돼 검토용 Post #359가 생성됐습니다. 이후 질문자가 올린 보완 로그 Post #361도 재분석해 최신 검토용 Post #362를 생성했습니다. 현재 `DRAFT_PENDING / WAITING_REVIEW`로, 담당자는 Chat 링크에서 원문을 확인한 뒤 공개 여부를 승인합니다.
+Discussion #164의 Post #358 로그와 보완 로그 Post #361은 같은 Conversation으로 분석합니다. 0.14.0부터 기존 승인 대기 초안도 대화체로 바꿔 자동 공개하고, 이후 질문자가 해결 답변을 선택하면 별도의 Knowledge Base 최종본을 생성합니다.
 
 - [Discussion #164 장애 복구 보고서](docs/reports/discussion-164-community-followup-recovery.md)
 - [Community 지속 대화 운영 Runbook](docs/runbooks/community-conversation.md)
@@ -12,9 +26,9 @@ Discussion #164의 Post #358 로그는 Artifact로 등록돼 검토용 Post #359
 - [장애 복구 프레젠테이션 PDF](output/pdf/techflow-community-discussion-164-recovery-presentation.pdf)
 - [장애 복구 프레젠테이션 PPTX](output/presentation/techflow-community-discussion-164-recovery.pptx)
 
-## Issues #66-#68 Community 지속 대화와 해결 상태
+## Issues #66-#68 Community 지속 대화와 해결 상태 (Issue #69로 게시 정책 대체)
 
-Community Assist는 질문 한 건에 한 번 답하고 종료하지 않습니다. 질문자가 후속 댓글과 이미지, 로그 또는 로그 압축 파일을 추가하면 같은 Case의 대화 맥락으로 다시 분석하고, 담당자가 Community에서 전체 답변을 검토·승인합니다. 질문자가 Best Answer로 해결 표시를 할 때까지 맥락을 유지하며, 해결 표시가 해제되면 같은 Case를 다시 엽니다.
+Community Assist는 질문 한 건에 한 번 답하고 종료하지 않습니다. 질문자가 후속 댓글과 이미지, 로그 또는 로그 압축 파일을 추가하면 같은 Case의 대화 맥락으로 다시 분석합니다. 질문자가 Best Answer로 해결 표시를 할 때까지 맥락을 유지하며, 해결 표시가 해제되면 같은 Case를 다시 엽니다. 답변 공개 정책은 Issue #69의 자동 게시 정책을 따릅니다.
 
 사용자 답변은 별도 제목 없이 `증상`부터 시작하고, 적용 버전은 `ABLESTACK Diplo`, `ABLESTACK Europa`로 표시합니다. Citation·Repository·Commit 등 내부 근거는 사용자 본문에 노출하지 않습니다.
 
@@ -25,7 +39,7 @@ Community Assist는 질문 한 건에 한 번 답하고 종료하지 않습니�
 - [검토 프레젠테이션 PDF](output/pdf/techflow-community-conversation-presentation.pdf)
 - [검토 프레젠테이션 PPTX](output/presentation/techflow-community-conversation.pptx)
 
-## Issue #64 Community 원문 승인형 AI 답변
+## Issue #64 Community 원문 검토형 AI 답변 (Issue #69로 승인 정책 대체)
 
 Chat 길이 제한으로 전체 AI 답변을 검토할 수 없던 문제를 해결했습니다. 별도 일반 계정 `TechFlow-Assistant`가 Community에 전체 답변을 `승인 대기 중`으로 등록하고, Chat은 담당자에게 원문 검토 링크만 전달합니다. 관리자는 질문·답변·이미지·로그 압축 분석 내용을 Community에서 확인한 뒤 Flarum Approval로 공개를 결정합니다.
 

@@ -1,0 +1,143 @@
+# Issue #69 Community 자동 답변·Knowledge Base 구현 및 검증 보고서
+
+- 검증일: 2026-08-13
+- 환경: TechFlow 시험 서버, ABLESTACK Community, Synology Chat
+- 릴리스: TechFlow AI Gateway 0.14.0
+- 구현 PR: [#65](https://github.com/ablecloud-team/ablestack-techflow/pull/65)
+- 실제 후속 질문: [Discussion #164](https://community.ablecloud.io/d/164-gasangmeosin-sijag-mic-maigeureisyeon-oryu)
+- 자동 게시·KB E2E: [Discussion #165](https://community.ablecloud.io/d/165-techflow-knowledge-base)
+
+## 1. 결론
+
+Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신규 질문과 후속 질문에 바로 답변하고, Chat은 승인 대신 게시 결과와 원문 링크를 담당자에게 알려주는 관찰 채널로 동작한다.
+
+진행 중 답변은 더 이상 매번 `증상·원인·해결 방법·추가 고려사항·적용 버전`을 강제하지 않는다. 전문 엔지니어가 플랫폼을 처음 접한 사용자에게 설명하듯 현재 판단, 안전한 확인 순서, 추가로 필요한 정보와 다음 행동을 쉬운 문장으로 안내한다. 질문자가 해결 답변을 선택한 뒤에만 해당 답변과 전체 대화를 다시 종합해 Knowledge Base 최종본을 게시한다.
+
+## 2. 최종 동작
+
+| 구분 | 구현 결과 |
+| --- | --- |
+| 신규·후속 질문 | AI-Assistant 답변 즉시 공개 |
+| 근거 부족 | 빈 초안 대신 필요한 버전·시각·로그·화면 요청 |
+| 대화 맥락 | Best Answer 선택 전까지 Discussion 단위 유지 |
+| 첨부자료 | 이미지·로그·ZIP/TAR.GZ 분석 결과를 같은 맥락에 누적 |
+| 해결 선택 | 질문자 Best Answer만 `RESOLVED`로 인정 |
+| 최종 문서 | 선택 답변 중심 KB를 한 번만 게시 |
+| Chat | 게시·KB·실패 상태와 원문 링크 알림 |
+| 내부 근거 | Community에는 숨기고 `근거 <Case>`에서만 조회 |
+| Ops 승인 | 인프라 변경 승인 정책은 그대로 유지 |
+
+## 3. 실제 E2E
+
+### 3.1 Discussion #164 기존 답변 전환
+
+기존 Flarum 승인 방식으로 공개된 문서형 Post #362를 새 정책으로 한 번만 마이그레이션했다.
+
+- 자동 공개 Post: #363
+- 작성자: AI-Assistant(User 40)
+- Case Reviewer: `techflow:auto`
+- 상태: `PUBLISHED / WAITING_RESOLUTION`
+- 제목형 Heading: 없음
+- 내부 Citation·Repository·Commit: 없음
+- 보이는 시스템 Marker: 없음
+
+이후 질문자가 Diplo 빌드와 추가 질문을 Post #364로 등록하자 Poller → Activepieces → AI Gateway 경로가 자동 실행되어 Post #365를 승인 없이 공개했다. 답변은 앞서 제공된 자료를 반복 요청하지 않도록 안내하고, 안전한 확인 순서와 필요한 로그를 자연스러운 문장으로 제시했다.
+
+### 3.2 근거 부족 답변도 자동 공개
+
+시험 Discussion #165의 최초 질문 Post #366은 검색 근거가 충분하지 않아 AI가 `ABSTAINED`를 반환했다. 기존 구현이라면 본문이 없는 `DRAFT_PENDING`으로 남았지만, 보완 후 다음 내용을 담은 Post #367을 즉시 공개했다.
+
+- 현재 정보만으로 원인을 안전하게 좁히기 어렵다는 설명
+- ABLESTACK Diplo 버전과 발생 시각 요청
+- 관리 서버·호스트 로그 또는 화면 캡처 요청
+- 같은 질문 맥락에서 후속 안내를 계속한다는 설명
+
+Post #367은 Heading, 내부 근거, 보이는 Marker가 없고 Flarum `isApproved=true`이다.
+
+### 3.3 해결 선택 후 Knowledge Base
+
+시험 질문자(User 1)가 Post #367을 Best Answer로 선택했다. Poller가 해결 이벤트를 전달하고 Case는 `RESOLVED`로 전환됐다. AI가 근거 부족을 유지했으므로 원인을 지어내지 않고 다음 형식의 Post #368을 공개했다.
+
+1. 증상
+2. 원인
+3. 해결 방법
+4. 추가 고려사항
+5. 적용 버전
+
+최종 증적:
+
+- `resolved_post_id=367`
+- `knowledge_base_post_id=368`
+- `knowledge_base_source_post_id=367`
+- `knowledge_base_version=1`
+- 적용 버전: `ABLESTACK Diplo`, `ABLESTACK Europa`
+- 내부 Citation·Repository·Commit: 없음
+- 같은 해결 이벤트 재실행: `resolutionChanged=false`, Post #368 재사용, Version 1 유지
+
+## 4. 구현 상세
+
+### 4.1 상태와 데이터
+
+Migration `0012`는 `community_case`에 KB Post ID·URL, 선택 답변 Post ID, 최종 본문, Version, 게시 시각 6개 열을 추가했다. 일반 자동 답변은 `AUTO_PUBLISHED`, 최종 KB는 `KNOWLEDGE_BASE_PUBLISHED` 이벤트로 감사 이력을 남긴다.
+
+### 4.2 Flarum 공개
+
+AI-Assistant 계정으로 Post를 생성한다. Flarum Approval 확장이 Assistant 글을 보류하면 통합 권한이 방금 생성한 정확한 Post만 공개 전환한다. 사람의 승인 대기열은 사용하지 않는다.
+
+재시도 Marker는 원문을 그대로 붙이지 않는다. Marker를 SHA-256한 0폭 링크를 사용해 중복 게시를 막고, 사용자 화면에는 시스템 식별자가 보이지 않게 했다.
+
+### 4.3 Chat 관찰
+
+Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동 게시 정책을 안내한다. 담당자는 다음 명령만 사용한다.
+
+- `대기`: 미게시·실패 Case 확인
+- `상세 <Case>`: 질문과 Community 원문 링크 확인
+- `근거 <Case>`: 내부 Citation과 Coverage 확인
+- `이력 <Case>`: 자동 게시와 KB 감사 이력 확인
+
+## 5. 장애·재시도 검증
+
+삭제된 Discussion #163의 과거 해결 이력으로 KB를 생성했을 때 Flarum 404가 발생했다. TechFlow는 해결 상태를 유지하고 KB를 게시 완료로 기록하지 않은 채 HTTP 503을 반환했다. 실제 존재하는 Discussion #165로 재검증해 Post #368 게시를 완료했다.
+
+`ABSTAINED`가 빈 초안으로 남는 문제와 HTML 주석 Marker가 사용자 화면에 보이는 문제도 E2E 중 발견했다. 각각 안전한 정보 요청 답변과 보이지 않는 해시 링크로 보완했다.
+
+## 6. 검증 결과
+
+| 항목 | 결과 |
+| --- | --- |
+| Python 단위·통합 테스트 | 210건 전체 통과 |
+| OpenAPI | 34 Operations |
+| DB Migration | 24 Tables, KB Columns 6, 검증 통과 |
+| Gateway Health | Process·Database·Vector `ready`, Provider `openai` |
+| Gateway Version | 0.14.0 |
+| Discussion #164 후속 자동 답변 | Post #365, 공개 완료 |
+| Discussion #165 근거 부족 자동 답변 | Post #367, 공개 완료 |
+| Discussion #165 KB | Post #368, Version 1 |
+| Chat 담당자 | 자동 게시 알림 전송 확인 |
+| 내부 근거·Marker 공개 | 0건 |
+| 루트 디스크 | 1005G 중 37G 사용, 927G 여유 |
+
+## 7. 배포·복구 자산
+
+배포 전 Gateway 소스·Migration·Compose·환경 설정과 PostgreSQL 전체 덤프를 서버 내부 권한 제한 디렉터리에 백업했다.
+
+- 백업: `/home/ablecloud/techflow-ai-gateway/backups/issue69-predeploy-20260813T073633Z`
+- DB 덤프: 1,756,637,470 bytes
+- SHA-256: `9efb843ee23d1076c5da5cfc91aa6a5adcde58997a05949dd82edfac321ef565`
+- 배포 이미지: `techflow/ai-gateway:issue-69-community-auto-publish-kb`
+
+Rollback은 자동 게시 환경값을 끄고 Gateway·Poller를 이전 이미지로 되돌린 뒤, 필요할 때 Migration `0012 down`을 적용한다. 이미 공개된 Community 답변과 KB는 자동 삭제하지 않는다.
+
+보호 대상 GitHub→Chat Event Gateway는 작업 전후 Container ID `bf5c76824dbf`, Image `ablestack-techflow/event-gateway:0.4.0`, 생성 시각이 동일하다. 변경·재배포·재시작하지 않았다.
+
+## 8. 완료 판단
+
+Issue #69의 완료 기준을 충족했다.
+
+1. 진행 답변은 쉬운 대화형 문장으로 승인 없이 공개된다.
+2. 근거가 부족해도 필요한 정보를 요청하는 답변이 남는다.
+3. 질문자 해결 선택 전까지 같은 맥락을 유지한다.
+4. 해결 선택 후에만 정형 Knowledge Base가 생성된다.
+5. KB는 선택 Post와 연결되고 멱등하게 한 번만 게시된다.
+6. Chat은 승인 없이 게시 상태를 관찰한다.
+7. 사용자 본문에는 내부 근거와 시스템 Marker가 노출되지 않는다.

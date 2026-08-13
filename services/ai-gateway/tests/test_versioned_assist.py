@@ -14,6 +14,7 @@ from app.versioned_assist import (
     evidence_priority,
     expand_retrieval_question,
     format_public_answer,
+    format_knowledge_base,
     projection_is_safe,
     relevant_results,
     sanitize_public_text,
@@ -99,7 +100,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             "citations": [citation],
         }
         answer = format_public_answer(result) or ""
-        self.assertIn("가상화 프로그램의 일시적인 상태 문제", answer)
+        self.assertIn("가상화 프로그램이 일시적으로 정상 상태를 잃은 문제", answer)
         self.assertNotIn("operator://", answer)
         self.assertNotIn("sourceLocator", answer)
         self.assertTrue(projection_is_safe(answer), answer)
@@ -140,7 +141,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             },
             "citations": [citation],
         }
-        answer = format_public_answer(result) or ""
+        answer = format_knowledge_base(result) or ""
         self.assertTrue(projection_is_safe(answer), answer)
         headings = ["### 증상", "### 원인", "### 해결 방법", "### 추가 고려사항", "### 적용 버전"]
         self.assertTrue(all(heading in answer for heading in headings), answer)
@@ -156,7 +157,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertEqual("DNS Domain Name Suffix를 확인합니다.", answer)
 
     def test_troubleshooting_sections_remain_when_optional_content_is_empty(self) -> None:
-        answer = format_public_answer({
+        answer = format_knowledge_base({
             "state": "ANSWERED",
             "report": {
                 "summary": "현상을 확인했습니다.", "observedFacts": [], "diagnoses": [],
@@ -215,7 +216,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             },
             "citations": [],
         }
-        answer = format_public_answer(result) or ""
+        answer = format_knowledge_base(result) or ""
         symptom = answer.split("### 증상", 1)[1].split("### 원인", 1)[0]
         cause = answer.split("### 원인", 1)[1].split("### 해결 방법", 1)[0]
         self.assertIn("콘솔 창은 표시되지만 연결중 상태에서 더 진행되지 않습니다", symptom)
@@ -244,7 +245,7 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             },
             "citations": [],
         }
-        answer = format_public_answer(result) or ""
+        answer = format_knowledge_base(result) or ""
         cause = answer.split("### 원인", 1)[1].split("### 해결 방법", 1)[0]
         self.assertIn("still_open", cause)
         self.assertIn("waiting", cause)
@@ -271,13 +272,26 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             },
             "citations": [],
         }
-        answer = format_public_answer(result) or ""
+        answer = format_knowledge_base(result) or ""
         symptom = answer.split("### 증상", 1)[1].split("### 원인", 1)[0]
         cause = answer.split("### 원인", 1)[1].split("### 해결 방법", 1)[0]
         considerations = answer.split("### 추가 고려사항", 1)[1].split("### 적용 버전", 1)[0]
         self.assertNotIn("품질 검증 슬라이드", symptom)
         self.assertNotIn("품질 검증 슬라이드", cause)
         self.assertIn("품질 검증 슬라이드", considerations)
+
+    def test_abstained_answer_still_asks_for_information_in_a_friendly_voice(self) -> None:
+        answer = format_public_answer({"state": "ABSTAINED", "plan": {"questionsNeeded": []}}) or ""
+        self.assertIn("확인을 도와드리겠습니다", answer)
+        self.assertIn("ABLESTACK Diplo 버전", answer)
+        self.assertIn("맥락을 유지", answer)
+        self.assertNotIn("###", answer)
+
+        knowledge = format_knowledge_base({"state": "ABSTAINED", "plan": {"questionsNeeded": []}}) or ""
+        self.assertIn("### 증상", knowledge)
+        self.assertIn("### 원인", knowledge)
+        self.assertIn("현재 정보만으로는 원인을 확정할 수 없습니다", knowledge)
+        self.assertIn("### 적용 버전", knowledge)
 
 
 if __name__ == "__main__":

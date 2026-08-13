@@ -65,6 +65,37 @@ def build_conversation_question(
     )[:limit]
 
 
+def build_knowledge_base_question(
+    title: str,
+    turns: Iterable[dict[str, Any]],
+    resolved_post_id: str,
+    *,
+    limit: int = 6000,
+) -> str:
+    """Build a final synthesis prompt after the requester marks a solution."""
+    rows = sorted(
+        list(turns),
+        key=lambda item: (int(item.get("postNumber") or 0), str(item.get("sourcePostId") or "")),
+    )
+    transcript: list[str] = []
+    for item in rows[-20:]:
+        label = ROLE_LABELS.get(str(item.get("role") or "STAFF"), "참여자")
+        content = str(item.get("content") or "").strip()[:1200]
+        selected = " [질문자가 선택한 해결 답변]" if str(item.get("sourcePostId")) == resolved_post_id else ""
+        transcript.append(f"- #{item.get('postNumber') or '-'} {label}{selected}: {content}")
+    prompt = (
+        f"[Community 해결 완료 주제]\n{title}\n\n"
+        "[전체 대화]\n"
+        + "\n".join(transcript)
+        + "\n\n[최종 Knowledge Base 작성 지침]\n"
+        "질문자가 해결 답변으로 선택한 내용을 중심으로 전체 대화를 종합하십시오. "
+        "확인되지 않은 추측이나 대화 중 폐기된 가설은 최종 해결책으로 쓰지 마십시오. "
+        "증상에는 사용자가 겪은 현상만, 원인에는 확인된 원인만, 해결 방법에는 실제 해결에 기여한 조치만 배치하십시오. "
+        "일반 사용자도 이해할 수 있는 짧고 쉬운 한국어를 사용하십시오. 제목은 만들지 마십시오."
+    )
+    return prompt[:limit]
+
+
 def conversation_state_for_draft(draft: dict[str, Any]) -> str:
-    """A generated reply must be reviewed before waiting on the requester or resolution."""
-    return "WAITING_REVIEW" if draft.get("draftAnswer") else "WAITING_REQUESTER"
+    """A generated reply moves directly to publication or waits for more requester data."""
+    return "ANALYZING" if draft.get("draftAnswer") else "WAITING_REQUESTER"

@@ -138,7 +138,7 @@ class ChatParsingTest(unittest.TestCase):
         event = parse_chat_event("application/x-www-form-urlencoded", urlencode(payload).encode())
         self.assertEqual(("approve", ["abcdef12", "1"]), parse_command(event))
 
-    def test_card_contains_review_actions(self) -> None:
+    def test_card_contains_observability_actions_only(self) -> None:
         store = MemoryStore()
         case = store.create_community_case(
             {"discussionId": "901", "discussionUrl": "https://community.ablecloud.io/d/901",
@@ -148,7 +148,7 @@ class ChatParsingTest(unittest.TestCase):
         )
         card = case_card(case)
         names = [item["name"] for item in card["attachments"][0]["actions"]]
-        self.assertEqual(["detail", "approve", "reject"], names)
+        self.assertEqual(["detail", "evidence"], names)
 
     def test_detail_hides_evidence_and_explicit_evidence_renders_it(self) -> None:
         store = MemoryStore()
@@ -198,7 +198,7 @@ class ChatEndpointTest(unittest.TestCase):
     def test_connect_registers_identity_and_lists_pending(self) -> None:
         response = self.post(form("연결"))
         self.assertEqual(200, response.status_code)
-        self.assertIn("승인 담당자로 연결", response.json()["text"])
+        self.assertIn("게시 알림 수신자로 연결", response.json()["text"])
         self.assertEqual("ceo", self.store.list_chat_reviewers()[0]["username"])
 
     def test_new_case_notifies_connected_reviewer(self) -> None:
@@ -221,10 +221,10 @@ class ChatEndpointTest(unittest.TestCase):
         )
         self.assertEqual(201, response.status_code)
         self.assertEqual(["7"], self.bot.sent[0][0])
-        self.assertIn("새 Community 글의 AI 답변이 준비", self.bot.sent[0][1]["text"])
+        self.assertIn("이전 승인 방식", self.bot.sent[0][1]["text"])
         self.assertIn("새 Community 질문", self.bot.sent[0][1]["text"])
         self.assertNotIn("Citation", json.dumps(self.bot.sent[0][1], ensure_ascii=False))
-        self.assertEqual(["detail", "reject"], [
+        self.assertEqual(["detail", "evidence"], [
             action["name"] for action in self.bot.sent[0][1]["attachments"][0]["actions"]
         ])
 
@@ -257,11 +257,11 @@ class ChatEndpointTest(unittest.TestCase):
             case["caseId"], {"postId": "990", "postUrl": "https://community.ablecloud.io/d/990/990"},
             "review-link-attach",
         )
-        message = case_card(attached, new_notification=True)
+        message = case_card(attached, notification_type="review")
         rendered = json.dumps(message, ensure_ascii=False)
         self.assertIn("https://community.ablecloud.io/d/990/990", rendered)
         self.assertNotIn(case["draftAnswer"], message["attachments"][0]["text"])
-        self.assertEqual(["detail"], [item["name"] for item in message["attachments"][0]["actions"]])
+        self.assertEqual(["detail", "evidence"], [item["name"] for item in message["attachments"][0]["actions"]])
         flarum.approved = True
         reconciled = client.post(
             "/v1/community/reviews/reconcile",
@@ -309,12 +309,12 @@ class ChatEndpointTest(unittest.TestCase):
         self.assertEqual("990", recovered["reviewPostId"])
         self.assertIn(recovered["reviewPostUrl"], json.dumps(bot.sent[0][1], ensure_ascii=False))
 
-    def test_approve_uses_chat_identity_and_publishes(self) -> None:
+    def test_legacy_approval_command_explains_automatic_publication(self) -> None:
         reference = str(self.case["caseId"])[:8]
         response = self.post(form(f"승인 {reference} 1", post_id="approve-100"))
         self.assertEqual(200, response.status_code)
-        self.assertIn("PUBLISHED", response.json()["text"])
-        self.assertEqual("chat:ceo", self.store.get_community_case(self.case["caseId"])["reviewer"])
+        self.assertIn("승인 없이 자동 게시", response.json()["text"])
+        self.assertEqual("DRAFT_PENDING", self.store.get_community_case(self.case["caseId"])["state"])
 
     def test_detail_hides_evidence_and_evidence_command_requires_reviewer(self) -> None:
         reference = str(self.case["caseId"])[:8]
@@ -334,7 +334,8 @@ class ChatEndpointTest(unittest.TestCase):
     def test_general_user_can_submit_technical_question_without_reviewer_rights(self) -> None:
         response = self.post(form("VM 배포 오류의 원인을 알려줘", username="other"))
         self.assertEqual(200, response.status_code)
-        self.assertIn("답변을 보류", response.json()["text"])
+        self.assertIn("확인을 도와드리겠습니다", response.json()["text"])
+        self.assertIn("ABLESTACK Diplo 버전", response.json()["text"])
 
     def test_bad_token_is_denied_without_detail(self) -> None:
         response = self.post(form("대기", token="wrong"))

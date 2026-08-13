@@ -1,9 +1,11 @@
-"""Flarum Community draft formatting and approved-only publishing boundary."""
+"""Flarum Community answer publishing boundary."""
 
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +16,21 @@ from .store import InvalidBoundaryError
 
 class FlarumResourceNotFound(RuntimeError):
     """A Flarum object was permanently removed or is no longer visible to the configured identity."""
+
+
+def _marker_url(marker: str) -> str:
+    digest = sha256(marker.encode("utf-8")).hexdigest()
+    return f"https://community.ablecloud.io/_techflow/{digest}"
+
+
+def _marked_content(answer: str, marker: str) -> str:
+    """Keep idempotency searchable without showing an implementation marker to readers."""
+    return f"{answer}\n\n[\u200b]({_marker_url(marker)})"
+
+
+def _has_marker(attributes: dict[str, Any], marker: str) -> bool:
+    content = f"{attributes.get('contentHtml') or ''}\n{attributes.get('content') or ''}"
+    return marker in content or _marker_url(marker) in content
 
 
 TAG_PROFILE_MAP = {
@@ -51,6 +68,46 @@ def format_draft(result: dict[str, Any]) -> str | None:
     from .versioned_assist import format_public_answer
 
     return format_public_answer(result)
+
+
+def conversationalize_answer(answer: str) -> str:
+    """Convert a legacy sectioned draft to a friendly ongoing reply.
+
+    New drafts are already conversational. This adapter exists for pending
+    answers created before the automatic-publication policy was enabled.
+    """
+    value = answer.strip()
+    if "### " not in value:
+        return value
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for raw in value.splitlines():
+        line = raw.strip()
+        if line.startswith("### "):
+            current = line[4:].strip()
+            sections[current] = []
+        elif current and line and not line.startswith("<!--") and not line.startswith(">"):
+            sections[current].append(re.sub(r"^(?:[-*]|\d+[.)])\s*", "", line))
+    causes = sections.get("원인") or []
+    actions = sections.get("해결 방법") or []
+    needed = sections.get("추가로 필요한 정보") or []
+    considerations = sections.get("추가 고려사항") or []
+    lines = ["말씀해 주신 현상을 확인해 보겠습니다."]
+    if causes:
+        lines.extend(["", "현재는 다음 원인을 먼저 살펴보는 것이 좋습니다."])
+        lines.extend(f"- {item}" for item in causes[:3])
+    if actions:
+        lines.extend(["", "먼저 아래 순서대로 확인해 주세요."])
+        lines.extend(f"{index}. {item}" for index, item in enumerate(actions[:6], 1))
+    if needed:
+        lines.extend(["", "확인을 이어가기 위해 아래 정보를 알려주세요."])
+        lines.extend(f"- {item}" for item in needed[:6])
+    useful_considerations = [item for item in considerations if "별도의 추가" not in item]
+    if useful_considerations:
+        lines.extend(["", "확인하실 때 다음 내용도 참고해 주세요."])
+        lines.extend(f"- {item}" for item in useful_considerations[:3])
+    lines.extend(["", "확인 결과를 댓글로 알려주시면 같은 맥락에서 다음 조치를 이어서 안내하겠습니다."])
+    return "\n".join(lines).strip()
 
 
 class FlarumClient:
@@ -114,13 +171,13 @@ class FlarumClient:
         existing = self._request(f"/api/posts?{query}")
         for item in existing.get("data") or []:
             attributes = item.get("attributes") or {}
-            if marker in (attributes.get("contentHtml") or "") or marker in (attributes.get("content") or ""):
+            if _has_marker(attributes, marker):
                 post_id = str(item["id"])
                 return {"postId": post_id, "postUrl": f"{self.public_url}/d/{discussion_id}/{post_id}", "reused": True}
         body = json.dumps({
             "data": {
                 "type": "posts",
-                "attributes": {"content": f"{answer}\n\n{marker}"},
+                "attributes": {"content": _marked_content(answer, marker)},
                 "relationships": {"discussion": {"data": {"type": "discussions", "id": discussion_id}}},
             }
         }, ensure_ascii=False).encode("utf-8")
@@ -139,7 +196,7 @@ class FlarumClient:
         assistant_user_id = self._assistant_user_id()
         for item in existing.get("data") or []:
             attributes = item.get("attributes") or {}
-            if marker in (attributes.get("contentHtml") or "") or marker in (attributes.get("content") or ""):
+            if _has_marker(attributes, marker):
                 author_id = str((((item.get("relationships") or {}).get("user") or {}).get("data") or {}).get("id") or "")
                 if author_id != assistant_user_id:
                     continue
@@ -150,7 +207,7 @@ class FlarumClient:
         body = json.dumps({
             "data": {
                 "type": "posts",
-                "attributes": {"content": f"{answer}\n\n{marker}"},
+                "attributes": {"content": _marked_content(answer, marker)},
                 "relationships": {"discussion": {"data": {"type": "discussions", "id": discussion_id}}},
             }
         }, ensure_ascii=False).encode("utf-8")
@@ -160,6 +217,55 @@ class FlarumClient:
             raise InvalidBoundaryError("Flarum did not hold the assistant reply for approval")
         post_id = str(payload["data"]["id"])
         return {"postId": post_id, "postUrl": f"{self.public_url}/d/{discussion_id}/{post_id}", "isApproved": False, "reused": False}
+
+    def publish_assistant_reply(self, discussion_id: str, answer: str, marker: str) -> dict[str, Any]:
+        """Publish as the assistant and make the post public without a human approval step.
+
+        The Flarum Approval extension can still hold posts created by the restricted
+        assistant account. In that case the privileged integration identity approves
+        only the exact post it just created. This preserves the assistant author while
+        removing the former moderator workflow.
+        """
+        if not self.enabled:
+            raise InvalidBoundaryError("community publishing is disabled")
+        query = urllib.parse.urlencode({"filter[discussion]": discussion_id, "page[limit]": "50"})
+        existing = self._request(f"/api/posts?{query}", as_assistant=True)
+        assistant_user_id = self._assistant_user_id()
+        for item in existing.get("data") or []:
+            attributes = item.get("attributes") or {}
+            if not _has_marker(attributes, marker):
+                continue
+            author_id = str((((item.get("relationships") or {}).get("user") or {}).get("data") or {}).get("id") or "")
+            if author_id != assistant_user_id:
+                continue
+            return self._ensure_public(discussion_id, item, reused=True)
+        body = json.dumps({
+            "data": {
+                "type": "posts",
+                "attributes": {"content": _marked_content(answer, marker)},
+                "relationships": {"discussion": {"data": {"type": "discussions", "id": discussion_id}}},
+            }
+        }, ensure_ascii=False).encode("utf-8")
+        payload = self._request("/api/posts", "POST", body, as_assistant=True)
+        return self._ensure_public(discussion_id, payload["data"], reused=False)
+
+    def _ensure_public(self, discussion_id: str, item: dict[str, Any], *, reused: bool) -> dict[str, Any]:
+        post_id = str(item["id"])
+        attributes = item.get("attributes") or {}
+        if attributes.get("isApproved") is False:
+            body = json.dumps({
+                "data": {"type": "posts", "id": post_id, "attributes": {"isApproved": True}}
+            }).encode("utf-8")
+            payload = self._request(f"/api/posts/{post_id}", "PATCH", body)
+            attributes = payload.get("data", {}).get("attributes") or {}
+        if attributes.get("isApproved") is False:
+            raise RuntimeError("Flarum assistant reply remained unapproved")
+        return {
+            "postId": post_id,
+            "postUrl": f"{self.public_url}/d/{discussion_id}/{post_id}",
+            "isApproved": True,
+            "reused": reused,
+        }
 
     def review_post_is_approved(self, post_id: str) -> bool | None:
         if not post_id.isdigit():

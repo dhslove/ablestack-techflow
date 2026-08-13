@@ -56,6 +56,21 @@ class SettingsTest(unittest.TestCase):
             flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
         ).validate()
 
+    def test_auto_publish_requires_publish_identity_and_excludes_review_mode(self) -> None:
+        with self.assertRaises(ConfigurationError):
+            Settings(community_auto_publish_enabled=True).validate()
+        Settings(
+            community_auto_publish_enabled=True, community_publish_enabled=True,
+            flarum_api_key_file="/run/secrets/flarum_api_key",
+            flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+        ).validate()
+        with self.assertRaises(ConfigurationError):
+            Settings(
+                community_auto_publish_enabled=True, community_publish_enabled=True,
+                community_review_post_enabled=True, flarum_api_key_file="/run/secrets/flarum_api_key",
+                flarum_assistant_user_id_file="/run/secrets/flarum_assistant_user_id",
+            ).validate()
+
     def test_chat_bot_requires_all_runtime_secret_references(self) -> None:
         with self.assertRaises(ConfigurationError):
             Settings(chat_bot_enabled=True).validate()
@@ -63,8 +78,6 @@ class SettingsTest(unittest.TestCase):
             chat_bot_enabled=True,
             chat_bot_token_file="/run/secrets/chat_bot_token",
             chat_reviewer_usernames=("ceo",),
-            community_approve_webhook_file="/run/secrets/community_approve_webhook",
-            community_reject_webhook_file="/run/secrets/community_reject_webhook",
         ).validate()
 
     def test_unapproved_chat_origin_is_rejected(self) -> None:

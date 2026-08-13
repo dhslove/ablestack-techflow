@@ -14,6 +14,7 @@ UP_0005 = (ROOT / "migrations" / "0005_parser_embedding_retrieval_up.sql").read_
 UP_0006 = (ROOT / "migrations" / "0006_orchestration_correlation_up.sql").read_text(encoding="utf-8")
 UP_0007 = (ROOT / "migrations" / "0007_reindex_fk_performance_up.sql").read_text(encoding="utf-8")
 UP_0011 = (ROOT / "migrations" / "0011_community_conversation_up.sql").read_text(encoding="utf-8")
+UP_0012 = (ROOT / "migrations" / "0012_community_auto_publish_kb_up.sql").read_text(encoding="utf-8")
 DOWN_0001 = (ROOT / "migrations" / "0001_schema_down.sql").read_text(encoding="utf-8")
 DOWN_0002 = (ROOT / "migrations" / "0002_source_registry_down.sql").read_text(encoding="utf-8")
 DOWN_0003 = (ROOT / "migrations" / "0003_source_mirror_down.sql").read_text(encoding="utf-8")
@@ -107,6 +108,13 @@ class MigrationContractTest(unittest.TestCase):
         for state in ("ANALYZING", "WAITING_REQUESTER", "WAITING_REVIEW", "WAITING_RESOLUTION", "RESOLVED"):
             self.assertIn(f"'{state}'", UP_0011)
         self.assertIn("resolved_by_user_id", UP_0011)
+
+    def test_resolved_conversation_has_knowledge_base_publication_fields(self) -> None:
+        for column in (
+            "knowledge_base_post_id", "knowledge_base_post_url", "knowledge_base_source_post_id",
+            "knowledge_base_answer", "knowledge_base_version", "knowledge_base_published_at",
+        ):
+            self.assertIn(column, UP_0012)
 
 
 if __name__ == "__main__":

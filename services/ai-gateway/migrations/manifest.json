@@ -121,6 +121,16 @@
       "path": "0011_community_conversation_up.sql",
       "sha256": "9250b23c8aa4cd46fa02edf0fd06e9d7ed24f1e5375b273421c11d99d7b5af0c",
       "bytes": 2681
+    },
+    {
+      "path": "0012_community_auto_publish_kb_down.sql",
+      "sha256": "23f9a5ef32d5e81c1d0dae56873b2269f3b6ab4f5dcf789031b68990dab16529",
+      "bytes": 401
+    },
+    {
+      "path": "0012_community_auto_publish_kb_up.sql",
+      "sha256": "bc6d6f0c4feb10c9944af31180258b4dae50cc5c98c287c12011286ba1a823d9",
+      "bytes": 632
     }
   ]
 }

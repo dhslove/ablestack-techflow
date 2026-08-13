@@ -9,7 +9,8 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from app.community import FlarumClient, FlarumResourceNotFound, format_draft, profiles_for_tags
+from app.community import FlarumClient, FlarumResourceNotFound, conversationalize_answer, format_draft, profiles_for_tags
+from app.versioned_assist import format_knowledge_base
 from app.config import Settings
 from app.main import create_app
 from app.store import MemoryStore
@@ -52,10 +53,9 @@ class CommunityTests(unittest.TestCase):
             "citations": [{"repository": "ablecloud-team/ablestack-docs", "commit": "a" * 40,
                            "path": "docs/test.md", "startLine": 1, "endLine": 3}],
         })
-        self.assertTrue(draft.startswith("### 증상"))
+        self.assertTrue(draft.startswith("원인을 확인했습니다."))
         self.assertNotIn("## ABLESTACK 트러블슈팅 가이드", draft)
-        self.assertIn("### 적용 버전", draft)
-        self.assertIn("개선이 진행 중", draft)
+        self.assertNotIn("### 적용 버전", draft)
         self.assertNotIn("github.com", draft)
         self.assertNotIn("docs/test.md", draft)
         self.assertNotIn("a" * 40, draft)
@@ -167,6 +167,62 @@ class CommunityTests(unittest.TestCase):
             self.assertTrue(result["postUrl"].startswith("https://community.ablecloud.io/"))
             self.assertEqual(1, opened.call_count)
 
+    def test_flarum_idempotency_marker_is_not_visible_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            assistant_file = Path(directory) / "assistant"
+            key_file.write_text("a" * 40)
+            assistant_file.write_text("40")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), True,
+                str(assistant_file), False,
+            )
+            marker = "<!-- techflow-answer:case:v1 -->"
+            responses = [
+                FakeResponse({"data": []}),
+                FakeResponse({"data": {"id": "78", "attributes": {"isApproved": True}}}),
+            ]
+            with patch("urllib.request.urlopen", side_effect=responses) as opened:
+                client.publish_assistant_reply("901", "친절한 답변입니다.", marker)
+            posted = json.loads(opened.call_args_list[1].args[0].data.decode("utf-8"))
+            content = posted["data"]["attributes"]["content"]
+            self.assertNotIn(marker, content)
+            self.assertIn("/_techflow/", content)
+            self.assertIn("\u200b", content)
+
+    def test_legacy_sectioned_draft_becomes_a_friendly_reply(self) -> None:
+        answer = conversationalize_answer(
+            "### 증상\n- 콘솔이 연결중에서 멈춥니다.\n\n"
+            "### 원인\n- 이전 VNC 연결이 남아 있을 수 있습니다.\n\n"
+            "### 해결 방법\n- 먼저 라이브 마이그레이션을 실행합니다.\n\n"
+            "### 추가로 필요한 정보\n- 조치 결과를 알려주세요."
+        )
+        self.assertTrue(answer.startswith("말씀해 주신 현상을 확인해 보겠습니다."))
+        self.assertIn("먼저 아래 순서대로 확인해 주세요.", answer)
+        self.assertNotIn("###", answer)
+
+    def test_assistant_reply_is_automatically_made_public(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            user_file = Path(directory) / "assistant-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            user_file.write_text("40", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), True,
+                str(user_file), False,
+            )
+            responses = [
+                FakeResponse({"data": []}),
+                FakeResponse({"data": {"id": "89", "attributes": {"isApproved": False}}}),
+                FakeResponse({"data": {"id": "89", "attributes": {"isApproved": True}}}),
+            ]
+            with patch("urllib.request.urlopen", side_effect=responses) as opened:
+                result = client.publish_assistant_reply("901", "친절한 답변", "<!-- answer -->")
+            self.assertTrue(result["isApproved"])
+            self.assertEqual("https://community.ablecloud.io/d/901/89", result["postUrl"])
+            self.assertEqual("PATCH", opened.call_args_list[2].args[0].method)
+            self.assertEqual("Token " + "a" * 40, opened.call_args_list[2].args[0].headers["Authorization"])
+
     def test_assistant_review_reply_is_held_for_moderator_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             key_file = Path(directory) / "key"
@@ -265,8 +321,8 @@ class CommunityTests(unittest.TestCase):
             "userQuestion": "가상머신 콘솔이 연결중에서 멈춥니다.",
             "plan": {"questionsNeeded": ["문제가 발생한 시각과 libvirt 로그를 첨부해 주세요."]},
         })
-        self.assertTrue(draft.startswith("### 증상"))
-        self.assertIn("### 추가로 필요한 정보", draft)
+        self.assertTrue(draft.startswith("확인을 도와드리겠습니다."))
+        self.assertIn("아래 정보를 알려주시면", draft)
         self.assertIn("libvirt 로그", draft)
         self.assertNotIn("트러블슈팅 가이드", draft)
 
@@ -296,7 +352,7 @@ class CommunityTests(unittest.TestCase):
         self.assertTrue(updated["turnCreated"])
         self.assertEqual(2, updated["draftVersion"])
         self.assertEqual(2, updated["contextVersion"])
-        self.assertEqual("WAITING_REVIEW", updated["conversationState"])
+        self.assertEqual("ANALYZING", updated["conversationState"])
         self.assertEqual(["100", "101"], [item["sourcePostId"] for item in store.list_community_turns("901")])
 
         duplicate = store.create_community_case(
@@ -355,6 +411,85 @@ class CommunityTests(unittest.TestCase):
         self.assertIsNotNone(reopened["reopenedAt"])
         events = store.list_community_case_events(case["caseId"], 10)
         self.assertIn("RESOLUTION_UNSET_REOPENED", [item["eventType"] for item in events])
+
+    def test_resolved_conversation_publishes_a_versioned_knowledge_base(self) -> None:
+        store = MemoryStore()
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
+        case = store.create_community_case(
+            first, {"draftAnswer": "먼저 로그를 확인해 주세요.", "answerState": "ANSWERED", "citations": []},
+            "kb-first-post", "kb-first-correlation",
+        )
+        store.mark_community_auto_published(
+            case["caseId"], "먼저 로그를 확인해 주세요.",
+            {"postId": "200", "postUrl": "https://community.ablecloud.io/d/901/200"},
+            "kb-auto-published",
+        )
+        resolved = store.sync_community_resolution(
+            {**first, "bestAnswerPostId": "200", "bestAnswerUserId": "42"},
+            "kb-resolved", "kb-resolved-correlation",
+        )
+        knowledge = format_knowledge_base({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "가상머신 시작 오류가 발생했습니다.",
+                "observedFacts": ["가상머신 시작 오류가 표시됩니다."],
+                "diagnoses": [{"title": "호스트 자원이 부족했습니다."}],
+                "recommendedActions": ["여유 자원이 있는 호스트에서 다시 시작합니다."],
+                "unknowns": [], "artifactEvidence": [],
+                "currentAssessment": "CURRENT_RUNTIME_ISSUE", "previewAssessment": "NOT_APPLICABLE",
+            },
+            "citations": [],
+        })
+        published = store.mark_community_knowledge_published(
+            resolved["caseId"], knowledge,
+            {"postId": "201", "postUrl": "https://community.ablecloud.io/d/901/201"},
+            "kb-published",
+        )
+        self.assertEqual("201", published["knowledgeBasePostId"])
+        self.assertEqual("200", published["knowledgeBaseSourcePostId"])
+        self.assertEqual(1, published["knowledgeBaseVersion"])
+        self.assertTrue(knowledge.startswith("### 증상"))
+        self.assertNotIn("담당자 승인", knowledge)
+
+    def test_legacy_review_publication_can_be_migrated_once_to_auto_publish(self) -> None:
+        store = MemoryStore()
+        case = store.create_community_case(
+            {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"},
+            {"draftAnswer": "### 증상\n- 시작할 수 없습니다.", "answerState": "ANSWERED", "citations": []},
+            "legacy-auto-first", "legacy-auto-correlation",
+        )
+        store.attach_community_review(
+            case["caseId"],
+            {"postId": "200", "postUrl": "https://community.ablecloud.io/d/901/200"},
+            "legacy-review-attached",
+        )
+        legacy = store.mark_community_review_approved(case["caseId"], "legacy-review-approved")
+        self.assertEqual("flarum:moderator", legacy["reviewer"])
+
+        migrated = store.mark_community_auto_published(
+            case["caseId"], "먼저 시작 실패 시각의 로그를 확인해 주세요.",
+            {"postId": "201", "postUrl": "https://community.ablecloud.io/d/901/201"},
+            "legacy-auto-migrated",
+        )
+        self.assertEqual("techflow:auto", migrated["reviewer"])
+        self.assertEqual("201", migrated["publishedPostId"])
+        self.assertEqual("먼저 시작 실패 시각의 로그를 확인해 주세요.", migrated["draftAnswer"])
+
+    def test_abstained_case_can_publish_a_safe_information_request(self) -> None:
+        store = MemoryStore()
+        case = store.create_community_case(
+            {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"},
+            {"draftAnswer": None, "answerState": "ABSTAINED", "citations": []},
+            "abstained-auto-first", "abstained-auto-correlation",
+        )
+        published = store.mark_community_auto_published(
+            case["caseId"], "사용 중인 버전과 오류 시각을 알려주세요.",
+            {"postId": "202", "postUrl": "https://community.ablecloud.io/d/901/202"},
+            "abstained-auto-published",
+        )
+        self.assertEqual("PUBLISHED", published["state"])
+        self.assertEqual("techflow:auto", published["reviewer"])
+        self.assertEqual("사용 중인 버전과 오류 시각을 알려주세요.", published["draftAnswer"])
 
     def test_moderator_best_answer_does_not_impersonate_requester_resolution(self) -> None:
         store = MemoryStore()

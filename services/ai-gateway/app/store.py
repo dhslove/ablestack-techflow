@@ -96,6 +96,8 @@ class Store(Protocol):
     def mark_community_review_approved(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_review_missing(self, case_id: UUID, idempotency_key: str) -> dict[str, Any]: ...
     def mark_community_published(self, case_id: UUID, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
+    def mark_community_auto_published(self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
+    def mark_community_knowledge_published(self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]: ...
     def upsert_chat_reviewer(self, user_id: str, username: str) -> dict[str, Any]: ...
     def list_chat_reviewers(self) -> list[dict[str, Any]]: ...
 
@@ -744,6 +746,10 @@ class MemoryStore:
                     resolvedPostId=None if was_resolved else value.get("resolvedPostId"),
                     resolvedByUserId=None if was_resolved else value.get("resolvedByUserId"),
                     resolvedAt=None if was_resolved else value.get("resolvedAt"),
+                    knowledgeBasePostId=None if was_resolved else value.get("knowledgeBasePostId"),
+                    knowledgeBasePostUrl=None if was_resolved else value.get("knowledgeBasePostUrl"),
+                    knowledgeBaseSourcePostId=None if was_resolved else value.get("knowledgeBaseSourcePostId"),
+                    knowledgeBaseAnswer=None if was_resolved else value.get("knowledgeBaseAnswer"),
                     updatedAt=utc_now(),
                 )
                 self._community_responses.setdefault(case_id, []).append({
@@ -771,6 +777,9 @@ class MemoryStore:
                 "conversationState": conversation_state_for_draft(draft),
                 "requesterUserId": request["authorId"], "lastSeenPostId": post_id, "contextVersion": 1,
                 "resolvedPostId": None, "resolvedByUserId": None, "resolvedAt": None, "reopenedAt": None,
+                "knowledgeBasePostId": None, "knowledgeBasePostUrl": None,
+                "knowledgeBaseSourcePostId": None, "knowledgeBaseAnswer": None,
+                "knowledgeBaseVersion": 0, "knowledgeBasePublishedAt": None,
                 "correlationId": correlation_id, "createdAt": utc_now(), "updatedAt": utc_now(),
             }
             self._community_cases[case_id] = value
@@ -885,7 +894,8 @@ class MemoryStore:
             if reopened:
                 value.update(
                     conversationState="ANALYZING", resolvedPostId=None, resolvedByUserId=None,
-                    resolvedAt=None, reopenedAt=value["updatedAt"],
+                    resolvedAt=None, reopenedAt=value["updatedAt"], knowledgeBasePostId=None,
+                    knowledgeBasePostUrl=None, knowledgeBaseSourcePostId=None, knowledgeBaseAnswer=None,
                 )
             self._community_events.append({
                 "caseId": case_id, "eventType": "CONVERSATION_REOPENED" if reopened else "TURN_RECORDED",
@@ -928,7 +938,9 @@ class MemoryStore:
                 changed = True
                 value.update(
                     conversationState="ANALYZING", resolvedPostId=None, resolvedByUserId=None,
-                    resolvedAt=None, reopenedAt=now, updatedAt=now,
+                    resolvedAt=None, reopenedAt=now, knowledgeBasePostId=None,
+                    knowledgeBasePostUrl=None, knowledgeBaseSourcePostId=None,
+                    knowledgeBaseAnswer=None, updatedAt=now,
                 )
                 event_type = "RESOLUTION_UNSET_REOPENED"
             else:
@@ -1094,6 +1106,64 @@ class MemoryStore:
                 "createdAt": value["updatedAt"], "details": deepcopy(publication),
             })
             return self._remember("publish_community_case", idempotency_key, value)
+
+    def mark_community_auto_published(
+        self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("auto_publish_community_case", idempotency_key):
+                return repeated
+            value = self._community_cases.get(case_id)
+            if not value:
+                raise NotFoundError("community case not found")
+            if value["state"] == "PUBLISHED" and value.get("publishedPostId") == publication["postId"]:
+                return self._remember("auto_publish_community_case", idempotency_key, value)
+            if (
+                value["state"] not in {"DRAFT_PENDING", "PUBLISHED"}
+                or value.get("reviewer") == "techflow:auto"
+                or not answer.strip()
+            ):
+                raise InvalidStateError("only generated community answers can be auto-published")
+            now = utc_now()
+            value.update(
+                state="PUBLISHED", reviewer="techflow:auto", publishedPostId=publication["postId"],
+                publishedPostUrl=publication["postUrl"], draftAnswer=answer, conversationState="WAITING_RESOLUTION",
+                updatedAt=now,
+            )
+            if self._community_responses.get(case_id):
+                self._community_responses[case_id][-1].update(
+                    state="PUBLISHED", answer=answer, reviewer="techflow:auto", publishedAt=now,
+                )
+            self._community_events.append({
+                "caseId": case_id, "eventType": "AUTO_PUBLISHED", "actor": "techflow-assistant",
+                "createdAt": now, "details": deepcopy(publication),
+            })
+            return self._remember("auto_publish_community_case", idempotency_key, value)
+
+    def mark_community_knowledge_published(
+        self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            if repeated := self._repeat("publish_community_knowledge", idempotency_key):
+                return repeated
+            value = self._community_cases.get(case_id)
+            if not value:
+                raise NotFoundError("community case not found")
+            if value.get("conversationState") != "RESOLVED" or not value.get("resolvedPostId"):
+                raise InvalidStateError("knowledge base publication requires a requester resolution")
+            now = utc_now()
+            value.update(
+                knowledgeBasePostId=publication["postId"], knowledgeBasePostUrl=publication["postUrl"],
+                knowledgeBaseSourcePostId=value["resolvedPostId"], knowledgeBaseAnswer=answer,
+                knowledgeBaseVersion=value.get("knowledgeBaseVersion", 0) + 1,
+                knowledgeBasePublishedAt=now, updatedAt=now,
+            )
+            self._community_events.append({
+                "caseId": case_id, "eventType": "KNOWLEDGE_BASE_PUBLISHED", "actor": "techflow-assistant",
+                "createdAt": now,
+                "details": {**deepcopy(publication), "resolvedPostId": value["resolvedPostId"]},
+            })
+            return self._remember("publish_community_knowledge", idempotency_key, value)
 
     def upsert_chat_reviewer(self, user_id: str, username: str) -> dict[str, Any]:
         with self._lock:

@@ -1098,6 +1098,12 @@ class PostgresStore:
             "lastSeenPostId": row.get("last_seen_post_id"), "contextVersion": row.get("context_version") or 0,
             "resolvedPostId": row.get("resolved_post_id"), "resolvedByUserId": row.get("resolved_by_user_id"),
             "resolvedAt": row.get("resolved_at"), "reopenedAt": row.get("reopened_at"),
+            "knowledgeBasePostId": row.get("knowledge_base_post_id"),
+            "knowledgeBasePostUrl": row.get("knowledge_base_post_url"),
+            "knowledgeBaseSourcePostId": row.get("knowledge_base_source_post_id"),
+            "knowledgeBaseAnswer": row.get("knowledge_base_answer"),
+            "knowledgeBaseVersion": row.get("knowledge_base_version") or 0,
+            "knowledgeBasePublishedAt": row.get("knowledge_base_published_at"),
             "correlationId": row["correlation_id"], "createdAt": row["created_at"], "updatedAt": row["updated_at"],
         }
 
@@ -1147,10 +1153,15 @@ class PostgresStore:
                        resolved_by_user_id=CASE WHEN %s THEN NULL ELSE resolved_by_user_id END,
                        resolved_at=CASE WHEN %s THEN NULL ELSE resolved_at END,
                        reopened_at=CASE WHEN %s THEN now() ELSE reopened_at END,
+                       knowledge_base_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_post_id END,
+                       knowledge_base_post_url=CASE WHEN %s THEN NULL ELSE knowledge_base_post_url END,
+                       knowledge_base_source_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_source_post_id END,
+                       knowledge_base_answer=CASE WHEN %s THEN NULL ELSE knowledge_base_answer END,
                        correlation_id=%s,idempotency_key=%s,source_metadata=%s,updated_at=now()
                        WHERE id=%s RETURNING *""",
                     (conversation_state_for_draft(draft), draft_version, draft.get("draftAnswer"),
                      draft.get("answerState"), json.dumps(draft.get("citations") or []), post_id,
+                     was_resolved, was_resolved, was_resolved, was_resolved,
                      was_resolved, was_resolved, was_resolved, was_resolved, correlation_id, idempotency_key,
                      json.dumps(metadata), row["id"]),
                 ).fetchone()
@@ -1314,9 +1325,14 @@ class PostgresStore:
                    resolved_post_id=CASE WHEN %s THEN NULL ELSE resolved_post_id END,
                    resolved_by_user_id=CASE WHEN %s THEN NULL ELSE resolved_by_user_id END,
                    resolved_at=CASE WHEN %s THEN NULL ELSE resolved_at END,
-                   reopened_at=CASE WHEN %s THEN now() ELSE reopened_at END,updated_at=now()
+                   reopened_at=CASE WHEN %s THEN now() ELSE reopened_at END,
+                   knowledge_base_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_post_id END,
+                   knowledge_base_post_url=CASE WHEN %s THEN NULL ELSE knowledge_base_post_url END,
+                   knowledge_base_source_post_id=CASE WHEN %s THEN NULL ELSE knowledge_base_source_post_id END,
+                   knowledge_base_answer=CASE WHEN %s THEN NULL ELSE knowledge_base_answer END,updated_at=now()
                    WHERE id=%s RETURNING *""",
-                (post_id, reopened, reopened, reopened, reopened, reopened, row["id"]),
+                (post_id, reopened, reopened, reopened, reopened, reopened,
+                 reopened, reopened, reopened, reopened, row["id"]),
             ).fetchone()
             connection.execute(
                 """INSERT INTO community_case_event
@@ -1364,9 +1380,14 @@ class PostgresStore:
             updated = connection.execute(
                 """UPDATE community_case SET conversation_state=%s,resolved_post_id=%s,resolved_by_user_id=%s,
                    resolved_at=CASE WHEN %s='RESOLVED' THEN COALESCE(%s,now()) ELSE NULL END,
-                   reopened_at=CASE WHEN %s='ANALYZING' THEN now() ELSE reopened_at END,updated_at=now()
+                   reopened_at=CASE WHEN %s='ANALYZING' THEN now() ELSE reopened_at END,
+                   knowledge_base_post_id=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_post_id END,
+                   knowledge_base_post_url=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_post_url END,
+                   knowledge_base_source_post_id=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_source_post_id END,
+                   knowledge_base_answer=CASE WHEN %s='ANALYZING' THEN NULL ELSE knowledge_base_answer END,
+                   updated_at=now()
                    WHERE id=%s RETURNING *""",
-                (state, best_post, best_user, state, resolved_at, state, row["id"]),
+                (state, best_post, best_user, state, resolved_at, state, state, state, state, state, row["id"]),
             ).fetchone()
             if changed:
                 connection.execute(
@@ -1602,6 +1623,77 @@ class PostgresStore:
                    (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
                    VALUES (%s,%s,'PUBLISHED','techflow',%s,%s,%s)""",
                 (uuid4(), case_id, idempotency_key, row["correlation_id"], json.dumps(publication)),
+            )
+            return self._community_payload(updated)
+
+    def mark_community_auto_published(
+        self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute("SELECT * FROM community_case WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+            if not row:
+                raise NotFoundError("community case not found")
+            if row["state"] == "PUBLISHED" and row.get("published_post_id") == publication["postId"]:
+                return self._community_payload(row)
+            if (
+                row["state"] not in {"DRAFT_PENDING", "PUBLISHED"}
+                or row.get("reviewer") == "techflow:auto"
+                or not answer.strip()
+            ):
+                raise InvalidStateError("only generated community answers can be auto-published")
+            updated = connection.execute(
+                """UPDATE community_case SET state='PUBLISHED',conversation_state='WAITING_RESOLUTION',
+                   reviewer='techflow:auto',draft_answer=%s,published_post_id=%s,published_post_url=%s,published_at=now(),updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (answer, publication["postId"], publication["postUrl"], case_id),
+            ).fetchone()
+            connection.execute(
+                """UPDATE community_response SET state='PUBLISHED',answer=%s,reviewer='techflow:auto',published_at=now(),updated_at=now()
+                   WHERE case_id=%s AND draft_version=%s""",
+                (answer, case_id, row["draft_version"]),
+            )
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'AUTO_PUBLISHED','techflow-assistant',%s,%s,%s)""",
+                (uuid4(), case_id, idempotency_key, row["correlation_id"], json.dumps(publication)),
+            )
+            return self._community_payload(updated)
+
+    def mark_community_knowledge_published(
+        self, case_id: UUID, answer: str, publication: dict[str, Any], idempotency_key: str
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            repeated = connection.execute(
+                "SELECT c.* FROM community_case_event e JOIN community_case c ON c.id=e.case_id WHERE e.idempotency_key=%s",
+                (idempotency_key,),
+            ).fetchone()
+            if repeated:
+                return self._community_payload(repeated)
+            row = connection.execute("SELECT * FROM community_case WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+            if not row:
+                raise NotFoundError("community case not found")
+            if row.get("conversation_state") != "RESOLVED" or not row.get("resolved_post_id"):
+                raise InvalidStateError("knowledge base publication requires a requester resolution")
+            updated = connection.execute(
+                """UPDATE community_case SET knowledge_base_post_id=%s,knowledge_base_post_url=%s,
+                   knowledge_base_source_post_id=resolved_post_id,knowledge_base_answer=%s,
+                   knowledge_base_version=knowledge_base_version+1,knowledge_base_published_at=now(),updated_at=now()
+                   WHERE id=%s RETURNING *""",
+                (publication["postId"], publication["postUrl"], answer, case_id),
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO community_case_event
+                   (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                   VALUES (%s,%s,'KNOWLEDGE_BASE_PUBLISHED','techflow-assistant',%s,%s,%s)""",
+                (uuid4(), case_id, idempotency_key, row["correlation_id"],
+                 json.dumps({**publication, "resolvedPostId": row["resolved_post_id"]})),
             )
             return self._community_payload(updated)
 

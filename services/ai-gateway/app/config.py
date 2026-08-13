@@ -38,6 +38,7 @@ class Settings:
     flarum_assistant_user_id_file: str | None = None
     community_publish_enabled: bool = False
     community_review_post_enabled: bool = False
+    community_auto_publish_enabled: bool = False
     chat_bot_enabled: bool = False
     chat_base_url: str = "https://chat.ablecloud.io"
     chat_bot_token_file: str | None = None
@@ -73,6 +74,7 @@ class Settings:
             flarum_assistant_user_id_file=os.getenv("TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE") or None,
             community_publish_enabled=os.getenv("TECHFLOW_COMMUNITY_PUBLISH_ENABLED", "false").lower() == "true",
             community_review_post_enabled=os.getenv("TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED", "false").lower() == "true",
+            community_auto_publish_enabled=os.getenv("TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED", "false").lower() == "true",
             chat_bot_enabled=os.getenv("TECHFLOW_CHAT_BOT_ENABLED", "false").lower() == "true",
             chat_base_url=os.getenv("TECHFLOW_CHAT_BASE_URL", "https://chat.ablecloud.io").rstrip("/"),
             chat_bot_token_file=os.getenv("TECHFLOW_CHAT_BOT_TOKEN_FILE") or None,
@@ -129,13 +131,19 @@ class Settings:
             raise ConfigurationError(
                 "TECHFLOW_FLARUM_API_KEY_FILE and TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE are required when review posts are enabled"
             )
+        if self.community_auto_publish_enabled and not (
+            self.community_publish_enabled and self.flarum_api_key_file and self.flarum_assistant_user_id_file
+        ):
+            raise ConfigurationError(
+                "automatic Community publication requires publishing, API key and assistant identity"
+            )
+        if self.community_auto_publish_enabled and self.community_review_post_enabled:
+            raise ConfigurationError("automatic publication and review posting are mutually exclusive")
         if self.chat_base_url != "https://chat.ablecloud.io":
             raise ConfigurationError("TECHFLOW_CHAT_BASE_URL must use the approved HTTPS Chat origin")
         if self.chat_bot_enabled:
             required = {
                 "TECHFLOW_CHAT_BOT_TOKEN_FILE": self.chat_bot_token_file,
-                "TECHFLOW_COMMUNITY_APPROVE_WEBHOOK_FILE": self.community_approve_webhook_file,
-                "TECHFLOW_COMMUNITY_REJECT_WEBHOOK_FILE": self.community_reject_webhook_file,
             }
             missing = [name for name, value in required.items() if not value]
             if missing:
@@ -154,7 +162,7 @@ class Settings:
             "artifact_max_archive_entries={!r}, artifact_max_compression_ratio={!r}, "
             "artifact_max_log_evidence_chars={!r}, flarum_base_url={!r}, flarum_public_url={!r}, "
             "flarum_api_key_file=<redacted>, flarum_assistant_user_id_file=<redacted>, "
-            "community_publish_enabled={!r}, community_review_post_enabled={!r}, chat_bot_enabled={!r}, "
+            "community_publish_enabled={!r}, community_review_post_enabled={!r}, community_auto_publish_enabled={!r}, chat_bot_enabled={!r}, "
             "chat_base_url={!r}, chat_bot_token_file=<redacted>, chat_reviewer_usernames=<redacted>, "
             "community_approve_webhook_file=<redacted>, community_reject_webhook_file=<redacted>)"
         ).format(
@@ -176,6 +184,7 @@ class Settings:
             self.flarum_public_url,
             self.community_publish_enabled,
             self.community_review_post_enabled,
+            self.community_auto_publish_enabled,
             self.chat_bot_enabled,
             self.chat_base_url,
         )

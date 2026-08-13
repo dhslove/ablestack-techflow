@@ -1,49 +1,37 @@
-# Community 지속 대화 운영 Runbook
+# Community 자동 답변과 Knowledge Base 운영 Runbook
 
 ## 1. 정상 처리 흐름
 
-1. 질문자가 새 Discussion 또는 후속 댓글을 등록한다.
-2. Community Poller가 새 Post를 수집하고 작성자를 `REQUESTER`, `STAFF`, `ASSISTANT`로 분류한다.
-3. 이미지, 일반 로그, ZIP, GZIP, TAR.GZ 첨부를 검증해 Artifact Store에 등록한다.
-4. AI Gateway가 기존 대화와 새 자료를 함께 분석하고 새 Draft Version을 만든다.
-5. `TechFlow-Assistant`가 전체 답변을 Flarum의 미승인 Post로 등록한다.
-6. 담당자는 Chat 알림의 링크로 원문을 열어 승인, 수정 승인 또는 반려한다.
-7. 승인된 답변은 `WAITING_RESOLUTION` 상태로 질문자의 해결 표시를 기다린다.
-8. 질문자가 Best Answer를 설정하면 Case를 `RESOLVED`로 전환한다.
-9. 해결 표시가 해제되거나 후속 질문이 등록되면 같은 Case를 다시 연다.
+1. 질문자가 Discussion 또는 후속 댓글을 등록한다.
+2. Poller가 새 Post와 이미지·로그·압축 로그를 수집한다.
+3. AI Gateway가 기존 대화, ABLESTACK 문서와 코드, 승인된 플랫폼 자료를 함께 분석한다.
+4. `TechFlow-Assistant`가 이해하기 쉬운 대화체 답변을 바로 공개한다.
+5. Chat Bot이 게시 결과와 Community 링크를 담당자에게 알린다.
+6. 질문자가 추가 정보를 올리면 같은 Case에서 분석과 답변을 반복한다.
+7. 질문자가 Best Answer를 선택하면 해당 답변 중심의 Knowledge Base 최종본을 게시한다.
+8. 해결 표시가 해제되거나 후속 질문이 생기면 같은 Case를 다시 연다.
 
-사용자 답변은 별도 제목 없이 `증상`으로 시작한다. 적용 버전은 `ABLESTACK Diplo`, `ABLESTACK Europa`로 표시한다.
+진행 중 답변에는 고정된 문서 형식을 강제하지 않는다. 해결 후 KB에만 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전`을 사용하며 별도 제목은 붙이지 않는다.
 
 ## 2. 상태 확인
 
 ```sql
 SELECT discussion_id, state, conversation_state, context_version,
-       last_seen_post_id, review_post_id, published_post_id,
-       requester_user_id, resolved_post_id, resolved_by_user_id,
-       resolved_at, reopened_at
+       last_seen_post_id, published_post_id, resolved_post_id,
+       knowledge_base_post_id, knowledge_base_source_post_id,
+       knowledge_base_version, knowledge_base_published_at
 FROM community_case
 ORDER BY updated_at DESC
 LIMIT 20;
 ```
 
-정상 전이:
+정상 상태:
 
-- 새 질문 또는 후속 자료: `DRAFT_PENDING / WAITING_REVIEW`
-- 담당자 승인: `PUBLISHED / WAITING_RESOLUTION`
-- 질문자 해결 표시: `PUBLISHED / RESOLVED`
+- 답변 생성 중: `DRAFT_PENDING / ANALYZING`
+- 정보 요청 답변 게시: `PUBLISHED / WAITING_RESOLUTION`
+- 일반 답변 게시: `PUBLISHED / WAITING_RESOLUTION`
+- 질문자 해결 선택: `PUBLISHED / RESOLVED`, `knowledge_base_post_id` 존재
 - 해결 해제 또는 후속 질문: `PUBLISHED / ANALYZING`
-
-Turn과 첨부 확인:
-
-```sql
-SELECT source_post_id, post_number, author_user_id, role,
-       artifact_ids, created_at
-FROM community_turn
-WHERE case_id = (
-  SELECT id FROM community_case WHERE discussion_id = '<DISCUSSION_ID>'
-)
-ORDER BY post_number, created_at;
-```
 
 ## 3. 로그 확인
 
@@ -52,113 +40,102 @@ docker logs --since 10m techflow-ai-gateway-community-poller-1 \
   | grep -E 'community_poll_completed|community_post_delivery_failed'
 
 docker logs --since 10m techflow-ai-gateway-gateway-1 \
-  | grep -E 'community_review_post_created|community_chat_notification_sent'
+  | grep -E 'community_answer_auto_published|community_knowledge_base_published|community_chat_notification'
 ```
 
 정상 기준:
 
-- `community_poll_completed`
-- `failed=0`
-- 새 초안 생성 시 `community_review_post_created`
-- Chat 통지 시 `community_chat_notification_sent`
+- Poller `failed=0`
+- 일반 답변: `community_answer_auto_published`
+- 해결 최종본: `community_knowledge_base_published`
+- Chat: `community_chat_notification_sent`
 
-## 4. 첨부 처리
+## 4. Chat 사용
 
-### 4.1 지원 형식
+Chat은 승인 채널이 아니라 관찰 채널이다.
+
+- `연결`: 게시 알림 수신자로 등록
+- `대기`: 처리 중이거나 실패한 Case 조회
+- `상세 <Discussion 또는 Case>`: 게시·대화·KB 상태와 원문 링크 조회
+- `근거 <Discussion 또는 Case>`: 내부 담당자만 Evidence Ledger 조회
+- `이력 [Case]`: 자동 게시와 KB 게시 이벤트 조회
+
+기존 `승인`, `수정`, `반려` 명령은 게시 작업을 수행하지 않고 자동 게시 정책을 안내한다.
+
+## 5. 첨부 처리
 
 - 이미지: PNG, JPEG, WebP
-- 일반 로그 및 텍스트 파일
+- 텍스트·일반 로그
 - 압축 로그: ZIP, GZIP, TAR.GZ
+- macOS 메타데이터 `__MACOSX/`, `.DS_Store`, `._*`는 분석에서 제외
+- 경로 탈출, 압축 폭탄, 중첩 압축, 바이너리 위장과 비밀정보는 차단
 
-압축은 경로 탈출, 압축 폭탄, 중첩 압축, 바이너리 위장 및 비밀정보 노출을 차단한다. Activepieces에는 원본 파일이 아니라 검증된 Artifact ID만 전달한다.
+영구 처리 불가 첨부는 안전한 안내로 바꾸고 나머지 질문 처리를 계속한다. 네트워크 오류와 5xx는 Seen 상태를 진행하지 않고 재시도한다.
 
-### 4.2 macOS ZIP
+## 6. 자동 게시 안전장치
 
-macOS가 만든 ZIP에는 실제 로그와 함께 다음 메타데이터가 들어갈 수 있다.
+- Flarum Assistant 계정으로 글을 작성한다.
+- Approval 확장이 글을 보류하면 API 통합 계정이 방금 작성한 정확한 Post만 즉시 승인한다.
+- `techflow-answer:<case>:v<version>` 값을 SHA-256한 보이지 않는 0폭 링크로 일반 답변을 멱등 처리한다.
+- `techflow-kb:<case>:resolved:<post>` 값도 같은 방식으로 KB를 멱등 처리하며, 원문 Marker나 내부 식별자는 사용자 본문에 표시하지 않는다.
+- 근거 부족으로 AI가 `ABSTAINED`를 반환해도 답변을 비워 두지 않고, 버전·발생 시각·로그·화면 등 필요한 정보를 쉬운 문장으로 요청해 자동 게시한다.
+- 공개 본문에서 Citation, 저장소, 브랜치, 커밋, 경로, 비밀정보를 제거한다.
+- 게시 실패는 503으로 반환해 Poller와 Activepieces가 다시 시도하게 한다.
+- 기존 승인 대기 초안은 공개 전에 대화체로 변환하고 저장 본문도 동일하게 갱신한다.
 
-- `__MACOSX/`
-- `.DS_Store`
-- `._<파일명>` AppleDouble 파일
+## 7. Knowledge Base 생성
 
-이 파일은 분석 대상 로그가 아니므로 ZIP과 TAR.GZ 파서가 건너뛴다. 실제 로그에는 기존 보안 검사를 그대로 적용한다.
+KB는 질문자의 Best Answer 선택을 해결 신호로 사용한다.
 
-### 4.3 처리 불가 첨부
+1. 전체 Turn을 시간순으로 정렬한다.
+2. 선택된 Post를 해결 답변으로 표시한다.
+3. 선택 답변과 실제 조치 결과를 우선하고 폐기된 가설을 제외한다.
+4. 최신 첨부 최대 5개를 다시 검토한다.
+5. 제목 없이 다음 형식으로 공개한다.
 
-첨부 하나가 영구적으로 처리 불가하더라도 해당 Discussion과 전체 수집 큐를 계속 막지 않는다.
-
-- HTTP 400, 404, 410, 413, 415, 422: 안전한 경고 문구를 질문 맥락에 추가하고 Post 처리를 계속한다.
-- 네트워크 오류 또는 일시적 5xx: 상태를 진행시키지 않고 다음 Poll에서 재시도한다.
-- 첨부 제한 초과: 파일명이나 비밀정보를 노출하지 않는 안내만 답변 생성기에 전달한다.
-
-## 5. 상태 체크포인트와 재처리
-
-Poller는 성공한 Post마다 상태 파일을 임시 파일에 쓴 뒤 원자적으로 교체한다. Webhook 전송이 성공하기 전에는 해당 Post를 처리 완료로 기록하지 않는다.
-
-특정 Discussion의 새 Post가 실패하면 다음 규칙을 적용한다.
-
-- 실패한 Discussion의 `commentCount`와 해당 Post의 Seen 상태는 진행시키지 않는다.
-- 다른 Discussion의 수집은 계속한다.
-- 다음 Poll에서 실패한 Post만 다시 시도한다.
-- 성공한 Post는 즉시 체크포인트하므로 이미 만든 Draft를 반복 생성하지 않는다.
-
-## 6. 장시간 AI 처리
-
-Community Draft 생성은 문서, Diplo 코드, 기타 제품 코드, 필요 시 가상화 공식 자료와 첨부 로그를 함께 분석하므로 120초를 넘길 수 있다. Activepieces의 `create_reviewable_draft` HTTP Action 제한은 300초로 설정한다. 다른 Community Action의 기본 제한은 120초를 유지한다.
-
-```bash
-python3 deploy/compose/activepieces/scripts/manage-rag-flows.py \
-  --base-url http://172.16.0.231:8080 \
-  --bundle deploy/compose/activepieces/flows/community-assist-v1.json
+```text
+증상
+원인
+해결 방법
+추가 고려사항
+적용 버전
 ```
 
-배포 후 `community-question-draft-v1`의 Published Version에서 `create_reviewable_draft.settings.input.timeout=300`을 확인한다.
-
-## 7. 승인과 해결
-
-Chat은 전체 답변을 잘라서 보내지 않고 Flarum 검토 링크를 전달한다. 담당자는 Flarum Approval로 원문 전체를 확인한 뒤 공개를 결정한다. 질문자의 Best Answer만 자동 해결로 인정한다.
-
-미승인 Review Post가 만들어진 상태는 장애가 아니다. 다음 세 항목이 일치하면 정상 승인 대기 상태다.
-
-- Case: `DRAFT_PENDING / WAITING_REVIEW`
-- Review Post: `isApproved=false`
-- Gateway Log: `community_chat_notification_sent`
+질문자가 해결 선택을 해제하면 기존 KB 기록은 감사 이력에 보존하되 활성 KB 연결은 지우고 Conversation을 재개한다.
 
 ## 8. 배포
 
-1. Gateway 소스, Compose, DB를 백업하고 DB Dump SHA-256을 기록한다.
-2. Secret 파일은 존재와 권한만 확인하고 값을 출력하지 않는다.
-3. Gateway와 Poller를 같은 Release Tag로 빌드한다.
-4. Gateway와 Poller만 교체한다.
-5. Activepieces Community Flow를 다시 게시하고 Draft Action의 300초 제한을 확인한다.
+1. Gateway 소스, Compose와 DB를 백업한다.
+2. Secret은 존재와 권한만 확인하고 값을 출력하지 않는다.
+3. Migration `0012_community_auto_publish_kb_up.sql`을 적용한다.
+4. 환경 설정을 다음처럼 변경한다.
 
-```bash
-cd /home/ablecloud/techflow-ai-gateway/deploy/compose/ai-gateway
-export TECHFLOW_RAG_RELEASE=issue-68-community-conversation
-docker compose -p techflow-ai-gateway --env-file .env \
-  -f compose.yml -f ../../../compose.openai.override.yml build gateway
-docker compose -p techflow-ai-gateway --env-file .env \
-  -f compose.yml -f ../../../compose.openai.override.yml \
-  up -d --no-deps gateway community-poller
+```dotenv
+TECHFLOW_COMMUNITY_PUBLISH_ENABLED=true
+TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED=false
+TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED=true
 ```
 
-Health에서 `provider=openai`, `version=0.13.2`, `database=ready`, `vector=ready`를 확인한다.
+5. Gateway와 Poller만 0.14.0 이미지로 교체한다.
+6. Health에서 `version=0.14.0`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+7. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
-## 9. 장애 대응 표
+## 9. 장애 대응
 
 | 증상 | 확인 | 조치 |
 | --- | --- | --- |
-| 후속 ZIP 이후 새 Draft가 없음 | Poller의 `community_post_delivery_failed`, Artifact HTTP 상태 | macOS 메타데이터 여부와 실제 로그 수를 확인하고 0.13.2 이상으로 교체 |
-| AI 일시 실패 후 같은 Post가 소비됨 | `answerState=FAILED`, Draft와 Review Post 없음 | 0.13.2의 실패 Draft 재시도 경로로 같은 Post를 다시 전달 |
-| 같은 Review Post가 반복 처리됨 | Poller 상태의 Seen Post와 `commentCount` | 원자적 체크포인트 적용 여부 확인 후 실패 Post만 재실행 |
-| Gateway에는 Draft가 있으나 Flow가 시간 초과 | Gateway 요청 시간과 Activepieces Action timeout | `create_reviewable_draft`를 300초로 게시 |
-| 승인 대기 Post가 사용자에게 안 보임 | Case 상태, Review Post `isApproved` | 정상 승인 대기면 Chat 링크에서 담당자가 승인 |
-| 처리 불가 첨부가 큐를 막음 | HTTP 400/413/415/422 반복 | 영구 오류를 안전 경고로 전환하고 후속 답변 생성 |
-| Poller 상태 파일 손상 | JSON 파싱 실패, `.tmp` 잔존 | 백업 상태로 복구하고 파일시스템 권한·공간 확인 |
+| 답변 생성 후 공개되지 않음 | `community_answer_auto_publish_failed`, Flarum Post 상태 | API 권한과 Assistant ID를 확인하고 동일 Post 이벤트 재시도 |
+| 같은 답변이 중복 게시됨 | 본문 Marker와 Case Draft Version | Marker 검색 권한과 Post 조회 범위 확인 |
+| 해결 표시 후 KB가 없음 | `resolved_post_id`, KB 실패 로그 | 선택 사용자와 최초 질문자 일치 여부, AI 응답과 Flarum API 확인 |
+| Chat 알림만 실패 | `community_chat_notification_failed` | Community 게시 상태를 먼저 확인하고 Chat Bot 연결 복구 |
+| 후속 질문이 새 Case로 생성됨 | `discussion_id`, `community_turn` | Poller Discussion ID와 Post ID 정규화 확인 |
+| 첨부가 큐를 막음 | Artifact HTTP 상태, Poller Seen 상태 | 영구 오류는 안전 경고로, 일시 오류는 재시도로 분리 |
 
 ## 10. 롤백
 
-1. Community 입력과 승인을 잠시 중단한다.
-2. Gateway와 Poller만 직전 이미지로 되돌린다.
-3. Activepieces Community Flow를 직전 Published Version으로 되돌린다.
-4. Flarum의 원문, 승인된 답변 및 미승인 Review Post를 임의 삭제하지 않는다.
-5. `techflow-activepieces-event-gateway-1` GitHub-to-Chat 서비스는 배포·롤백 대상에서 제외한다.
+1. `TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED=false`로 자동 게시를 중단한다.
+2. Gateway와 Poller를 직전 이미지로 되돌린다.
+3. 필요하면 `TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED=true`로 이전 승인 흐름을 임시 복구한다.
+4. Migration Down은 데이터 열을 삭제하므로 별도 승인과 백업 없이는 실행하지 않는다.
+5. 이미 공개된 Community 글과 KB를 자동 삭제하지 않는다.
+6. `techflow-activepieces-event-gateway-1`은 롤백 범위에서 제외한다.
