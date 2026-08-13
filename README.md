@@ -1,5 +1,18 @@
 # ABLESTACK TechFlow
 
+## Issue #64 Community 원문 승인형 AI 답변
+
+Chat 길이 제한으로 전체 AI 답변을 검토할 수 없던 문제를 해결했습니다. 별도 일반 계정 `TechFlow-Assistant`가 Community에 전체 답변을 `승인 대기 중`으로 등록하고, Chat은 담당자에게 원문 검토 링크만 전달합니다. 관리자는 질문·답변·이미지·로그 압축 분석 내용을 Community에서 확인한 뒤 Flarum Approval로 공개를 결정합니다.
+
+답변은 ABLESTACK 문서, Diplo 현재 코드와 관련 제품 코드, Europa 미출시 Preview, 공식 libvirt/QEMU/KVM 자료 순서로 종합 검토합니다. 사용자는 근거 경로나 Citation 없이 `증상·원인·해결 방법·추가 고려사항·적용 버전` 형식의 쉬운 답변만 보며, 내부 근거는 담당자가 `근거 <Case ID>`를 명시할 때만 확인합니다.
+
+- [Community 원문 승인형 AI 답변 설계](docs/plans/issue-64-answer-clarity-community-review-design.md)
+- [배포·운영 Runbook](docs/runbooks/community-ai-review-post.md)
+- [구현·E2E 완료 보고서](docs/reports/issue-64-answer-clarity-validation.md)
+- [완료 보고서 PDF](output/pdf/techflow-issue-64-answer-clarity-report.pdf)
+- [승인용 프레젠테이션 PDF](output/pdf/techflow-issue-64-answer-clarity-presentation.pdf)
+- [승인용 프레젠테이션 PPTX](output/presentation/techflow-issue-64-answer-clarity.pptx)
+
 ## Issue #22 Chat 기반 Community 승인
 
 Community AI 답변 검토를 Synology Chat의 `TechFlowAssist` Bot으로 일원화합니다. 담당자는 신규 글이 등록되면 선제 알림을 받고, `상세`에서 질문과 답변만 확인해 승인·수정 승인·반려할 수 있습니다. 내부 근거가 필요할 때만 `근거 <Case>`를 명시하며, 처리 이력과 대기 목록도 같은 대화에서 조회합니다. Activepieces는 승인·게시 순서를 실행하고 AI Gateway가 Bot 인증, Reviewer 권한, Draft Version, 상태·멱등성·감사를 강제합니다.

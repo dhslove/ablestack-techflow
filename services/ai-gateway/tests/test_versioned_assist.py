@@ -224,6 +224,61 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("가상머신 실행 프로그램(QEMU)", cause)
         self.assertNotIn("라이브 마이그레이션", cause)
 
+    def test_log_artifact_finding_is_shown_in_cause_without_internal_identifier(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "summary": "콘솔이 연결중에서 멈춥니다.",
+                "observedFacts": ["Mold 가상머신 콘솔이 연결중에서 멈췄습니다."],
+                "diagnoses": [{"title": "이전 VNC 연결이 정리되지 않았을 수 있습니다."}],
+                "recommendedActions": ["읽기 전용 상태 명령을 확인합니다."],
+                "unknowns": [],
+                "artifactEvidence": [{
+                    "artifactId": "internal-artifact-id",
+                    "finding": "첨부 로그에서 이전 VNC 세션이 still_open 상태이고 새 연결은 waiting 상태입니다.",
+                    "region": "mold-console.log:2-4",
+                }],
+                "currentAssessment": "CURRENT_RUNTIME_ISSUE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }
+        answer = format_public_answer(result) or ""
+        cause = answer.split("### 원인", 1)[1].split("### 해결 방법", 1)[0]
+        self.assertIn("still_open", cause)
+        self.assertIn("waiting", cause)
+        self.assertNotIn("internal-artifact-id", answer)
+        self.assertNotIn("mold-console.log:2-4", answer)
+
+    def test_noncausal_image_finding_is_shown_only_in_considerations(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "summary": "콘솔이 연결중에서 멈춥니다.",
+                "observedFacts": ["Mold 가상머신 콘솔이 연결중에서 멈췄습니다."],
+                "diagnoses": [{"title": "이전 VNC 연결이 정리되지 않았을 수 있습니다."}],
+                "recommendedActions": ["읽기 전용 상태 명령을 확인합니다."],
+                "unknowns": [],
+                "artifactEvidence": [{
+                    "artifactId": "image-artifact-id",
+                    "finding": "첨부 이미지는 콘솔 화면이 아니라 답변 품질 검증 슬라이드입니다.",
+                    "region": "all",
+                }],
+                "currentAssessment": "CURRENT_RUNTIME_ISSUE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }
+        answer = format_public_answer(result) or ""
+        symptom = answer.split("### 증상", 1)[1].split("### 원인", 1)[0]
+        cause = answer.split("### 원인", 1)[1].split("### 해결 방법", 1)[0]
+        considerations = answer.split("### 추가 고려사항", 1)[1].split("### 적용 버전", 1)[0]
+        self.assertNotIn("품질 검증 슬라이드", symptom)
+        self.assertNotIn("품질 검증 슬라이드", cause)
+        self.assertIn("품질 검증 슬라이드", considerations)
+
 
 if __name__ == "__main__":
     unittest.main()

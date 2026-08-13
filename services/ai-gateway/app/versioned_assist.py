@@ -274,11 +274,23 @@ def _is_user_observed_symptom(text: str) -> bool:
 def _section_values(rows: Iterable[object], citations: Iterable[dict[str, Any]]) -> list[str]:
     values: list[str] = []
     for row in rows:
-        raw = row if isinstance(row, str) else row.get("text") or row.get("title") or row.get("action") or ""
+        raw = row if isinstance(row, str) else (
+            row.get("text") or row.get("title") or row.get("action") or row.get("finding") or ""
+        )
         clean = simplify_public_text(raw, citations)
         if clean and clean not in values:
             values.append(clean)
     return values
+
+
+def _is_causal_artifact_finding(value: str) -> bool:
+    """Keep causal attachment observations in Cause without leaking evidence identifiers."""
+    folded = value.casefold()
+    subject = any(term in folded for term in ("vnc", "qemu", "libvirt", "세션", "소켓", "연결"))
+    state = any(term in folded for term in (
+        "still_open", "waiting", "interrupted", "남아", "해제되지", "대기", "중단", "실패", "error", "오류",
+    ))
+    return subject and state
 
 
 def format_public_answer(result: dict[str, Any]) -> str | None:
@@ -295,11 +307,19 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
         if summary and _is_user_observed_symptom(summary):
             symptom_values.append(summary)
     cause_values = _section_values(report.get("diagnoses") or [], citations)
+    artifact_findings = _section_values(report.get("artifactEvidence") or [], citations)
+    causal_artifact_findings = [value for value in artifact_findings if _is_causal_artifact_finding(value)]
+    contextual_artifact_findings = [value for value in artifact_findings if value not in causal_artifact_findings]
     action_values = _section_values(report.get("recommendedActions") or [], citations)
     if report.get("currentAssessment") == "CURRENT_RUNTIME_ISSUE" and any(
         term in " ".join(cause_values).casefold() for term in ("qemu", "vnc", "콘솔 연결")
     ):
-        cause_values = ["가상머신 실행 프로그램(QEMU)에서 이전 콘솔 연결(VNC)이 정상적으로 끝나지 않아 새 연결을 받지 못하는 상태일 수 있습니다."]
+        cause_values = [
+            *causal_artifact_findings,
+            "가상머신 실행 프로그램(QEMU)에서 이전 콘솔 연결(VNC)이 정상적으로 끝나지 않아 새 연결을 받지 못하는 상태일 수 있습니다.",
+        ]
+    else:
+        cause_values = [*causal_artifact_findings, *cause_values]
     for heading, values, empty_message in (
         ("증상", symptom_values, "확인된 증상 정보가 없습니다."),
         ("원인", cause_values, "현재 근거에서 확인된 원인은 없습니다."),
@@ -329,7 +349,7 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
         }
         preview_label = labels.get(preview, simplify_public_text(preview, citations))
 
-    considerations: list[str] = []
+    considerations: list[str] = list(contextual_artifact_findings)
     for row in report.get("unknowns") or []:
         clean = simplify_public_text(row, citations)
         if clean and clean not in considerations:

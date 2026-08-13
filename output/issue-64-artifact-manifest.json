@@ -1,0 +1,36 @@
+{
+  "issue": 64,
+  "generatedAt": "2026-08-13T02:31:45.307778+00:00",
+  "artifacts": [
+    {
+      "path": "docs/plans/issue-64-answer-clarity-community-review-design.md",
+      "bytes": 6321,
+      "sha256": "6b7a4fbd616152de69d8012be34fdd541580c993f595e35275069738f6bc1148"
+    },
+    {
+      "path": "docs/runbooks/community-ai-review-post.md",
+      "bytes": 6599,
+      "sha256": "59b4033c10f817530d181e7b5b201131bd425c1e147b7119cbd62d7e9d3e5fa7"
+    },
+    {
+      "path": "docs/reports/issue-64-answer-clarity-validation.md",
+      "bytes": 9964,
+      "sha256": "bcc2d1f4a093fbe09d7b2ab502425a0182366e284fa351855c9d11c0a6203604"
+    },
+    {
+      "path": "output/pdf/techflow-issue-64-answer-clarity-report.pdf",
+      "bytes": 141642,
+      "sha256": "a0f7c5f76cf911514baa44a068feff218df1124ef1c6ace387abceb94dfbc0eb"
+    },
+    {
+      "path": "output/pdf/techflow-issue-64-answer-clarity-presentation.pdf",
+      "bytes": 617717,
+      "sha256": "368f71f362425b3aa047aa88fdd7ea9f0084e3a162ed4aa72e1282674b91bf99"
+    },
+    {
+      "path": "output/presentation/techflow-issue-64-answer-clarity.pptx",
+      "bytes": 39078,
+      "sha256": "d3130575f6c75a8532ce40781ce9a13eafbf1434a0ba9fbf362620a92e72c90e"
+    }
+  ]
+}
