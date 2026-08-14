@@ -6,6 +6,7 @@ Community Assist는 이제 관리자 승인 없이 `TechFlow-Assistant`가 답�
 
 Chat은 더 이상 승인 채널이 아닙니다. 자동 답변 게시, Knowledge Base 게시·최종 솔루션 지정, 실패 상태와 Community 원문 링크를 담당자에게 알려 정상 동작을 관찰하는 채널입니다. 인프라를 변경하는 TechFlow Ops의 승인 정책은 이번 변경 대상이 아닙니다.
 
+- [Community 자동화 사용자 가이드](docs/guides/community-automation-user-guide.md)
 - [자동 게시·Knowledge Base 설계](docs/plans/issue-69-community-auto-publish-kb-design.md)
 - [아키텍처 결정 ADR-0010](docs/adr/0010-community-auto-publish-knowledge-base.md)
 - [배포·운영 Runbook](docs/runbooks/community-conversation.md)

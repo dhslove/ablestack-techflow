@@ -32,7 +32,8 @@
 - Synology Chat은 승인 채널이 아니라 자동 게시·실패·Knowledge Base 생성 상태를 확인하는 운영 관찰 채널로 사용합니다.
 - 내부 Citation과 상세 근거는 Community에 공개하지 않고, 연결된 운영자의 `근거 <Case>` 명령으로만 확인합니다.
 
-설계와 운영 절차는 `../../docs/adr/0010-community-auto-publish-knowledge-base.md`와
+사용자 이용 방법은 `../../docs/guides/community-automation-user-guide.md`, 설계와 운영 절차는
+`../../docs/adr/0010-community-auto-publish-knowledge-base.md`와
 `../../docs/runbooks/community-conversation.md`를 참조합니다.
 
 TechFlow AI Gateway는 Activepieces와 AI Provider 사이에서 ABLESTACK 지식의 Source Registry, 검역·승인, Parser·Chunk·Embedding, 검색 범위와 인용, 삭제 정책을 소유하는 FastAPI 서비스입니다. 저장소 원문을 실행하지 않으며 Activepieces가 정책·상태·인프라 작업을 대신 소유하지 않습니다.
