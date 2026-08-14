@@ -169,6 +169,65 @@ class CommunityPollerTests(unittest.TestCase):
             parser.links,
         )
 
+    def test_discussion_169_inline_image_is_imported_without_silent_drop(self) -> None:
+        discussion = {
+            "discussionId": "169", "discussionUrl": "https://community.ablecloud.io/d/169",
+            "title": "Windows 가상머신 ISO 설치 중에 디스크가 안보임",
+            "authorId": "13", "tagSlugs": ["mold"], "firstPostId": "390",
+        }
+        payload = {"data": [{
+            "type": "posts", "id": "390",
+            "attributes": {
+                "number": 1,
+                "contentHtml": (
+                    '<p><img class="FoFUpload--Upl-Image-Preview" '
+                    'src="https://community.ablecloud.io/assets/files/2026-08-14/'
+                    '1786706101-848385-image.png" title="image.png" alt="" '
+                    'data-id="fee62972-fed3-43d4-887d-c4330d8f7232" loading="lazy"></p>'
+                    '<p>Windows 설치 중 디스크가 보이지 않습니다.</p>'
+                ),
+            },
+            "relationships": {"user": {"data": {"type": "users", "id": "13"}}},
+        }]}
+        event = poll_flarum.normalize_posts(discussion, payload, "40")[0]
+        image = self._Response(b"\x89PNG\r\n\x1a\nimage", "image/png")
+        uploaded = self._Response(
+            json.dumps({"data": {"artifactId": "a79e3bb4-cf9c-40d7-bb3f-a4b180ad04cc"}}).encode(),
+            "application/json",
+        )
+
+        with patch.object(poll_flarum.urllib.request, "urlopen", side_effect=[image, uploaded]) as opened:
+            artifact_ids, warnings = poll_flarum.upload_artifacts(
+                event, "http://gateway:8090", "http://172.16.0.234",
+                "https://community.ablecloud.io", "runtime-token", "community-169-390",
+            )
+
+        self.assertEqual(["a79e3bb4-cf9c-40d7-bb3f-a4b180ad04cc"], artifact_ids)
+        self.assertEqual([], warnings)
+        self.assertEqual(2, opened.call_count)
+        download_request = opened.call_args_list[0].args[0]
+        self.assertEqual(
+            "http://172.16.0.234/assets/files/2026-08-14/1786706101-848385-image.png",
+            download_request.full_url,
+        )
+        self.assertNotIn("attachmentUrls", event)
+        self.assertNotIn("_attachmentReferenceCount", event)
+
+    def test_inline_image_without_a_usable_source_is_reported(self) -> None:
+        parser = poll_flarum.ContentParser()
+        parser.feed('<p><img class="FoFUpload--Upl-Image-Preview" alt="image.png"></p>')
+        event = {
+            "attachmentUrls": parser.links,
+            "_attachmentReferenceCount": parser.attachment_reference_count,
+        }
+        artifact_ids, warnings = poll_flarum.upload_artifacts(
+            event, "http://gateway:8090", "http://172.16.0.234",
+            "https://community.ablecloud.io", "runtime-token", "missing-image-source",
+        )
+        self.assertEqual([], artifact_ids)
+        self.assertEqual(1, len(warnings))
+        self.assertIn("분석 대상으로 가져오지 못했습니다", warnings[0])
+
     def test_download_filename_prefers_content_disposition(self) -> None:
         self.assertEqual(
             "mold-console-logs.zip",

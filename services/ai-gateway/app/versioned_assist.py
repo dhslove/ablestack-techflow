@@ -643,9 +643,12 @@ def format_knowledge_base(result: dict[str, Any]) -> str | None:
         lines.extend(f"- {value}" for value in values or [empty_message])
     information_requests: list[str] = []
     considerations: list[str] = list(contextual_artifact_findings)
+    attachment_failure_recorded = bool(result.get("attachmentFailureRecorded"))
     for row in report.get("unknowns") or []:
         clean = simplify_public_text(row, citations)
         if not clean:
+            continue
+        if not attachment_failure_recorded and _is_unverified_attachment_failure(clean):
             continue
         if any(marker in clean for marker in ("필요", "확인", "제공", "알려", "첨부", "로그", "화면")):
             if clean not in information_requests:
@@ -666,6 +669,16 @@ def format_knowledge_base(result: dict[str, Any]) -> str | None:
     lines.append("- ABLESTACK Diplo")
     lines.extend(["", "> 이 문서는 질문자가 해결 답변으로 선택한 내용을 중심으로 TechFlow가 대화를 정리한 Knowledge Base입니다."])
     return "\n".join(line for line in lines if line is not None).strip()
+
+
+def _is_unverified_attachment_failure(value: str) -> bool:
+    normalized = re.sub(r"\s+", " ", value).casefold()
+    attachment = any(marker in normalized for marker in ("첨부파일", "첨부 파일", "첨부자료", "첨부 자료"))
+    unavailable = any(
+        marker in normalized
+        for marker in ("내려받지 못", "다운로드하지 못", "확인할 수 없", "읽지 못", "분석하지 못")
+    )
+    return attachment and unavailable
 
 
 def projection_is_safe(text: str) -> bool:

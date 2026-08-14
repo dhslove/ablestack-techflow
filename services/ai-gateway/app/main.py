@@ -643,8 +643,9 @@ def create_app(
         idempotency_key: Annotated[str, Depends(_idempotency_key)],
     ) -> Envelope:
         event = _model_data(request)
+        analysis_event = dict(event)
         if request.artifact_warnings:
-            event["question"] = request.question + "\n\n[첨부 처리 안내]\n" + "\n".join(
+            analysis_event["question"] = request.question + "\n\n[첨부 처리 안내]\n" + "\n".join(
                 f"- {warning}" for warning in request.artifact_warnings
             )
         post_id = source_post_id(event)
@@ -683,6 +684,9 @@ def create_app(
                             artifactIds=artifact_ids, locale="ko-KR", classification="D0",
                         ),
                         correlation_id,
+                    )
+                    knowledge_result["attachmentFailureRecorded"] = any(
+                        "[첨부 처리 안내]" in str(turn.get("content") or "") for turn in turns
                     )
                     knowledge_answer = format_knowledge_base(knowledge_result)
                     if knowledge_result.get("state") == "FAILED" or not knowledge_answer:
@@ -819,7 +823,7 @@ def create_app(
         turns = runtime_store.list_community_turns(request.discussion_id)
         if retry_failed:
             turns = [item for item in turns if item.get("sourcePostId") != post_id]
-        conversation_question = build_conversation_question(request.title, turns, event)
+        conversation_question = build_conversation_question(request.title, turns, analysis_event)
         assist_request = ComprehensiveQueryRequest(
             queryId=uuid4(), question=conversation_question, actorId=f"community:{request.author_id}",
             productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,
@@ -836,7 +840,7 @@ def create_app(
                 "community_answer_progression_retry", correlationId=correlation_id,
                 discussionId=request.discussion_id, sourcePostId=post_id,
             )
-            rewrite_question = build_progression_retry_question(request.title, turns, event)
+            rewrite_question = build_progression_retry_question(request.title, turns, analysis_event)
             retry_request = ComprehensiveQueryRequest(
                 queryId=uuid4(), question=rewrite_question, actorId=f"community:{request.author_id}",
                 productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,

@@ -151,8 +151,8 @@ TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE=/run/secrets/flarum_solution_sele
 
 5. `TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_SECRET_FILE`은 Best Answer 변경 권한이 있는 Flarum 관리자 ID 파일을 가리키게 한다. 시험 서버에서는 검증된 관리자 User 1을 사용한다.
 6. 추가 관리자가 있다면 `.env`의 `TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS`에 Flarum User ID를 쉼표로 구분해 설정한다. 최종 KB selector User ID는 자동으로 관리자에 포함된다.
-7. Gateway와 Poller만 0.14.8 이미지로 교체한다.
-8. Health에서 `version=0.14.8`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+7. Gateway와 Poller만 0.14.9 이미지로 교체한다.
+8. Health에서 `version=0.14.9`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
 9. `.env`에 `TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED=true`를 설정하고 공식 도메인 제한 실호출을 검증한다.
 10. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
@@ -180,6 +180,7 @@ docker compose --env-file .env \
 | Chat 알림만 실패 | `community_chat_notification_failed` | Community 게시 상태를 먼저 확인하고 Chat Bot 연결 복구 |
 | 후속 질문이 새 Case로 생성됨 | `discussion_id`, `community_turn` | Poller Discussion ID와 Post ID 정규화 확인 |
 | 첨부가 큐를 막음 | Artifact HTTP 상태, Poller Seen 상태 | 영구 오류는 안전 경고로, 일시 오류는 재시도로 분리 |
+| 이미지가 글에는 보이지만 답변에서 확인하지 못함 | Activepieces 최초 Webhook의 `artifactIds`, `artifactWarnings`, Poller의 첨부 참조 수 | 인라인 이미지 참조 1건마다 Artifact ID 또는 처리 경고가 1건 생겨야 한다. 둘 다 0이면 Poller 0.14.9 이상으로 교체하고 해당 Post를 재처리한다. 실패 기록이 없는데 KB에 다운로드 실패 문구가 있으면 게시 내용을 교정한다. |
 | OS 설치 방법을 다른 관리자에게 넘김 | OS 이름과 로컬 공식 자료 검색 결과 | 0.14.7 이상인지 확인하고 Ubuntu·RHEL/Rocky·Windows 설치 스냅샷이 Context에 포함됐는지 확인 |
 | Glue·Koral·Wall·Mold 질문의 기반 자료가 부족함 | `official_web_search_completed`, 내부 Citation의 허용 도메인과 수집 시각 | 운영 플래그와 OpenAI 모드를 확인하고 비허용 도메인 결과는 폐기 |
 

@@ -75,6 +75,23 @@ class CommunityTests(unittest.TestCase):
         )
         self.assertEqual(409, publish.status_code)
 
+    def test_attachment_processing_warning_does_not_modify_stored_question(self) -> None:
+        store = MemoryStore()
+        client = TestClient(create_app(Settings(), store))
+        payload = {
+            **self.payload(),
+            "artifactWarnings": ["첨부자료가 본문에 있지만 분석 대상으로 가져오지 못했습니다."],
+        }
+        created = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "community-warning-original-question"},
+            json=payload,
+        )
+        self.assertEqual(201, created.status_code)
+        turns = store.list_community_turns("901")
+        self.assertEqual(self.payload()["question"], turns[0]["content"])
+        self.assertNotIn("[첨부 처리 안내]", turns[0]["content"])
+
     def test_edited_answer_can_be_approved_but_disabled_publish_fails_closed(self) -> None:
         client = TestClient(create_app(Settings(), MemoryStore()))
         case = client.post("/v1/community/cases", headers=HEADERS, json=self.payload()).json()["data"]
@@ -611,6 +628,28 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual("RESOLVED", confirmed["conversationState"])
         self.assertEqual("200", confirmed["resolvedPostId"])
         self.assertEqual("201", confirmed["knowledgeBasePostId"])
+
+    def test_knowledge_base_removes_unverified_attachment_download_claim(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "attachmentFailureRecorded": False,
+            "report": {
+                "summary": "Windows 설치 중 디스크가 보이지 않습니다.",
+                "observedFacts": ["Windows 설치 중 설치 대상 디스크가 보이지 않습니다."],
+                "diagnoses": [{"title": "VirtIO SCSI 드라이버가 로드되지 않았습니다."}],
+                "recommendedActions": ["VirtIO SCSI 드라이버를 불러온 뒤 디스크 목록을 새로 고칩니다."],
+                "unknowns": ["첨부파일을 내려받지 못해 원래 화면은 확인할 수 없습니다."],
+                "artifactEvidence": [],
+            },
+            "citations": [],
+        }
+        knowledge = format_knowledge_base(result)
+        self.assertIsNotNone(knowledge)
+        self.assertNotIn("첨부파일을 내려받지 못", knowledge)
+
+        result["attachmentFailureRecorded"] = True
+        knowledge_with_failure = format_knowledge_base(result)
+        self.assertIn("첨부파일을 내려받지 못", knowledge_with_failure)
 
     def test_legacy_review_publication_can_be_migrated_once_to_auto_publish(self) -> None:
         store = MemoryStore()
