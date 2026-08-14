@@ -17,6 +17,7 @@ require_root() {
 
 settings_php() {
   runuser -u "$APP_USER" -- php -r '
+    require $argv[1]."/vendor/autoload.php";
     $config = include $argv[1]."/config.php";
     $db = $config["database"];
     $dsn = "mysql:host={$db["host"]};port=".($db["port"] ?? 3306).";dbname={$db["database"]};charset=utf8mb4";
