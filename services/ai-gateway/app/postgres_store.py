@@ -14,7 +14,13 @@ from .conversation import conversation_state_for_draft, source_post_id
 from .config import Settings
 from .indexing import build_index_bundle, reciprocal_rank_fusion
 from .source_registry import SOURCE_PROFILES, get_profile, list_profiles, validate_candidate_contract
-from .store import ConflictError, InvalidBoundaryError, InvalidStateError, NotFoundError
+from .store import (
+    KB_SOLUTION_CONFIRMED_EVENT,
+    ConflictError,
+    InvalidBoundaryError,
+    InvalidStateError,
+    NotFoundError,
+)
 
 
 LOGGER = logging.getLogger("techflow.ai_gateway.postgres_store")
@@ -1374,7 +1380,7 @@ class PostgresStore:
             selected_by_administrator = request.get("bestAnswerSelectedByAdministrator") is True
             knowledge_post = row.get("knowledge_base_post_id")
             if best_post and knowledge_post and best_post == knowledge_post:
-                state, event_type = "RESOLVED", "KNOWLEDGE_BASE_SOLUTION_CONFIRMED"
+                state, event_type = "RESOLVED", KB_SOLUTION_CONFIRMED_EVENT
                 changed = (
                     row.get("conversation_state") != state
                     or row.get("knowledge_base_solution_selected_at") is None

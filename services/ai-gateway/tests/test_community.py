@@ -13,7 +13,7 @@ from app.community import FlarumClient, FlarumResourceNotFound, conversationaliz
 from app.versioned_assist import format_knowledge_base
 from app.config import Settings
 from app.main import _resolution_administrator_ids, create_app
-from app.store import MemoryStore
+from app.store import KB_SOLUTION_CONFIRMED_EVENT, MemoryStore
 
 
 HEADERS = {"X-Correlation-Id": "community-test-0001", "Idempotency-Key": "community-test-idempotency-0001"}
@@ -628,6 +628,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual("RESOLVED", confirmed["conversationState"])
         self.assertEqual("200", confirmed["resolvedPostId"])
         self.assertEqual("201", confirmed["knowledgeBasePostId"])
+        self.assertLessEqual(len(KB_SOLUTION_CONFIRMED_EVENT), 32)
 
     def test_knowledge_base_removes_unverified_attachment_download_claim(self) -> None:
         result = {

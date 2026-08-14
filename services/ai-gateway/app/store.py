@@ -12,6 +12,9 @@ from .provider import PROVIDER_PROFILES
 from .conversation import conversation_state_for_draft, source_post_id
 
 
+KB_SOLUTION_CONFIRMED_EVENT = "KB_SOLUTION_CONFIRMED"
+
+
 class StoreError(RuntimeError):
     code = "STORE_ERROR"
     http_status = 500
@@ -938,7 +941,7 @@ class MemoryStore:
                     knowledgeBaseSolutionSelectedByUserId=best_user,
                     updatedAt=now,
                 )
-                event_type = "KNOWLEDGE_BASE_SOLUTION_CONFIRMED"
+                event_type = KB_SOLUTION_CONFIRMED_EVENT
             elif best_post and (best_user == requester or selected_by_administrator):
                 changed = value.get("conversationState") != "RESOLVED" or value.get("resolvedPostId") != best_post
                 value.update(

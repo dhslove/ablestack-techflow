@@ -4,7 +4,7 @@
 - 대상: [Community Discussion #169](https://community.ablecloud.io/d/169-windows-gasangmeosin-iso-seolci-junge-diseukeuga-anboim)
 - 관련 이슈: #77
 - 구현 브랜치: `agent/issue-64-answer-clarity`
-- 목표 버전: TechFlow AI Gateway 0.14.9
+- 목표 버전: TechFlow AI Gateway 0.14.10
 
 ## 1. 결론
 
@@ -56,7 +56,7 @@
 ## 5. 배포와 Discussion #169 교정 절차
 
 1. 시험 서버의 Gateway 소스, Poller 상태, Compose 정의와 현재 이미지 ID를 백업한다.
-2. OpenAI Override를 포함해 `gateway`와 `community-poller`만 0.14.9로 재생성한다.
+2. OpenAI Override를 포함해 `gateway`와 `community-poller`만 0.14.10으로 재생성한다.
 3. GitHub-to-Chat Event Gateway는 어떤 명령의 대상에도 포함하지 않는다.
 4. Post #390을 동일 Event ID로 재처리해 이미지 Artifact 등록을 확인한다.
 5. 실제 이미지 관찰 결과를 포함해 KB를 다시 종합하고 기존 Post #392를 제자리 교정한다.
@@ -67,3 +67,41 @@
 ## 6. 보안과 데이터 경계
 
 이미지 원본은 Flarum에서 Gateway의 단기 D0 Artifact 저장소로만 이동한다. Activepieces에는 Artifact ID와 처리 상태만 전달하며 이미지 바이트, API Key, 비밀번호, 인증 응답은 기록하지 않는다. 사용자용 KB에는 내부 Artifact ID, 저장 경로, Citation, Repository, Commit을 표시하지 않는다.
+
+## 7. 시험 서버 적용 결과
+
+2026-08-14에 시험 서버의 Gateway와 Community Poller만 0.14.10으로 제한 배포했다. 첫 0.14.9 적용 후 기존 KB 솔루션을 다시 동기화하는 과정에서 `KNOWLEDGE_BASE_SOLUTION_CONFIRMED` 이벤트명이 운영 DB의 `community_case_event.event_type varchar(32)` 경계를 넘는 문제를 발견했다. 이벤트명을 `KB_SOLUTION_CONFIRMED`로 변경하고 전체 회귀 시험을 다시 통과한 0.14.10을 배포했다. DB 스키마 직접 수정은 하지 않았다.
+
+배포 전 자산은 다음 서버 경로에 보관했다.
+
+- 최초 배포 전 백업: `/home/ablecloud/techflow-ai-gateway-backups/discussion-169-predeploy-20260814T115249Z`
+- 이벤트 호환성 수정 전 백업: `/home/ablecloud/techflow-ai-gateway-backups/discussion-169-event-hotfix-20260814T120222Z`
+
+실제 첨부 PNG를 다시 내려받아 Gateway에 등록한 결과는 다음과 같다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 파일 형식 | PNG, 1,602×1,210 |
+| 파일 크기 | 120,425바이트 |
+| SHA-256 | `eb1ebc29d2dbc1cc96dd94e0d62e6aa17a57b9929d25b82bb9b1a1b46c4a0a05` |
+| OpenAI 종합 분석 | `ANSWERED`, 실제 Provider 호출 성공 |
+| 이미지 근거 | 1건 |
+| 잘못된 다운로드 실패 문구 | 0건 |
+| 시험 Artifact | 검증 완료 후 삭제 |
+
+기존 Knowledge Base Post #392는 새 Post를 만들지 않고 제자리에서 교정했다. 교정 후에는 이미지에서 실제 확인한 “설치 대상 디스크 없음”과 `Load driver` 안내를 증상으로 반영하고, SCSI 형식을 유지한 채 VirtIO SCSI 드라이버를 불러오는 해결 절차를 제공한다.
+
+| 최종 확인 | 결과 |
+| --- | --- |
+| Discussion 상태 | `RESOLVED` |
+| 해결 근거 Post | #391 |
+| Knowledge Base Post | #392 |
+| Knowledge Base 버전 | 2 |
+| 최종 Best Answer | #392 |
+| Post #392 승인 상태 | 승인됨 |
+| Gateway 상태 | 0.14.10, OpenAI, DB·Vector Ready |
+| Poller 최근 주기 | 실패 0건 |
+| Source Reconciler | Container·Image·StartedAt 불변 |
+| GitHub-to-Chat Event Gateway | Container·Image·Restart Count·StartedAt 불변 |
+
+보호 대상 Event Gateway는 Container ID `bf5c76824dbf8b0513431e4d067043d0ff46fa82553512c41239e5f622804b4c`, Image ID `sha256:ae33662eb227c9826563e94236272547f586437082f65d4d385837793e63670e`, Restart Count 0을 배포 전후 동일하게 유지했다.
