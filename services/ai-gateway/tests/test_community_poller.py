@@ -4,6 +4,7 @@ import importlib.util
 from email.message import Message
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -20,10 +21,26 @@ assert SPEC and SPEC.loader
 SPEC.loader.exec_module(poll_flarum)
 
 
+class FakeResponse(BytesIO):
+    def __init__(self, data: bytes, *, content_type: str = "text/plain", content_length: int | None = None) -> None:
+        super().__init__(data)
+        self.headers = Message()
+        self.headers["Content-Type"] = content_type
+        if content_length is not None:
+            self.headers["Content-Length"] = str(content_length)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()
+
+
 class CommunityPollerTests(unittest.TestCase):
     class _Response:
         def __init__(self, content: bytes, content_type: str, disposition: str = "") -> None:
             self.content = content
+            self.buffer = BytesIO(content)
             self.headers = Message()
             self.headers["Content-Type"] = content_type
             if disposition:
@@ -35,8 +52,8 @@ class CommunityPollerTests(unittest.TestCase):
         def __exit__(self, *_):
             return False
 
-        def read(self, *_):
-            return self.content
+        def read(self, size=-1):
+            return self.buffer.read(size)
 
     def test_first_posts_are_normalized_with_post_identity(self) -> None:
         payload = {
@@ -153,6 +170,47 @@ class CommunityPollerTests(unittest.TestCase):
         parser = poll_flarum.ContentParser()
         parser.feed("<p>질문</p><script>ignore()</script>")
         self.assertEqual(["질문", "ignore()"], parser.text)
+
+    def test_attachment_policy_accepts_exact_boundary_and_rejects_one_byte_over(self) -> None:
+        exact = b"A" * 2048
+        with patch.object(poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(exact)):
+            content, media_type, _ = poll_flarum._read_attachment(
+                poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.log"),
+                max_bytes=2048, timeout=5, retries=0,
+            )
+        self.assertEqual(exact, content)
+        self.assertEqual("text/plain", media_type)
+
+        with patch.object(poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(exact + b"!")):
+            with self.assertRaisesRegex(ValueError, "size"):
+                poll_flarum._read_attachment(
+                    poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.log"),
+                    max_bytes=2048, timeout=5, retries=0,
+                )
+
+    def test_content_length_is_rejected_before_body_download(self) -> None:
+        with patch.object(
+            poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(b"", content_length=2049),
+        ):
+            with self.assertRaisesRegex(ValueError, "size"):
+                poll_flarum._read_attachment(
+                    poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.zip"),
+                    max_bytes=2048, timeout=5, retries=0,
+                )
+
+    def test_attachment_policy_environment_is_bounded(self) -> None:
+        with patch.dict(os.environ, {"TECHFLOW_COMMUNITY_ATTACHMENT_MAX_BYTES": "52428801"}, clear=False):
+            with self.assertRaises(RuntimeError):
+                poll_flarum._attachment_policy()
+
+    def test_external_attachment_is_skipped_with_understandable_warning(self) -> None:
+        event = {"attachmentUrls": ["https://example.invalid/secret.log"]}
+        ids, warnings = poll_flarum.upload_artifacts(
+            event, "http://gateway:8090", "http://172.16.0.234",
+            "https://community.ablecloud.io", "runtime-token", "community-test-0001",
+        )
+        self.assertEqual([], ids)
+        self.assertIn("Community 외부 주소", warnings[0])
 
 
     def test_flarum_image_and_uuid_download_are_collected(self) -> None:

@@ -15,6 +15,19 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual("mock", settings.provider_mode)
         self.assertFalse(settings.official_web_search_enabled)
         self.assertEqual(128, settings.embedding_batch_size)
+        self.assertEqual(50 * 1024 * 1024, settings.artifact_max_bytes)
+        self.assertEqual(100 * 1024 * 1024, settings.artifact_max_extracted_bytes)
+
+    def test_large_upload_boundary_is_bounded(self) -> None:
+        Settings(
+            artifact_max_bytes=50 * 1024 * 1024,
+            artifact_max_extracted_bytes=100 * 1024 * 1024,
+        ).validate()
+        with self.assertRaises(ConfigurationError):
+            Settings(
+                artifact_max_bytes=50 * 1024 * 1024 + 1,
+                artifact_max_extracted_bytes=100 * 1024 * 1024,
+            ).validate()
 
     def test_postgres_requires_dsn(self) -> None:
         with self.assertRaises(ConfigurationError):

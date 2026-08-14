@@ -32,8 +32,8 @@ class Settings:
     database_pool_max: int = 4
     artifact_root: str = os.path.join(tempfile.gettempdir(), "techflow-artifacts")
     artifact_retention_hours: int = 24
-    artifact_max_bytes: int = 10 * 1024 * 1024
-    artifact_max_extracted_bytes: int = 20 * 1024 * 1024
+    artifact_max_bytes: int = 50 * 1024 * 1024
+    artifact_max_extracted_bytes: int = 100 * 1024 * 1024
     artifact_max_archive_entries: int = 100
     artifact_max_compression_ratio: int = 20
     artifact_max_log_evidence_chars: int = 120_000
@@ -71,8 +71,8 @@ class Settings:
             database_pool_max=int(os.getenv("TECHFLOW_RAG_DATABASE_POOL_MAX", "4")),
             artifact_root=os.getenv("TECHFLOW_ARTIFACT_ROOT", os.path.join(tempfile.gettempdir(), "techflow-artifacts")),
             artifact_retention_hours=int(os.getenv("TECHFLOW_ARTIFACT_RETENTION_HOURS", "24")),
-            artifact_max_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_BYTES", str(10 * 1024 * 1024))),
-            artifact_max_extracted_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_EXTRACTED_BYTES", str(20 * 1024 * 1024))),
+            artifact_max_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_BYTES", str(50 * 1024 * 1024))),
+            artifact_max_extracted_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_EXTRACTED_BYTES", str(100 * 1024 * 1024))),
             artifact_max_archive_entries=int(os.getenv("TECHFLOW_ARTIFACT_MAX_ARCHIVE_ENTRIES", "100")),
             artifact_max_compression_ratio=int(os.getenv("TECHFLOW_ARTIFACT_MAX_COMPRESSION_RATIO", "20")),
             artifact_max_log_evidence_chars=int(os.getenv("TECHFLOW_ARTIFACT_MAX_LOG_EVIDENCE_CHARS", "120000")),
@@ -127,10 +127,10 @@ class Settings:
             raise ConfigurationError("invalid database pool bounds")
         if not 1 <= self.artifact_retention_hours <= 168:
             raise ConfigurationError("TECHFLOW_ARTIFACT_RETENTION_HOURS must be between 1 and 168")
-        if not 1024 <= self.artifact_max_bytes <= 20 * 1024 * 1024:
-            raise ConfigurationError("TECHFLOW_ARTIFACT_MAX_BYTES must be between 1 KiB and 20 MiB")
-        if not self.artifact_max_bytes <= self.artifact_max_extracted_bytes <= 100 * 1024 * 1024:
-            raise ConfigurationError("TECHFLOW_ARTIFACT_MAX_EXTRACTED_BYTES must be between upload max and 100 MiB")
+        if not 1024 <= self.artifact_max_bytes <= 50 * 1024 * 1024:
+            raise ConfigurationError("TECHFLOW_ARTIFACT_MAX_BYTES must be between 1 KiB and 50 MiB")
+        if not self.artifact_max_bytes <= self.artifact_max_extracted_bytes <= 200 * 1024 * 1024:
+            raise ConfigurationError("TECHFLOW_ARTIFACT_MAX_EXTRACTED_BYTES must be between upload max and 200 MiB")
         if not 1 <= self.artifact_max_archive_entries <= 500:
             raise ConfigurationError("TECHFLOW_ARTIFACT_MAX_ARCHIVE_ENTRIES must be between 1 and 500")
         if not 1 <= self.artifact_max_compression_ratio <= 100:
