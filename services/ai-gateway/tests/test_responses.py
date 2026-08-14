@@ -40,25 +40,32 @@ def result(
     }
 
 
+class _FakeResponse(SimpleNamespace):
+    def model_dump(self) -> dict[str, object]:
+        return getattr(self, "payload", {})
+
+
 class _FakeResponses:
-    def __init__(self, output_text: str) -> None:
+    def __init__(self, output_text: str, payload: dict[str, object] | None = None) -> None:
         self.output_text = output_text
+        self.payload = payload or {}
         self.kwargs: dict[str, object] | None = None
 
     def create(self, **kwargs: object) -> object:
         self.kwargs = kwargs
-        return SimpleNamespace(
+        return _FakeResponse(
             output_text=self.output_text,
             model="gpt-5.6-terra-2026-07-01",
             id="resp-safe",
             _request_id="req-safe",
             usage=SimpleNamespace(input_tokens=100, output_tokens=20),
+            payload=self.payload,
         )
 
 
 class _FakeClient:
-    def __init__(self, output_text: str) -> None:
-        self.responses = _FakeResponses(output_text)
+    def __init__(self, output_text: str, payload: dict[str, object] | None = None) -> None:
+        self.responses = _FakeResponses(output_text, payload)
 
 
 class ResponsesPolicyTest(unittest.TestCase):
@@ -150,6 +157,24 @@ class ResponsesPolicyTest(unittest.TestCase):
             adapter.generate(request)
         self.assertEqual("PROVIDER_INVALID_RESPONSE", raised.exception.code)
         self.assertNotIn("SECRET-CONTENT", str(raised.exception))
+
+    def test_official_web_search_is_required_domain_restricted_and_source_verified(self) -> None:
+        url = "https://kubernetes.io/docs/tasks/debug/debug-cluster/"
+        fake = _FakeClient(
+            '{"facts":[{"statement":"Inspect cluster debugging information.","title":"Debug cluster","url":"' + url + '"}]}',
+            {"output": [{"type": "web_search_call", "action": {"sources": [{"url": url}]}}]},
+        )
+        adapter = OpenAIResponsesAdapter("unused", "unused", client=fake)
+        results = adapter.search_official_references("Koral Pod가 시작되지 않습니다.")
+        kwargs = fake.responses.kwargs or {}
+        self.assertEqual(1, len(results))
+        self.assertEqual("required", kwargs["tool_choice"])
+        tool = kwargs["tools"][0]
+        self.assertEqual("web_search", tool["type"])
+        self.assertIn("kubernetes.io", tool["filters"]["allowed_domains"])
+        self.assertIn("official Kubernetes", kwargs["input"][1]["content"])
+        self.assertFalse(kwargs["store"])
+        self.assertFalse(kwargs["background"])
 
     def test_circuit_breaker_opens_after_failure_threshold(self) -> None:
         breaker = CircuitBreaker(minimum_calls=10, failure_rate=0.5)

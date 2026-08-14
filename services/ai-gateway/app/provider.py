@@ -58,6 +58,7 @@ class ContextChunk:
     start_line: int = 1
     end_line: int = 1
     symbol: str | None = None
+    retrieved_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,10 @@ class MockResponsesAdapter:
             provider="mock",
             profile_id=profile.profile_id,
         )
+
+    def search_official_references(self, question: str) -> list[dict[str, object]]:
+        """Mock mode never performs network access."""
+        return []
 
     def generate_comprehensive(self, request: ComprehensiveResponsesRequest) -> ComprehensiveResponsesResult:
         if not request.context or len(request.context) > 20:

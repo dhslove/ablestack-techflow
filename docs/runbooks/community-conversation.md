@@ -4,7 +4,7 @@
 
 1. 질문자 또는 다른 참여자가 Discussion이나 후속 댓글을 등록한다.
 2. Poller가 새 Post와 이미지·로그·압축 로그를 수집한다.
-3. AI Gateway가 기존 대화, ABLESTACK 문서와 코드, 승인된 플랫폼 자료를 함께 분석한다.
+3. AI Gateway가 기존 대화, ABLESTACK 문서와 코드, 승인된 플랫폼 자료를 함께 분석한다. 로컬 공식 자료가 없거나 오래된 경우에만 제품별 공식 도메인을 제한 검색한다.
 4. `TechFlow-Assistant`가 이해하기 쉬운 대화체 답변을 바로 공개한다.
 5. Chat Bot이 게시 결과와 Community 링크를 담당자에게 알린다.
 6. 사람 참여자가 추가 정보나 후속 질문을 올리면 같은 Case에서 분석과 답변을 반복한다. `TechFlow-Assistant` 자신의 Post는 재응답하지 않는다.
@@ -17,7 +17,7 @@
 후속 답변은 다음 순서를 지킨다.
 
 1. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법을 먼저 제시한다.
-2. 근거가 있는 경우 실행 위치, 정확한 CLI 명령과 정상 판정 기준을 함께 제공한다. 설명은 문장으로 먼저 쓰고 CLI는 바로 아래의 독립된 `bash` 코드 블록에 표시한다.
+2. 근거가 있는 경우 실행 위치, 정확한 CLI 명령과 정상 판정 기준을 함께 제공한다. 설명은 문장으로 먼저 쓰고 CLI는 Linux의 `bash`, Windows의 `powershell` 독립 코드 블록에 표시한다.
 3. 첫 조치로 해결되지 않을 때 적용할 대안을 제시한다.
 4. 그래도 해결되지 않을 때만 정확한 명령 출력이나 로그 이름을 요청한다.
 
@@ -87,6 +87,17 @@ Chat은 승인 채널이 아니라 관찰 채널이다.
 
 영구 처리 불가 첨부는 안전한 안내로 바꾸고 나머지 질문 처리를 계속한다. 네트워크 오류와 5xx는 Seen 상태를 진행하지 않고 재시도한다.
 
+### 5.1 공식 웹 보완
+
+- 공개 제품명은 Mold, Glue, Koral, Wall을 사용한다.
+- 내부 검색에서는 Mold→CloudStack과 필요 시 libvirt/QEMU/KVM, Glue→Ceph, Koral→Kubernetes, Wall→Grafana 용어를 함께 사용한다.
+- 로컬 공식 자료가 없거나 30일 갱신 기한을 넘겼을 때만 검색한다.
+- 허용 도메인은 Ubuntu·Red Hat·Rocky·Microsoft·QEMU·libvirt·Ceph·Kubernetes·Grafana·Apache CloudStack 공식 사이트로 제한한다.
+- 질문의 URL, 이메일, IP와 비밀정보 형태를 제거한 뒤 검색하며 첨부파일과 로그 본문은 보내지 않는다.
+- 도구의 실제 Source 목록과 일치하는 HTTPS URL만 내부 Context로 수용한다.
+- 공식 웹 자료는 ABLESTACK 제품 문서나 현재 Diplo 구현을 덮어쓸 수 없다.
+- 사용자 답변에는 공식 URL과 내부 Citation을 노출하지 않는다.
+
 ## 6. 자동 게시 안전장치
 
 - Flarum Assistant 계정으로 글을 작성한다.
@@ -139,9 +150,10 @@ TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE=/run/secrets/flarum_solution_sele
 ```
 
 5. `TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_SECRET_FILE`은 Best Answer 변경 권한이 있는 Flarum 관리자 ID 파일을 가리키게 한다. 시험 서버에서는 검증된 관리자 User 1을 사용한다.
-6. Gateway와 Poller만 0.14.6 이미지로 교체한다.
-7. Health에서 `version=0.14.6`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
-8. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
+6. Gateway와 Poller만 0.14.7 이미지로 교체한다.
+7. Health에서 `version=0.14.7`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+8. `.env`에 `TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED=true`를 설정하고 공식 도메인 제한 실호출을 검증한다.
+9. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
 OpenAI 시험 환경에서는 재생성 명령에 `compose.openai.override.yml`을 반드시 포함한다. 기본 `compose.yml`만 사용하면 Gateway가 안전 기본값인 Mock Provider로 기동한다.
 
@@ -167,6 +179,8 @@ docker compose --env-file .env \
 | Chat 알림만 실패 | `community_chat_notification_failed` | Community 게시 상태를 먼저 확인하고 Chat Bot 연결 복구 |
 | 후속 질문이 새 Case로 생성됨 | `discussion_id`, `community_turn` | Poller Discussion ID와 Post ID 정규화 확인 |
 | 첨부가 큐를 막음 | Artifact HTTP 상태, Poller Seen 상태 | 영구 오류는 안전 경고로, 일시 오류는 재시도로 분리 |
+| OS 설치 방법을 다른 관리자에게 넘김 | OS 이름과 로컬 공식 자료 검색 결과 | 0.14.7 이상인지 확인하고 Ubuntu·RHEL/Rocky·Windows 설치 스냅샷이 Context에 포함됐는지 확인 |
+| Glue·Koral·Wall·Mold 질문의 기반 자료가 부족함 | `official_web_search_completed`, 내부 Citation의 허용 도메인과 수집 시각 | 운영 플래그와 OpenAI 모드를 확인하고 비허용 도메인 결과는 폐기 |
 
 ### 9.1 본문과 첨부자료 제한
 

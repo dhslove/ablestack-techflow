@@ -17,6 +17,7 @@ class Settings:
     store_backend: str = "memory"
     database_dsn: str | None = None
     provider_mode: str = "mock"
+    official_web_search_enabled: bool = False
     openai_api_key_file: str | None = None
     openai_project_id_file: str | None = None
     safety_identifier_salt_file: str | None = None
@@ -54,6 +55,7 @@ class Settings:
             store_backend=os.getenv("TECHFLOW_RAG_STORE", "memory").strip().lower(),
             database_dsn=os.getenv("TECHFLOW_RAG_DATABASE_DSN") or None,
             provider_mode=os.getenv("TECHFLOW_RAG_PROVIDER_MODE", "mock").strip().lower(),
+            official_web_search_enabled=os.getenv("TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED", "false").lower() == "true",
             openai_api_key_file=os.getenv("TECHFLOW_OPENAI_API_KEY_FILE") or None,
             openai_project_id_file=os.getenv("TECHFLOW_OPENAI_PROJECT_ID_FILE") or None,
             safety_identifier_salt_file=os.getenv("TECHFLOW_SAFETY_IDENTIFIER_SALT_FILE") or None,
@@ -105,6 +107,8 @@ class Settings:
             missing = [name for name, value in required.items() if not value]
             if missing:
                 raise ConfigurationError(f"{', '.join(missing)} required for openai mode")
+        if self.official_web_search_enabled and self.provider_mode != "openai":
+            raise ConfigurationError("official web search requires openai provider mode")
         if not 1 <= self.embedding_batch_size <= 128:
             raise ConfigurationError("TECHFLOW_EMBEDDING_BATCH_SIZE must be between 1 and 128")
         if self.classification != "D0":
@@ -157,7 +161,7 @@ class Settings:
     def __repr__(self) -> str:
         return (
             "Settings(environment={!r}, store_backend={!r}, database_dsn=<redacted>, "
-            "provider_mode={!r}, openai_api_key_file=<redacted>, openai_project_id_file=<redacted>, "
+            "provider_mode={!r}, official_web_search_enabled={!r}, openai_api_key_file=<redacted>, openai_project_id_file=<redacted>, "
             "safety_identifier_salt_file=<redacted>, embedding_batch_size={!r}, "
             "classification={!r}, log_level={!r}, "
             "database_pool_min={!r}, database_pool_max={!r}, artifact_root=<redacted>, "
@@ -173,6 +177,7 @@ class Settings:
             self.environment,
             self.store_backend,
             self.provider_mode,
+            self.official_web_search_enabled,
             self.embedding_batch_size,
             self.classification,
             self.log_level,

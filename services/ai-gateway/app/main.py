@@ -80,6 +80,7 @@ from .versioned_assist import (
     versioned_plan,
 )
 from .platform_references import curated_platform_results
+from .official_web import official_web_search_required
 from .chat_assist import (
     CASE_REFERENCE,
     CommunityFlowClient,
@@ -550,7 +551,24 @@ def create_app(
             provider_called = embedding_result.provider == "openai"
             for profile_id in VERSIONED_SOURCE_PROFILES:
                 if profile_id == CURATED_PLATFORM_PROFILE:
-                    results_by_profile[profile_id] = curated_platform_results(request.question)
+                    curated = curated_platform_results(request.question)
+                    if runtime_settings.official_web_search_enabled and official_web_search_required(
+                        request.question, curated
+                    ):
+                        try:
+                            live_results = runtime_responses.search_official_references(request.question)
+                            curated.extend(live_results)
+                            _json_log(
+                                "official_web_search_completed", correlationId=correlation_id,
+                                resultCount=len(live_results),
+                            )
+                            provider_called = True
+                        except ResponsesProviderError as exc:
+                            _json_log(
+                                "official_web_search_failed", correlationId=correlation_id,
+                                errorCode=exc.code,
+                            )
+                    results_by_profile[profile_id] = curated
                     continue
                 retrieval_request = QueryRequest(
                     queryId=request.query_id, question=retrieval_question, sourceProfileIds=[profile_id],

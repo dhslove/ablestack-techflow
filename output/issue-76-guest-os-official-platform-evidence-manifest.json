@@ -1,0 +1,26 @@
+{
+  "issue": 76,
+  "generatedAt": "2026-08-14T07:00:03.057547+00:00",
+  "artifacts": [
+    {
+      "path": "docs/reports/issue-76-guest-os-official-platform-evidence-validation.md",
+      "bytes": 7661,
+      "sha256": "c2741d7921b5622a1ca8c377634b0e2a38857055b3dc1eb9962befcff9161e0a"
+    },
+    {
+      "path": "output/pdf/techflow-guest-os-official-platform-evidence-report.pdf",
+      "bytes": 115893,
+      "sha256": "01a4045104eeabfefe0666e9ba522a020c34f973e339096ad3283c7b5639b10f"
+    },
+    {
+      "path": "output/presentation/techflow-guest-os-official-platform-evidence.pptx",
+      "bytes": 27203,
+      "sha256": "2784202912b5b5938bea7ed9e1e605958cfb1d64d21b52f18278afa5f03c2488"
+    },
+    {
+      "path": "output/pdf/techflow-guest-os-official-platform-evidence-presentation.pdf",
+      "bytes": 340337,
+      "sha256": "7d96aadeb3651806bd634a751c426f060a21630493b31e02d3d3e280f2148cda"
+    }
+  ]
+}

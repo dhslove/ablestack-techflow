@@ -91,6 +91,30 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("SELinux 전체 비활성화", combined)
         self.assertNotIn("setenforce 0", combined)
 
+    def test_guest_agent_question_loads_exact_guest_os_commands(self) -> None:
+        cases = (
+            ("Ubuntu 24.04 qemu-guest-agent 설치 방법", "sudo apt install -y qemu-guest-agent"),
+            ("Rocky Linux qemu-guest-agent 설치 방법", "sudo dnf install -y qemu-guest-agent"),
+            ("Windows qemu guest agent 설치 방법", "Get-Service QEMU-GA"),
+        )
+        for question, expected in cases:
+            with self.subTest(question=question):
+                combined = "\n".join(item["content"] for item in curated_platform_results(question))
+                self.assertIn(expected, combined)
+
+    def test_glue_koral_and_wall_expand_to_upstream_terms(self) -> None:
+        self.assertIn("ceph health detail", expand_retrieval_question("Glue 상태가 WARN입니다."))
+        self.assertIn("kubernetes", expand_retrieval_question("Koral Pod가 시작되지 않습니다."))
+        self.assertIn("grafana-server", expand_retrieval_question("Wall 대시보드가 비어 있습니다."))
+        self.assertIn("cloudstack api", expand_retrieval_question("Mold 가상머신 배포가 실패합니다."))
+        self.assertIn("libvirt", expand_retrieval_question("Mold 가상머신 콘솔이 연결되지 않습니다."))
+
+    def test_live_official_source_has_platform_priority(self) -> None:
+        self.assertEqual(
+            (3, "OFFICIAL_PLATFORM_DOCUMENTATION"),
+            evidence_priority(CURATED_PLATFORM_PROFILE, "OFFICIAL_LIVE_WEB_DOCUMENTATION"),
+        )
+
     def test_console_context_includes_multiple_docs_and_current_code_chunks(self) -> None:
         question = "Mold 콘솔 화면이 연결중에서 멈춥니다."
         rows = [{"path": f"consoleproxy/{index}.java", "content": "noVNC websockify VNC"} for index in range(6)]
@@ -178,6 +202,20 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         answer = format_public_answer(result) or ""
         self.assertIn("가상머신 안의 운영체제에서 다음 명령을 실행합니다.", answer)
         self.assertIn("```bash\nsudo ausearch -m AVC,USER_AVC -ts recent\n```", answer)
+
+    def test_public_answer_uses_powershell_fence_for_windows_commands(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "summary": "Windows 게스트 에이전트를 확인합니다.", "observedFacts": [], "diagnoses": [],
+                "recommendedActions": ["관리자 PowerShell에서 `Get-Service QEMU-GA`를 실행합니다."],
+                "unknowns": [], "currentAssessment": "INSUFFICIENT_EVIDENCE",
+                "previewAssessment": "NOT_APPLICABLE", "previewGuidance": None,
+            },
+            "citations": [],
+        }
+        answer = format_public_answer(result) or ""
+        self.assertIn("```powershell\nGet-Service QEMU-GA\n```", answer)
         self.assertNotIn("`sudo ausearch", answer)
 
     def test_public_projection_removes_all_external_urls(self) -> None:
@@ -226,6 +264,14 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             "[주의] 서비스가 중단될 수 있습니다.",
             simplify_public_text("[주의] 서비스가 중단될 수 있습니다."),
         )
+
+    def test_public_projection_preserves_safe_guest_agent_channel_path(self) -> None:
+        answer = simplify_public_text(
+            "`ls -l /dev/virtio-ports/org.qemu.guest_agent.0` 결과를 확인하고 1~2분 뒤 다시 조회하세요."
+        )
+        self.assertIn("/dev/virtio-ports/org.qemu.guest_agent.0", answer)
+        self.assertIn("1–2분", answer)
+        self.assertNotIn("제품 내부 경로", answer)
 
     def test_ongoing_answer_naturalizes_internal_action_labels(self) -> None:
         answer = format_public_answer({

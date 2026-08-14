@@ -35,7 +35,7 @@ SOURCE_ROLES = {
 EVIDENCE_PRIORITY_POLICY: tuple[dict[str, object], ...] = (
     {"priority": 1, "tier": "ABLESTACK_DOCUMENTATION", "description": "ABLESTACK 문서와 승인된 내부 운영 지식"},
     {"priority": 2, "tier": "ABLESTACK_SOURCE_CODE", "description": "Diplo와 연관 제품 코드, Europa Preview 코드"},
-    {"priority": 3, "tier": "OFFICIAL_PLATFORM_DOCUMENTATION", "description": "공식 libvirt, QEMU, KVM 자료"},
+    {"priority": 3, "tier": "OFFICIAL_PLATFORM_DOCUMENTATION", "description": "공식 게스트 OS, libvirt, QEMU, KVM 자료"},
     {"priority": 4, "tier": "APPROVED_EXTERNAL_REFERENCE", "description": "별도 승인된 기타 외부 자료"},
 )
 
@@ -46,7 +46,7 @@ def evidence_priority(source_profile_id: str, source_kind: str = "SOURCE_CODE") 
         return 1, "ABLESTACK_DOCUMENTATION"
     if source_profile_id != CURATED_PLATFORM_PROFILE:
         return 2, "ABLESTACK_SOURCE_CODE"
-    if source_kind == "OFFICIAL_EXTERNAL_DOCUMENTATION":
+    if source_kind in {"OFFICIAL_EXTERNAL_DOCUMENTATION", "OFFICIAL_LIVE_WEB_DOCUMENTATION"}:
         return 3, "OFFICIAL_PLATFORM_DOCUMENTATION"
     return 4, "APPROVED_EXTERNAL_REFERENCE"
 
@@ -87,6 +87,32 @@ FSFREEZE_MARKERS: tuple[str, ...] = (
     "동결",
 )
 
+GUEST_AGENT_MARKERS: tuple[str, ...] = (
+    "qemu guest agent", "qemu-guest-agent", "qemu-ga", "guest agent", "게스트 에이전트", "에이전트",
+    "ubuntu", "apt", "rhel", "red hat", "rocky", "dnf", "windows", "virtio-win", "msiexec",
+    "get-service", "start-service", "org.qemu.guest_agent.0", "could not be found", "service",
+)
+
+GLUE_MARKERS: tuple[str, ...] = (
+    "glue", "ceph", "rados", "rbd", "cephfs", "osd", "mon", "mgr", "mds", "pool",
+    "ceph status", "ceph health detail",
+)
+
+KORAL_MARKERS: tuple[str, ...] = (
+    "koral", "kubernetes", "k8s", "kubectl", "pod", "deployment", "statefulset", "daemonset",
+    "kubeconfig", "control plane", "cluster", "namespace", "event",
+)
+
+WALL_MARKERS: tuple[str, ...] = (
+    "wall", "grafana", "dashboard", "panel", "data source", "datasource", "alert", "prometheus", "loki",
+    "grafana-server", "grafana.log",
+)
+
+MOLD_MARKERS: tuple[str, ...] = (
+    "mold", "cloudstack", "management server", "system vm", "console proxy", "secondary storage vm",
+    "virtual router", "cloudstack api", "api command", "async job", "libvirt", "qemu", "kvm", "virsh",
+)
+
 
 def versioned_plan(question: str) -> dict[str, object]:
     return {
@@ -96,7 +122,8 @@ def versioned_plan(question: str) -> dict[str, object]:
         "subquestions": [
             "1순위: ABLESTACK 문서와 승인된 내부 운영 지식을 확인한다.",
             "2순위: Diplo와 연관 제품 Source Code를 확인하고 Europa는 개선 예정 정보로만 비교한다.",
-            "3순위: 공식 libvirt, QEMU, KVM 자료에서 플랫폼 동작과 안전한 확인 방법을 보완한다.",
+            "3순위: 공식 게스트 OS, libvirt, QEMU, KVM 자료에서 설치·동작·안전한 확인 방법을 보완한다.",
+            "로컬 공식 자료가 없거나 갱신 기한을 넘긴 경우에만 승인된 공식 도메인을 온라인 조회한다.",
             "4순위: 앞선 근거가 부족할 때만 별도 승인된 외부 자료를 보조로 사용한다.",
         ],
         "evidencePriority": list(EVIDENCE_PRIORITY_POLICY),
@@ -137,6 +164,37 @@ def _is_fsfreeze_question(question: str) -> bool:
     )
 
 
+def _is_guest_agent_question(question: str) -> bool:
+    normalized = question.casefold()
+    agent = any(marker in normalized for marker in (
+        "qemu guest agent", "qemu-guest-agent", "qemu-ga", "guest agent", "게스트 에이전트", "에이전트",
+    ))
+    procedure = any(marker in normalized for marker in (
+        "설치", "install", "could not be found", "not found", "서비스", "service", "실행", "시작",
+    ))
+    return agent and procedure
+
+
+def _is_glue_question(question: str) -> bool:
+    normalized = question.casefold()
+    return any(marker in normalized for marker in ("glue", "ceph", "rados", "rbd", "cephfs"))
+
+
+def _is_koral_question(question: str) -> bool:
+    normalized = question.casefold()
+    return any(marker in normalized for marker in ("koral", "kubernetes", "k8s", "kubectl"))
+
+
+def _is_wall_question(question: str) -> bool:
+    normalized = question.casefold()
+    return any(marker in normalized for marker in ("wall", "grafana"))
+
+
+def _is_mold_question(question: str) -> bool:
+    normalized = question.casefold()
+    return any(marker in normalized for marker in ("mold", "cloudstack"))
+
+
 def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
     """Add implementation vocabulary without changing the user's visible question."""
     anchors: list[str] = []
@@ -144,6 +202,16 @@ def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
         anchors.extend(CONSOLE_CONNECTION_MARKERS)
     if _is_fsfreeze_question(question):
         anchors.extend(FSFREEZE_MARKERS)
+    if _is_guest_agent_question(question):
+        anchors.extend(GUEST_AGENT_MARKERS)
+    if _is_glue_question(question):
+        anchors.extend(GLUE_MARKERS)
+    if _is_koral_question(question):
+        anchors.extend(KORAL_MARKERS)
+    if _is_wall_question(question):
+        anchors.extend(WALL_MARKERS)
+    if _is_mold_question(question):
+        anchors.extend(MOLD_MARKERS)
     if not anchors:
         return question[:limit]
     suffix = f"\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
@@ -165,6 +233,20 @@ def _relevance_score(question: str, item: dict[str, Any]) -> int:
         path = str(item.get("path") or "").casefold()
         if any(marker in path for marker in ("snapshot", "qemu", "agent", "freeze", "storage")):
             score += 8
+    if _is_guest_agent_question(question):
+        score += sum(6 for marker in GUEST_AGENT_MARKERS if marker in searchable)
+        if str(item.get("sourceKind") or "") in {
+            "OFFICIAL_EXTERNAL_DOCUMENTATION", "OFFICIAL_LIVE_WEB_DOCUMENTATION",
+        }:
+            score += 12
+    if _is_glue_question(question):
+        score += sum(6 for marker in GLUE_MARKERS if marker in searchable)
+    if _is_koral_question(question):
+        score += sum(6 for marker in KORAL_MARKERS if marker in searchable)
+    if _is_wall_question(question):
+        score += sum(6 for marker in WALL_MARKERS if marker in searchable)
+    if _is_mold_question(question):
+        score += sum(6 for marker in MOLD_MARKERS if marker in searchable)
     return score
 
 
@@ -172,7 +254,12 @@ def relevant_results(question: str, rows: list[dict[str, Any]]) -> list[dict[str
     terms = _query_terms(question)
     if not terms:
         return []
-    if not (_is_console_connection_question(question) or _is_fsfreeze_question(question)):
+    if not (
+        _is_console_connection_question(question) or _is_fsfreeze_question(question)
+        or _is_guest_agent_question(question) or _is_glue_question(question) or _is_koral_question(question)
+        or _is_wall_question(question)
+        or _is_mold_question(question)
+    ):
         relevant = []
         for item in rows:
             searchable = f"{item.get('symbol') or ''}\n{item.get('path') or ''}\n{item.get('content') or ''}".casefold()
@@ -200,7 +287,12 @@ def select_context_results(question: str, results_by_profile: dict[str, list[dic
     """Keep every source reviewed while bounding a provider request to twenty chunks."""
     selected: list[dict[str, Any]] = []
     for profile_id in VERSIONED_SOURCE_PROFILES:
-        if _is_console_connection_question(question) or _is_fsfreeze_question(question):
+        if (
+            _is_console_connection_question(question) or _is_fsfreeze_question(question)
+            or _is_guest_agent_question(question) or _is_glue_question(question) or _is_koral_question(question)
+            or _is_wall_question(question)
+            or _is_mold_question(question)
+        ):
             limit = {
                 "SHARED_DOCS": 3,
                 "CLOUD_DIPLO": 3,
@@ -248,6 +340,11 @@ def _projection_replacements(citations: Iterable[dict[str, Any]]) -> set[str]:
 
 def sanitize_public_text(value: object, citations: Iterable[dict[str, Any]] = ()) -> str:
     text = str(value or "").strip()
+    safe_system_paths = {
+        "/dev/virtio-ports/org.qemu.guest_agent.0": "TECHFLOW_SAFE_QGA_CHANNEL_PATH",
+    }
+    for path, placeholder in safe_system_paths.items():
+        text = text.replace(path, placeholder)
     citation_tokens: set[str] = set()
     for item in citations:
         for key in ("citationId", "chunkId", "sourceVersionId"):
@@ -271,6 +368,8 @@ def sanitize_public_text(value: object, citations: Iterable[dict[str, Any]] = ()
     text = re.sub(r"\b[0-9a-f]{40}\b", "제품 버전", text, flags=re.IGNORECASE)
     text = re.sub(r"(?:[\w.-]+/){2,}[\w.@-]+(?::\d+(?:-\d+)?)?", "제품 내부 경로", text)
     text = re.sub(r"\b(?:citation|chunk|evidence)[-_]?[A-Za-z0-9-]+\b", "내부 근거", text, flags=re.IGNORECASE)
+    for path, placeholder in safe_system_paths.items():
+        text = text.replace(placeholder, path)
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
@@ -328,6 +427,7 @@ def simplify_public_text(value: object, citations: Iterable[dict[str, Any]] = ()
     )
     for old, new in replacements:
         text = text.replace(old, new)
+    text = re.sub(r"(?<=\d)\s*~\s*(?=\d)", "–", text)
     return text
 
 
@@ -376,7 +476,10 @@ _CLI_PREFIXES = (
     "sudo ", "systemctl ", "journalctl ", "ausearch ", "findmnt ", "namei ",
     "getfacl ", "matchpathcon ", "restorecon ", "virsh ", "qemu-ga ", "ls ",
     "grep ", "curl ", "ip ", "ss ", "getenforce", "sestatus", "mount ", "cat ",
+    "apt ", "apt-get ", "dnf ", "rpm ", "dpkg ", "msiexec.exe ", "get-service ", "start-service ",
 )
+
+_POWERSHELL_PREFIXES = ("msiexec.exe ", "get-service ", "start-service ", "restart-service ", "stop-service ")
 
 
 def _looks_like_cli(value: str) -> bool:
@@ -401,7 +504,10 @@ def _format_copyable_cli(value: str) -> str:
     if not commands:
         return value
     unique_commands = list(dict.fromkeys(commands))
-    return f"{explanation}\n\n```bash\n" + "\n".join(unique_commands) + "\n```"
+    language = "powershell" if all(
+        command.casefold().startswith(_POWERSHELL_PREFIXES) for command in unique_commands
+    ) else "bash"
+    return f"{explanation}\n\n```{language}\n" + "\n".join(unique_commands) + "\n```"
 
 
 def format_public_answer(result: dict[str, Any]) -> str | None:

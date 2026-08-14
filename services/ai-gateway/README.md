@@ -1,5 +1,13 @@
 # TechFlow AI Gateway
 
+## v0.14.7 구현 범위
+
+- Ubuntu·RHEL/Rocky·Windows 게스트에서 QEMU Guest Agent 설치·시작·검증 절차를 승인된 로컬 공식 자료로 제공합니다.
+- 질문자가 가상머신 관리자라는 전제에서 실행 위치와 복사 가능한 `bash`·`powershell` 명령을 먼저 안내하며, 단순히 시스템 관리자에게 위임하지 않습니다.
+- 로컬 공식 자료가 없거나 30일 갱신 기한을 넘긴 경우에만 공식 도메인 제한 웹 검색을 수행하고, 도구가 실제 반환한 공식 URL의 사실만 내부 근거로 사용합니다.
+- Glue 질문은 Ceph, Koral 질문은 Kubernetes, Wall 질문은 Grafana 공식 문서로 보완하되 공개 제품명은 Glue·Koral·Wall로 유지합니다.
+- 공식 웹 근거는 ABLESTACK 문서·Diplo·연관 제품 코드·Europa Preview 검토를 대체하지 않으며, 사용자에게 내부 출처 URL을 노출하지 않습니다.
+
 ## v0.14.6 구현 범위
 
 - 일반 AI 질의는 4,000자 계약을 유지하고, 4,000자를 넘는 Community 대화는 최초 질문·최신 질문의 앞뒤·직전 답변·필수 지침을 보존해 자동 압축합니다.
