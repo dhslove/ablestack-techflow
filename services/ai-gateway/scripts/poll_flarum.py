@@ -119,6 +119,19 @@ def _warning(filename: str, reason: str) -> str:
     return messages[reason]
 
 
+def _normalized_attachment_media_type(filename: str, media_type: str) -> str:
+    if media_type not in {"application/force-download", "application/octet-stream"}:
+        return media_type
+    lowered = filename.casefold()
+    if lowered.endswith(".zip"):
+        return "application/zip"
+    if lowered.endswith((".tar.gz", ".tgz", ".gz")):
+        return "application/gzip"
+    if lowered.endswith((".log", ".txt", ".csv", ".ini")):
+        return "text/plain"
+    return mimetypes.guess_type(filename)[0] or media_type
+
+
 def _read_attachment(request: urllib.request.Request, *, max_bytes: int, timeout: int, retries: int) -> tuple[bytes, str, str]:
     last_error: Exception | None = None
     for attempt in range(retries + 1):
@@ -294,8 +307,7 @@ def upload_artifacts(
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
             warnings.append(_warning(filename, "fetch"))
             continue
-        if media_type in {"application/force-download", "application/octet-stream"}:
-            media_type = mimetypes.guess_type(filename)[0] or media_type
+        media_type = _normalized_attachment_media_type(filename, media_type)
         upload = urllib.request.Request(
             gateway_url.rstrip("/") + "/v1/artifacts", data=content, method="POST",
             headers={"Content-Type": media_type, "X-Artifact-Filename": filename,

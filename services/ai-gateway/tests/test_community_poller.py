@@ -303,6 +303,11 @@ class CommunityPollerTests(unittest.TestCase):
             {"application/zip", "application/x-zip-compressed"},
         )
 
+    def test_compressed_log_media_type_is_normalized_from_download_filename(self) -> None:
+        self.assertEqual("application/zip", poll_flarum._normalized_attachment_media_type("support.zip", "application/force-download"))
+        self.assertEqual("application/gzip", poll_flarum._normalized_attachment_media_type("support.tar.gz", "application/octet-stream"))
+        self.assertEqual("application/gzip", poll_flarum._normalized_attachment_media_type("agent.log.gz", "application/octet-stream"))
+
     def test_terminal_artifact_rejection_becomes_requester_warning(self) -> None:
         archive_bytes = BytesIO()
         with zipfile.ZipFile(archive_bytes, "w", zipfile.ZIP_DEFLATED) as archive:
