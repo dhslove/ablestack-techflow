@@ -88,7 +88,8 @@ PY
   grep -q '^upload_max_filesize => 64M => 64M' <<<"$fpm_info"
   grep -q '^post_max_size => 64M => 64M' <<<"$fpm_info"
   curl --fail --silent --show-error --max-time 20 \
-    "${TECHFLOW_COMMUNITY_VERIFY_URL:-https://community.ablecloud.io/}" >/dev/null
+    --header 'Host: community.ablecloud.io' \
+    "${TECHFLOW_COMMUNITY_VERIFY_URL:-http://127.0.0.1/}" >/dev/null
   echo "issue72_upload_policy=verified max_file_kib=${MAX_KIB}"
 }
 
