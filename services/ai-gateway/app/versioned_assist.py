@@ -68,6 +68,25 @@ CONSOLE_CONNECTION_MARKERS: tuple[str, ...] = (
     "콘솔 프록시",
 )
 
+FSFREEZE_MARKERS: tuple[str, ...] = (
+    "guest-fsfreeze-freeze",
+    "guest-fsfreeze-status",
+    "guest-fsfreeze-thaw",
+    "qemu-ga",
+    "qemu guest agent",
+    "qemu-guest-agent",
+    "fsfreeze",
+    "permission denied",
+    "selinux",
+    "ausearch",
+    "findmnt",
+    "matchpathcon",
+    "restorecon",
+    "스냅샷",
+    "복제",
+    "동결",
+)
+
 
 def versioned_plan(question: str) -> dict[str, object]:
     return {
@@ -108,12 +127,26 @@ def _is_console_connection_question(question: str) -> bool:
     return "콘솔" in normalized and any(marker in normalized for marker in ("연결", "화면", "보이지", "표시"))
 
 
+def _is_fsfreeze_question(question: str) -> bool:
+    normalized = question.casefold()
+    return any(marker in normalized for marker in (
+        "guest-fsfreeze", "fsfreeze", "qemu agent", "qemu-ga", "permission denied",
+    )) or (
+        any(marker in normalized for marker in ("스냅샷", "복제", "freeze", "동결"))
+        and any(marker in normalized for marker in ("/mnt", "새 디스크", "볼륨", "qemu"))
+    )
+
+
 def expand_retrieval_question(question: str) -> str:
     """Add implementation vocabulary without changing the user's visible question."""
-    if not _is_console_connection_question(question):
+    anchors: list[str] = []
+    if _is_console_connection_question(question):
+        anchors.extend(CONSOLE_CONNECTION_MARKERS)
+    if _is_fsfreeze_question(question):
+        anchors.extend(FSFREEZE_MARKERS)
+    if not anchors:
         return question
-    anchors = " ".join(CONSOLE_CONNECTION_MARKERS)
-    return f"{question}\n진단 검색어: {anchors}"
+    return f"{question}\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
 
 
 def _relevance_score(question: str, item: dict[str, Any]) -> int:
@@ -124,6 +157,11 @@ def _relevance_score(question: str, item: dict[str, Any]) -> int:
         path = str(item.get("path") or "").casefold()
         if any(marker in path for marker in ("consoleproxy", "novnc", "console.vue", "systemvm")):
             score += 12
+    if _is_fsfreeze_question(question):
+        score += sum(6 for marker in FSFREEZE_MARKERS if marker in searchable)
+        path = str(item.get("path") or "").casefold()
+        if any(marker in path for marker in ("snapshot", "qemu", "agent", "freeze", "storage")):
+            score += 8
     return score
 
 
@@ -131,7 +169,7 @@ def relevant_results(question: str, rows: list[dict[str, Any]]) -> list[dict[str
     terms = _query_terms(question)
     if not terms:
         return []
-    if not _is_console_connection_question(question):
+    if not (_is_console_connection_question(question) or _is_fsfreeze_question(question)):
         relevant = []
         for item in rows:
             searchable = f"{item.get('symbol') or ''}\n{item.get('path') or ''}\n{item.get('content') or ''}".casefold()
@@ -159,7 +197,7 @@ def select_context_results(question: str, results_by_profile: dict[str, list[dic
     """Keep every source reviewed while bounding a provider request to twenty chunks."""
     selected: list[dict[str, Any]] = []
     for profile_id in VERSIONED_SOURCE_PROFILES:
-        if _is_console_connection_question(question):
+        if _is_console_connection_question(question) or _is_fsfreeze_question(question):
             limit = {
                 "SHARED_DOCS": 3,
                 "CLOUD_DIPLO": 3,
@@ -377,25 +415,24 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
     else:
         lines.append("말씀해 주신 현상을 기준으로 확인해 보겠습니다.")
 
+    if actions:
+        lines.extend(["", "먼저 다음 해결 방법을 적용해 보세요."])
+        lines.extend(f"{index}. {value}" for index, value in enumerate(actions[:6], 1))
+    if artifact_findings:
+        lines.extend(["", "첨부해 주신 자료에서는 다음 내용을 확인했습니다."])
+        lines.extend(f"- {value}" for value in artifact_findings[:3])
     if report.get("currentAssessment") == "CURRENT_RUNTIME_ISSUE":
         lines.extend([
             "",
             "현재 자료로는 ABLESTACK 제품 코드의 오류라기보다 가상화 프로그램이 일시적으로 정상 상태를 잃은 문제에 가깝습니다.",
         ])
-
     if diagnoses:
-        lines.extend(["", "현재는 다음 원인을 먼저 살펴보는 것이 좋습니다."])
+        lines.extend(["", "이 방법을 먼저 권장하는 이유는 다음과 같습니다."])
         lines.extend(f"- {value}" for value in diagnoses[:3])
-    if artifact_findings:
-        lines.extend(["", "첨부해 주신 자료에서는 다음 내용을 확인했습니다."])
-        lines.extend(f"- {value}" for value in artifact_findings[:3])
-    if actions:
-        lines.extend(["", "먼저 아래 순서대로 확인해 주세요."])
-        lines.extend(f"{index}. {value}" for index, value in enumerate(actions[:6], 1))
     if unknowns:
         lines.extend([
             "",
-            "확인을 이어가기 위해 아래 정보를 알려주세요. 이미 제공한 내용은 다시 보내지 않으셔도 됩니다.",
+            "위 조치로 해결되지 않으면 아래 결과를 알려주세요. 이미 제공한 내용은 다시 보내지 않으셔도 됩니다.",
         ])
         lines.extend(f"- {value}" for value in unknowns[:6])
     if not actions and not unknowns:

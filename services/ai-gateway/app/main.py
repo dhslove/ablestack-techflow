@@ -59,7 +59,12 @@ from .store import InvalidBoundaryError, InvalidStateError, MemoryStore, Store, 
 from .artifacts import ArtifactStore
 from .comprehensive import plan_query
 from .community import FlarumClient, conversationalize_answer, format_draft, profiles_for_tags
-from .conversation import build_conversation_question, build_knowledge_base_question, source_post_id
+from .conversation import (
+    build_conversation_question,
+    build_knowledge_base_question,
+    community_result_advances,
+    source_post_id,
+)
 from .versioned_assist import (
     CURATED_PLATFORM_PROFILE,
     SOURCE_ROLES,
@@ -787,6 +792,39 @@ def create_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"code": "AI_PROVIDER_TEMPORARY_FAILURE", "message": "community draft generation will retry"},
             )
+        if not community_result_advances(result, turns):
+            _json_log(
+                "community_answer_progression_retry", correlationId=correlation_id,
+                discussionId=request.discussion_id, sourcePostId=post_id,
+            )
+            rewrite_question = conversation_question + (
+                "\n\n[진행성 재작성 필수]\n직전 답변의 설명과 점검 목록을 반복하지 마십시오. "
+                "질문자의 최신 내용에 대한 해결책을 맨 먼저 쓰고, 근거가 있는 정확한 CLI 명령, 실행 위치, "
+                "정상 판정 기준을 포함하십시오. 해결되지 않을 때만 다음 대안과 필요한 명령 결과를 요청하십시오."
+            )
+            retry_request = ComprehensiveQueryRequest(
+                queryId=uuid4(), question=rewrite_question, actorId=f"community:{request.author_id}",
+                productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,
+                locale="ko-KR", classification="D0",
+            )
+            result = _query_comprehensive(retry_request, correlation_id)
+            if result.get("state") == "FAILED":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={"code": "AI_PROVIDER_TEMPORARY_FAILURE", "message": "community draft generation will retry"},
+                )
+            if not community_result_advances(result, turns):
+                _json_log(
+                    "community_answer_progression_rejected", correlationId=correlation_id,
+                    discussionId=request.discussion_id, sourcePostId=post_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "code": "COMMUNITY_RESPONSE_NOT_PROGRESSING",
+                        "message": "repetitive community answer was not published and will retry",
+                    },
+                )
         result["userQuestion"] = request.question
         draft = {"draftAnswer": format_draft(result), "answerState": result.get("state"),
                  "citations": result.get("citations") or [], "evidenceLedger": evidence_ledger(result)}

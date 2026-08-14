@@ -21,7 +21,7 @@ def main() -> None:
         slides = len([n for n in archive.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
         notes = len([n for n in archive.namelist() if n.startswith("ppt/notesSlides/notesSlide") and n.endswith(".xml")])
         deck_text = "\n".join(archive.read(n).decode("utf-8", errors="replace") for n in archive.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml"))
-    if deck_pages != 5 or slides != 5 or notes != 5 or "Post #368" not in deck_text or "0.14.2" not in deck_text or "최종 솔루션" not in deck_text: raise RuntimeError(f"presentation contract failed pages={deck_pages} slides={slides} notes={notes}")
+    if deck_pages != 5 or slides != 5 or notes != 5 or "#377" not in deck_text or "0.14.3" not in deck_text or "반복 답변 차단" not in deck_text: raise RuntimeError(f"presentation contract failed pages={deck_pages} slides={slides} notes={notes}")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if manifest.get("issue") != 69 or len(manifest.get("artifacts") or []) != 4: raise RuntimeError("manifest contract failed")
     print(f"artifacts=valid reportPages={report_pages} slides={slides} notes={notes}")

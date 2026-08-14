@@ -3,7 +3,7 @@
   "setId": "ABLESTACK_CURATED_PLATFORM_REFERENCES_V1",
   "reviewStatus": "APPROVED",
   "reviewedBy": "dhslove",
-  "reviewedAt": "2026-08-12",
+  "reviewedAt": "2026-08-14",
   "refreshPolicy": {
     "mode": "LOCAL_SNAPSHOT_WITH_APPROVAL",
     "checkIntervalDays": 30,
@@ -42,6 +42,22 @@
       "sourceLocator": "https://www.qemu.org/docs/master/devel/migration/compatibility.html",
       "matchTerms": ["콘솔", "연결중", "연결 중", "vnc", "qemu", "라이브 마이그레이션", "마이그레이션"],
       "content": "QEMU 공식 마이그레이션 문서는 마이그레이션 중 소스와 대상의 두 QEMU 프로세스가 존재한다고 설명한다. libvirt virsh 문서에서 migrate --live는 도메인을 다른 호스트로 라이브 마이그레이션하는 기능이다. ABLESTACK 관리 가상머신은 Mold 또는 승인된 제품 API로 실행해야 하며, 직접 virsh migrate 명령은 운영 표준에서 명시적으로 승인된 경우에만 사용한다. 라이브 마이그레이션 전 호스트 호환성, 공유 스토리지 또는 스토리지 마이그레이션 조건, 네트워크, 여유 자원과 현재 작업 상태를 확인하고 진행 상태는 제품 화면 또는 sudo virsh domjobinfo <VM>으로 확인한다."
+    },
+    {
+      "entryId": "ABLESTACK-QEMU-GA-FSFREEZE-MNT-PERMISSION-001",
+      "authority": "OPERATOR_APPROVED_KNOWLEDGE",
+      "title": "새 디스크 마운트 뒤 QEMU Guest Agent 파일시스템 동결 권한 오류 진단",
+      "sourceLocator": "operator://ablestack/support/qemu-ga-fsfreeze-mnt-permission/1",
+      "matchTerms": ["guest-fsfreeze-freeze", "fsfreeze", "qemu-ga", "qemu guest agent", "qemu-guest-agent", "/mnt", "permission denied", "freeze", "동결", "스냅샷", "복제", "새 디스크", "볼륨", "selinux"],
+      "content": "가상머신 안에 새 디스크를 마운트한 뒤 스냅샷 또는 복제에서 guest-fsfreeze-freeze가 failed to open /mnt: Permission denied로 실패하면, 게스트 운영체제 안에서 새 마운트 지점의 접근 권한과 SELinux 거부 기록을 먼저 확인한다. 게스트에서 sudo systemctl status qemu-guest-agent --no-pager를 실행해 서비스가 active (running)인지 확인한다. 이어서 sudo findmnt -T /mnt -o TARGET,SOURCE,FSTYPE,OPTIONS, sudo ls -ldZ /mnt, sudo namei -om /mnt, sudo getfacl -p /mnt를 실행해 파일시스템 종류, 마운트 옵션, 경로 권한, ACL을 확인한다. SELinux 사용 환경에서는 sudo ausearch -m AVC,USER_AVC -ts recent | grep -Ei 'qemu|guest|fsfreeze|/mnt'로 같은 시각의 거부 기록을 찾는다. AVC에 virt_qemu_ga_t와 /mnt 접근 거부가 있고 sudo matchpathcon -V /mnt가 잘못된 보안 문맥을 보고할 때만 sudo restorecon -v /mnt로 기본 문맥을 복구한 뒤 스냅샷을 다시 시도한다. SELinux 전체 비활성화, chmod 777, 근거 없는 audit2allow은 사용하지 않는다. AVC가 없으면 SELinux를 원인으로 단정하지 않고 findmnt, namei, getfacl 결과에서 일반 권한, ACL, FUSE, NFS root-squash 또는 마운트 옵션을 확인해 확인된 원인만 수정한다. 성공 기준은 스냅샷 또는 복제를 다시 실행했을 때 failed to open /mnt: Permission denied가 더 이상 발생하지 않는 것이다. 해결되지 않으면 위 명령의 출력과 sudo journalctl -u qemu-guest-agent --since '-15 min' --no-pager 결과를 제공받아 다음 단계로 진행한다."
+    },
+    {
+      "entryId": "QEMU-GUEST-AGENT-FSFREEZE-001",
+      "authority": "OFFICIAL_EXTERNAL_DOCUMENTATION",
+      "title": "QEMU Guest Agent 파일시스템 동결 명령",
+      "sourceLocator": "https://www.qemu.org/docs/master/interop/qemu-ga-ref.html",
+      "matchTerms": ["guest-fsfreeze-freeze", "guest-fsfreeze-status", "guest-fsfreeze-thaw", "fsfreeze", "qemu-ga", "qemu guest agent", "스냅샷", "복제", "동결"],
+      "content": "QEMU Guest Agent 공식 명세에서 guest-fsfreeze-freeze는 게스트에 마운트된 파일시스템을 동결하고, guest-fsfreeze-status는 동결 상태를 조회하며, guest-fsfreeze-thaw는 동결된 파일시스템을 해제한다. 이 동작 설명은 스냅샷 전 파일시스템 동결 과정과 오류 구간을 확인하는 근거이지만, 특정 장애가 SELinux 때문에 발생했다고 단독으로 증명하지는 않는다. 실제 원인은 게스트의 서비스 상태, 마운트 정보, 권한과 SELinux AVC 기록을 함께 확인해야 한다."
     }
   ]
 }

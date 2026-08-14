@@ -93,14 +93,14 @@ def conversationalize_answer(answer: str) -> str:
     needed = sections.get("추가로 필요한 정보") or []
     considerations = sections.get("추가 고려사항") or []
     lines = ["말씀해 주신 현상을 확인해 보겠습니다."]
-    if causes:
-        lines.extend(["", "현재는 다음 원인을 먼저 살펴보는 것이 좋습니다."])
-        lines.extend(f"- {item}" for item in causes[:3])
     if actions:
-        lines.extend(["", "먼저 아래 순서대로 확인해 주세요."])
+        lines.extend(["", "먼저 다음 해결 방법을 적용해 보세요."])
         lines.extend(f"{index}. {item}" for index, item in enumerate(actions[:6], 1))
+    if causes:
+        lines.extend(["", "이 방법을 먼저 권장하는 이유는 다음과 같습니다."])
+        lines.extend(f"- {item}" for item in causes[:3])
     if needed:
-        lines.extend(["", "확인을 이어가기 위해 아래 정보를 알려주세요."])
+        lines.extend(["", "위 조치로 해결되지 않으면 아래 결과를 알려주세요."])
         lines.extend(f"- {item}" for item in needed[:6])
     useful_considerations = [item for item in considerations if "별도의 추가" not in item]
     if useful_considerations:

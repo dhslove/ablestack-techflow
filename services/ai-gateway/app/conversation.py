@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 
@@ -46,23 +47,91 @@ def build_conversation_question(
         content = str(item.get("content") or "").strip()[:900]
         suffix = " (첨부자료 포함)" if item.get("artifactIds") else ""
         transcript.append(f"- #{number} {label}{suffix}: {content}")
+    requester_turns = [item for item in rows if item.get("role") == "REQUESTER"]
+    assistant_turns = [item for item in rows if item.get("role") == "ASSISTANT"]
+    latest_requester = str(
+        (requester_turns[-1] if requester_turns else {}).get("content") or incoming.get("question") or ""
+    )[:1200]
+    previous_assistant = str((assistant_turns[-1] if assistant_turns else {}).get("content") or "")[:1200]
     prompt = (
         f"[Community 기술지원 제목]\n{title}\n\n"
         f"[최초 질문]\n{original_text}\n\n"
+        f"[질문자의 최신 추가 정보 또는 질문]\n{latest_requester}\n\n"
+        f"[직전 TechFlow 답변]\n{previous_assistant or '없음'}\n\n"
         "[지금까지의 대화]\n"
         + "\n".join(transcript)
         + "\n\n[응답 지침]\n"
-        "최초 질문부터 현재 댓글까지 하나의 기술지원 맥락으로 종합하십시오. "
-        "이미 수행한 조치와 결과를 반복해서 요청하지 마십시오. 정확한 판단에 필요한 정보가 부족하면 "
-        "안전한 예비 판단과 함께 질문자가 제공할 자료를 구체적으로 요청하십시오."
+        "최초 질문부터 현재 댓글까지 하나의 기술지원 맥락으로 종합하되, 최신 질문에 먼저 직접 답하십시오. "
+        "가장 가능성이 높고 안전한 해결 방법을 맨 먼저 제시하십시오. 근거가 있는 경우 실행 위치, 정확한 CLI 명령, "
+        "정상 판정 기준을 함께 적으십시오. 그 방법으로 해결되지 않을 때 적용할 대안과 다음 진단 단계를 이어서 제시하십시오. "
+        "추가 자료는 앞선 조치로 해결되지 않은 경우에만, 사용자가 그대로 실행하거나 찾을 수 있는 명령 결과·로그 이름으로 구체적으로 요청하십시오. "
+        "직전 TechFlow 답변의 원인 설명이나 점검 목록을 다시 말하지 마십시오. 후속 답변은 반드시 진단을 한 단계 더 진행해야 합니다. "
+        "SELinux 전체 비활성화, chmod 777, 근거 없는 audit2allow처럼 위험하거나 과도한 우회 조치는 제안하지 마십시오."
     )
     if len(prompt) <= limit:
         return prompt
     return (
         f"[Community 기술지원 제목]\n{title[:200]}\n\n[최초 질문]\n{original_text[:800]}\n\n"
+        f"[질문자의 최신 추가 정보 또는 질문]\n{latest_requester[:800]}\n\n"
+        f"[직전 TechFlow 답변]\n{previous_assistant[:800] or '없음'}\n\n"
         f"[최근 대화]\n{'\n'.join(transcript[-6:])}\n\n[응답 지침]\n"
-        "전체 대화의 연속선에서 답하고, 부족한 정보는 구체적으로 요청하십시오."
+        "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. "
+        "해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 직전 답변을 반복하지 마십시오."
     )[:limit]
+
+
+COMMAND_MARKERS = (
+    "`", "sudo ", "systemctl ", "journalctl ", "ausearch ", "findmnt ", "namei ", "getfacl ",
+    "matchpathcon ", "restorecon ", "virsh ", "grep ", "ls -",
+)
+ACTION_MARKERS = (
+    "재시작", "마이그레이션", "복구", "수정", "변경", "적용", "재시도", "해제", "활성화", "비활성화",
+    "설치", "업데이트", "교체", "삭제", "추가", "선택", "재연결", "초기화",
+)
+
+
+def _plain_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9_./:-]{3,}|[가-힣]{2,}", value.casefold()))
+
+
+def _similarity(left: str, right: str) -> float:
+    left_tokens = _plain_tokens(left)
+    right_tokens = _plain_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _row_text(row: object) -> str:
+    if isinstance(row, str):
+        return row.strip()
+    if isinstance(row, dict):
+        return str(row.get("action") or row.get("text") or row.get("title") or row.get("finding") or "").strip()
+    return ""
+
+
+def community_result_advances(result: dict[str, Any], turns: Iterable[dict[str, Any]]) -> bool:
+    """Return whether a follow-up adds a concrete step instead of repeating the last reply."""
+    previous = [str(item.get("content") or "") for item in turns if item.get("role") == "ASSISTANT"]
+    if not previous:
+        return True
+    report = result.get("report") or {}
+    candidates = [
+        _row_text(item)
+        for item in (*list(report.get("recommendedActions") or []), *list(report.get("unknowns") or []))
+    ]
+    candidates = [item for item in candidates if item]
+    if not candidates:
+        return False
+    previous_text = previous[-1]
+    for candidate in candidates:
+        has_command = any(marker in candidate.casefold() for marker in COMMAND_MARKERS)
+        if has_command and candidate.casefold() not in previous_text.casefold():
+            return True
+        has_action = any(marker in candidate.casefold() for marker in ACTION_MARKERS)
+        if has_action and _similarity(candidate, previous_text) < 0.70:
+            return True
+    return False
 
 
 def build_knowledge_base_question(

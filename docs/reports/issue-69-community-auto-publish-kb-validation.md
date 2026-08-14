@@ -1,17 +1,20 @@
 # Issue #69 Community 자동 답변·Knowledge Base 구현 및 검증 보고서
 
-- 검증일: 2026-08-13
+- 검증일: 2026-08-14
 - 환경: TechFlow 시험 서버, ABLESTACK Community, Synology Chat
-- 릴리스: TechFlow AI Gateway 0.14.2
+- 릴리스: TechFlow AI Gateway 0.14.3
 - 구현 PR: [#65](https://github.com/ablecloud-team/ablestack-techflow/pull/65)
 - 실제 후속 질문: [Discussion #164](https://community.ablecloud.io/d/164-gasangmeosin-sijag-mic-maigeureisyeon-oryu)
 - 자동 게시·KB E2E: [Discussion #165](https://community.ablecloud.io/d/165-techflow-knowledge-base)
+- 해결 우선 후속 답변 E2E: [Discussion #166 Post #377](https://community.ablecloud.io/d/166/377)
 
 ## 1. 결론
 
 Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신규 질문과 후속 질문에 바로 답변하고, Chat은 승인 대신 게시 결과와 원문 링크를 담당자에게 알려주는 관찰 채널로 동작한다.
 
 진행 중 답변은 더 이상 매번 `증상·원인·해결 방법·추가 고려사항·적용 버전`을 강제하지 않는다. 전문 엔지니어가 플랫폼을 처음 접한 사용자에게 설명하듯 현재 판단, 안전한 확인 순서, 추가로 필요한 정보와 다음 행동을 쉬운 문장으로 안내한다. 질문자가 해결 답변을 선택한 뒤에만 해당 답변과 전체 대화를 다시 종합해 Knowledge Base 최종본을 게시하고, 게시된 KB Post를 Discussion의 최종 솔루션으로 지정한다.
+
+0.14.3에서는 후속 답변이 같은 점검 목록을 반복하지 않도록 해결 우선 정책과 진행성 검사를 추가했다. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법, 근거 있는 CLI, 실행 위치와 성공 기준을 먼저 제시한다. 첫 조치가 실패했을 때만 대안과 정확한 명령 출력·로그를 요청한다. 첫 생성이 직전 답변을 반복하면 한 번 재작성하며, 재작성도 새 단계가 없으면 게시하지 않고 503 재시도로 남긴다.
 
 0.14.1에서는 `[읽기 전용]`, `[변경 없음]`, `[호스트 관리자]`, `[네트워크 관리자]`처럼 내부 실행 정책을 나타내는 접두어도 사용자 답변에서 제거했다. 안전성 판단은 내부에 유지하되, 사용자가 알아야 할 내용만 `서버 관리자는 D-Bus 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 자연스러운 문장으로 전달한다.
 
@@ -20,6 +23,8 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 | 구분 | 구현 결과 |
 | --- | --- |
 | 신규·후속 질문 | AI-Assistant 답변 즉시 공개 |
+| 후속 답변 진행 | 해결책·CLI·성공 기준 우선, 미해결 시에만 대안·로그 요청 |
+| 반복 답변 | 한 번 재작성 후에도 새 단계가 없으면 게시 차단 |
 | 근거 부족 | 빈 초안 대신 필요한 버전·시각·로그·화면 요청 |
 | 대화 맥락 | Best Answer 선택 전까지 Discussion 단위 유지 |
 | 첨부자료 | 이미지·로그·ZIP/TAR.GZ 분석 결과를 같은 맥락에 누적 |
@@ -90,6 +95,20 @@ Post #367은 Heading, 내부 근거, 보이는 Marker가 없고 Flarum `isApprov
 - 내부 Citation·Repository·Commit: 없음
 - 같은 해결 이벤트 재실행: `resolutionChanged=false`, Post #368 재사용, Version 1 유지
 
+### 3.4 Discussion #166 반복 답변 교정
+
+Discussion #166의 Post #374와 #376은 모두 QEMU Guest Agent 상태, 마운트 정보, 권한과 SELinux 로그를 확인해 달라는 일반 목록을 반복했다. 질문자가 Post #375에서 “새 디스크를 연결한 뒤 발생하며 SELinux가 원인일 수 있는가”라고 범위를 좁혔지만, 두 번째 답변도 구체적인 명령이나 성공 기준 없이 같은 자료를 다시 요청했다.
+
+0.14.3은 실제 대화 전체를 넣은 OpenAI 시험에서 `ANSWERED / INSUFFICIENT_EVIDENCE`로 응답했다. Doc·Diplo·연관 제품 코드·Europa Preview·승인된 QEMU 플랫폼 근거를 모두 검토했으며, 사용자 공개 답변은 다음 단계로 진행했다.
+
+1. SELinux 가능성에 직접 답하되 AVC가 있어야 확정한다고 설명
+2. 게스트에서 `ausearch`와 `matchpathcon` 실행
+3. `virt_qemu_ga_t` 거부와 문맥 불일치가 함께 있을 때만 `restorecon`
+4. Mold 스냅샷·복제 재시도와 `Permission denied` 소멸을 성공 기준으로 제시
+5. 실패할 때만 `findmnt`, `ls -ldZ`, `namei`, `getfacl`, QEMU Guest Agent 로그 요청
+
+정정 답변은 TechFlow-Assistant Post #377로 공개됐고 `isApproved=true`를 재조회했다. Poller는 이를 `ASSISTANT` Turn으로 수집해 `seenPosts=131`, `failed=0`을 기록했다. 공개 본문에는 내부 Citation·Repository·Commit·Source 경로가 없으며, SELinux 전체 비활성화, `chmod 777`, 근거 없는 `audit2allow`을 사용하지 말라는 안전 조건을 포함한다.
+
 ## 4. 구현 상세
 
 ### 4.1 상태와 데이터
@@ -113,6 +132,12 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 - `근거 <Case>`: 내부 Citation과 Coverage 확인
 - `이력 <Case>`: 자동 게시와 KB 감사 이력 확인
 
+### 4.4 해결 우선 생성과 진행성 검사
+
+Conversation Prompt는 최초 질문·최신 질문자 추가 정보·직전 TechFlow 답변·최근 Turn을 구분한다. Provider 정책은 `recommendedActions`에 해결 방법을 먼저 쓰고, CLI가 근거에 있을 때 실행 위치·명령·정상 판정 기준을 함께 작성하게 한다. `unknowns`는 해당 조치 후에도 실패할 때 필요한 정확한 출력에만 사용한다.
+
+Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 실제 조치가 추가됐는지 검사한다. 같은 일반 점검 목록이면 한 번 더 엄격하게 재작성한다. 두 번째 결과도 진행되지 않으면 `COMMUNITY_RESPONSE_NOT_PROGRESSING`으로 게시하지 않으며 Poller가 동일 Post를 재시도한다.
+
 ## 5. 장애·재시도 검증
 
 삭제된 Discussion #163의 과거 해결 이력으로 KB를 생성했을 때 Flarum 404가 발생했다. TechFlow는 해결 상태를 유지하고 KB를 게시 완료로 기록하지 않은 채 HTTP 503을 반환했다. 실제 존재하는 Discussion #165로 재검증해 Post #368 게시를 완료했다.
@@ -125,19 +150,20 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 
 | 항목 | 결과 |
 | --- | --- |
-| Python 단위·통합 테스트 | 216건 전체 통과 |
+| Python 단위·통합 테스트 | 223건 전체 통과 |
 | OpenAPI | 34 Operations |
 | DB Migration | 24 Tables, KB Columns 8, 검증 통과 |
 | Gateway Health | Process·Database·Vector `ready`, Provider `openai` |
-| Gateway Version | 0.14.2 |
+| Gateway Version | 0.14.3 |
 | Discussion #164 후속 자동 답변 | Post #365, 공개 완료 |
 | Discussion #165 근거 부족 자동 답변 | Post #367, 공개 완료 |
 | Discussion #165 KB | Post #368, Version 1, 최종 Best Answer 지정 완료 |
+| Discussion #166 해결 우선 정정 답변 | Post #377, 공개·Turn 수집 완료 |
 | Chat 담당자 | 자동 게시 알림 전송 확인 |
 | 내부 근거·Marker 공개 | 0건 |
-| 루트 디스크 | 1005G 중 37G 사용, 927G 여유 |
+| 루트 디스크 | 1005G 중 44G 사용, 921G 여유 |
 
-0.14.2 시험 서버 Health는 `provider=openai`, `version=0.14.2`, Process·Database·Vector `ready`이다. Poller는 KB 최종 솔루션 변경을 `resolutions=1`, `failed=0`으로 수집했고 이후 반복 Poll도 `failed=0`을 유지했다.
+0.14.3 시험 서버 Health는 `provider=openai`, `version=0.14.3`, Process·Database·Vector `ready`이다. 실제 Discussion #166 교정 뒤 Poller는 `seenPosts=131`, `failed=0`을 기록했다.
 
 ## 7. 배포·복구 자산
 
@@ -156,6 +182,13 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 - 실제 Compose Build Context SHA-256: `46cd15b112aabb2dcbe6fa0afb94e25c00401fca09fc11a59fe18da9bcd35b21`
 - PostgreSQL 전체 Dump SHA-256: `7d5ddd9886d0b6604f460d3aaa8439284e83382c3c016cb0514bb2a1b12609c7`
 - Migration: `0013_community_kb_solution_up.sql`
+
+0.14.3 해결 우선 답변 배포 전 백업은 `/home/ablecloud/techflow-ai-gateway/backups/issue69-solution-first-predeploy-20260814T024413Z`에 보관했다.
+
+- 실제 Build Context Source SHA-256: `ea728d57636cd3b51aa2bc843d45eed55c41a5d36ec3545b14c09a0f56edb95a`
+- PostgreSQL 전체 Dump SHA-256: `d3c71b061b274197ca1331fd04484f5b10b6b0e801b5d94d4ad78fce9b8a2bc2`
+- 배포 Image ID: `sha256:561755edc470d4e3c095ab97034dfe19989c8c5e907255aae2903ddf1ff833cf`
+- DB Schema Migration: 없음
 
 첫 배포 시도에서는 서버 루트의 복사본을 갱신했지만 Compose 실제 Build Context가 `/home/ablecloud/techflow-ai-gateway/services/ai-gateway`인 것을 확인했다. 이 시도는 Docker가 기존 0.14.1 Layer를 재사용해 Schema·데이터 변경 없이 종료됐다. 실제 Build Context를 추가 백업하고 올바른 경로에서 캐시 없이 0.14.2를 빌드해 `knowledgeColumns=8`과 Health를 재검증했다.
 
@@ -179,3 +212,5 @@ Issue #69의 완료 기준을 충족했다.
 8. Chat은 승인 없이 게시·솔루션 지정 상태를 관찰한다.
 9. 사용자 본문에는 내부 근거와 시스템 Marker가 노출되지 않는다.
 10. 내부 작업 분류는 공개되지 않고 필요한 담당자·주의사항만 자연어로 전달된다.
+11. 후속 답변은 해결책·CLI·성공 기준을 먼저 제공하고, 실패한 경우에만 대안·정확한 로그를 요청한다.
+12. 직전 답변을 되풀이하는 결과는 재작성하며 진행되지 않으면 공개하지 않는다.

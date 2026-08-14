@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "setId": "ABLESTACK_VERSIONED_ASSIST_GOLDEN_V1",
   "publicDocumentSections": ["증상", "원인", "해결 방법", "추가 고려사항", "적용 버전"],
-  "caseCount": 7,
+  "caseCount": 8,
   "cases": [
     {
       "caseKey": "CURRENT-DEFECT-PREVIEW-IMPROVED-001",
@@ -61,6 +61,16 @@
       "requiredPublicGuidance": ["QEMU", "VNC", "라이브 마이그레이션", "정지 후 시작", "운영체제", "query-vnc"],
       "expectedPublicGuidance": "QEMU VNC 세션 상태를 확인하고 운영 중에는 라이브 마이그레이션을 우선 적용하며 정지 후 시작을 대안으로 안내",
       "forbiddenPublicClaims": ["ABLESTACK 제품 결함", "Europa에서 해결 완료", "github.com", "CLOUD_DIPLO", "CLOUD_EUROPA"]
+    },
+    {
+      "caseKey": "QEMU-GA-FSFREEZE-MNT-PERMISSION-001",
+      "question": "가상머신에 새 디스크 볼륨을 연결하고 /mnt에 마운트한 뒤 스냅샷 또는 복제를 실행하면 guest-fsfreeze-freeze가 failed to open /mnt: Permission denied로 실패합니다. SELinux 문제일 수 있나요?",
+      "expectedCurrentAssessment": "INSUFFICIENT_EVIDENCE",
+      "allowedAnswerState": "ANSWERED",
+      "expectedPreviewAssessment": "NOT_APPLICABLE",
+      "requiredPublicGuidance": ["ausearch", "findmnt", "ls -ldZ", "matchpathcon", "restorecon", "해결되지 않으면"],
+      "expectedPublicGuidance": "게스트 안에서 SELinux AVC와 마운트 권한을 명령으로 확인하고 확인된 문맥 오류만 복구한 뒤 스냅샷을 재시도",
+      "forbiddenPublicClaims": ["setenforce 0", "SELinux를 끄", "chmod 777", "audit2allow", "ABLESTACK 제품 결함", "github.com", "CLOUD_DIPLO", "CLOUD_EUROPA"]
     }
   ]
 }

@@ -62,6 +62,25 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         ranked = relevant_results(question, rows)
         self.assertEqual("systemvm/agent/noVNC/vnc_lite.html", ranked[0]["path"])
 
+    def test_fsfreeze_permission_question_expands_retrieval_vocabulary(self) -> None:
+        question = "새 디스크를 /mnt에 연결한 뒤 스냅샷에서 guest-fsfreeze-freeze Permission denied가 발생합니다."
+        expanded = expand_retrieval_question(question)
+        self.assertIn("qemu-guest-agent", expanded)
+        self.assertIn("ausearch", expanded)
+        self.assertIn("matchpathcon", expanded)
+        self.assertIn("restorecon", expanded)
+
+    def test_fsfreeze_question_loads_safe_local_platform_guidance(self) -> None:
+        question = "새 볼륨을 /mnt에 마운트한 뒤 guest-fsfreeze-freeze Permission denied가 발생합니다."
+        results = curated_platform_results(question)
+        combined = "\n".join(item["content"] for item in results)
+        self.assertGreaterEqual(len(results), 2)
+        self.assertIn("sudo ausearch", combined)
+        self.assertIn("sudo findmnt", combined)
+        self.assertIn("sudo restorecon", combined)
+        self.assertIn("SELinux 전체 비활성화", combined)
+        self.assertNotIn("setenforce 0", combined)
+
     def test_console_context_includes_multiple_docs_and_current_code_chunks(self) -> None:
         question = "Mold 콘솔 화면이 연결중에서 멈춥니다."
         rows = [{"path": f"consoleproxy/{index}.java", "content": "noVNC websockify VNC"} for index in range(6)]
@@ -105,6 +124,29 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertNotIn("operator://", answer)
         self.assertNotIn("sourceLocator", answer)
         self.assertTrue(projection_is_safe(answer), answer)
+
+    def test_ongoing_answer_places_solution_before_reason_and_fallback(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "summary": "새 마운트 지점의 권한을 먼저 확인하겠습니다.",
+                "observedFacts": [],
+                "diagnoses": [{"title": "SELinux 문맥 또는 일반 권한이 접근을 막았을 수 있습니다."}],
+                "recommendedActions": ["게스트에서 `sudo ausearch -m AVC,USER_AVC -ts recent`를 실행합니다."],
+                "unknowns": ["명령 출력과 qemu-guest-agent 로그를 알려주세요."],
+                "currentAssessment": "INSUFFICIENT_EVIDENCE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }
+        answer = format_public_answer(result) or ""
+        solution = answer.index("먼저 다음 해결 방법을 적용해 보세요.")
+        reason = answer.index("이 방법을 먼저 권장하는 이유는 다음과 같습니다.")
+        fallback = answer.index("위 조치로 해결되지 않으면 아래 결과를 알려주세요.")
+        self.assertLess(solution, reason)
+        self.assertLess(reason, fallback)
+        self.assertIn("sudo ausearch", answer)
 
     def test_public_projection_removes_all_external_urls(self) -> None:
         answer = sanitize_public_text(

@@ -14,6 +14,15 @@
 
 진행 중 답변에는 고정된 문서 형식을 강제하지 않는다. 해결 후 KB에만 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전`을 사용하며 별도 제목은 붙이지 않는다.
 
+후속 답변은 다음 순서를 지킨다.
+
+1. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법을 먼저 제시한다.
+2. 근거가 있는 경우 실행 위치, 정확한 CLI 명령과 정상 판정 기준을 함께 제공한다.
+3. 첫 조치로 해결되지 않을 때 적용할 대안을 제시한다.
+4. 그래도 해결되지 않을 때만 정확한 명령 출력이나 로그 이름을 요청한다.
+
+직전 답변과 같은 원인 설명·점검 목록은 다시 게시하지 않는다. 첫 생성 결과가 반복이면 Gateway가 한 번 재작성하고, 재작성도 진행되지 않으면 `COMMUNITY_RESPONSE_NOT_PROGRESSING`으로 게시를 중단해 Poller 재시도 대상으로 남긴다.
+
 `읽기 전용`, `변경 없음`, `호스트 관리자`, `네트워크 관리자`는 내부 작업 분류 정보이므로 사용자 답변의 제목이나 접두어로 노출하지 않는다. 담당자와 위험 안내가 필요하면 `서버 관리자는 다음 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 실제 의미를 문장 안에 설명한다.
 
 ## 2. 상태 확인
@@ -45,7 +54,7 @@ docker logs --since 10m techflow-ai-gateway-community-poller-1 \
   | grep -E 'community_poll_completed|community_post_delivery_failed'
 
 docker logs --since 10m techflow-ai-gateway-gateway-1 \
-  | grep -E 'community_answer_auto_published|community_knowledge_base_published|community_knowledge_base_solution_selected|community_chat_notification'
+  | grep -E 'community_answer_auto_published|community_answer_progression_retry|community_answer_progression_rejected|community_knowledge_base_published|community_knowledge_base_solution_selected|community_chat_notification'
 ```
 
 정상 기준:
@@ -87,6 +96,7 @@ Chat은 승인 채널이 아니라 관찰 채널이다.
 - 근거 부족으로 AI가 `ABSTAINED`를 반환해도 답변을 비워 두지 않고, 버전·발생 시각·로그·화면 등 필요한 정보를 쉬운 문장으로 요청해 자동 게시한다.
 - 공개 본문에서 Citation, 저장소, 브랜치, 커밋, 경로, 비밀정보를 제거한다.
 - 게시 실패는 503으로 반환해 Poller와 Activepieces가 다시 시도하게 한다.
+- 반복 답변은 한 번 재작성한 뒤에도 새 해결 단계가 없으면 공개하지 않는다.
 - 기존 승인 대기 초안은 공개 전에 대화체로 변환하고 저장 본문도 동일하게 갱신한다.
 
 ## 7. Knowledge Base 생성
@@ -129,8 +139,8 @@ TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE=/run/secrets/flarum_solution_sele
 ```
 
 5. `TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_SECRET_FILE`은 Best Answer 변경 권한이 있는 Flarum 관리자 ID 파일을 가리키게 한다. 시험 서버에서는 검증된 관리자 User 1을 사용한다.
-6. Gateway와 Poller만 0.14.2 이미지로 교체한다.
-7. Health에서 `version=0.14.2`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+6. Gateway와 Poller만 0.14.3 이미지로 교체한다.
+7. Health에서 `version=0.14.3`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
 8. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
 OpenAI 시험 환경에서는 재생성 명령에 `compose.openai.override.yml`을 반드시 포함한다. 기본 `compose.yml`만 사용하면 Gateway가 안전 기본값인 Mock Provider로 기동한다.
@@ -147,6 +157,7 @@ docker compose --env-file .env \
 | --- | --- | --- |
 | 답변 생성 후 공개되지 않음 | `community_answer_auto_publish_failed`, Flarum Post 상태 | API 권한과 Assistant ID를 확인하고 동일 Post 이벤트 재시도 |
 | 같은 답변이 중복 게시됨 | 본문 Marker와 Case Draft Version | Marker 검색 권한과 Post 조회 범위 확인 |
+| 후속 답변이 같은 점검을 반복함 | `community_answer_progression_retry`, `community_answer_progression_rejected` | 최신 사용자 Turn이 저장됐는지 확인하고, 근거 Context에 구체적인 다음 단계가 있는지 점검 |
 | 해결 표시 후 KB가 없음 | `resolved_post_id`, KB 실패 로그 | 선택 사용자와 최초 질문자 일치 여부, AI 응답과 Flarum API 확인 |
 | KB는 있으나 최종 솔루션이 아님 | `knowledge_base_solution_selected_at`, `community_knowledge_base_solution_selection_failed`, Flarum `bestAnswerPost` | selector identity 권한을 확인하고 동일 해결 이벤트를 재시도한다. 기존 KB Post는 재사용한다. |
 | Chat 알림만 실패 | `community_chat_notification_failed` | Community 게시 상태를 먼저 확인하고 Chat Bot 연결 복구 |
