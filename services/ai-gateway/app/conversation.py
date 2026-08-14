@@ -12,6 +12,13 @@ ROLE_LABELS = {
     "ASSISTANT": "TechFlow-Assistant",
 }
 
+PROGRESSION_RETRY_INSTRUCTION = (
+    "[진행성 재작성 필수]\n"
+    "직전 답변의 설명과 점검 목록을 반복하지 마십시오. "
+    "사람 참여자의 최신 내용에 대한 해결책을 맨 먼저 쓰고, 근거가 있는 정확한 CLI 명령, 실행 위치, "
+    "정상 판정 기준을 포함하십시오. 해결되지 않을 때만 다음 대안과 필요한 명령 결과를 요청하십시오."
+)
+
 
 def source_post_id(request: dict[str, Any]) -> str:
     """Return a stable identifier for legacy and Post-aware Community events."""
@@ -79,6 +86,21 @@ def build_conversation_question(
         "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. CLI는 설명과 분리한 ```bash 코드 블록으로 작성하십시오. "
         "해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 직전 답변을 반복하지 마십시오."
     )[:limit]
+
+
+def build_progression_retry_question(
+    title: str,
+    turns: Iterable[dict[str, Any]],
+    incoming: dict[str, Any],
+    *,
+    limit: int = 4000,
+) -> str:
+    """Build a retry prompt while reserving space for the mandatory rewrite instruction."""
+    suffix = f"\n\n{PROGRESSION_RETRY_INSTRUCTION}"
+    if len(suffix) >= limit:
+        raise ValueError("progression retry instruction must be shorter than the question limit")
+    base = build_conversation_question(title, turns, incoming, limit=limit - len(suffix))
+    return base + suffix
 
 
 COMMAND_MARKERS = (

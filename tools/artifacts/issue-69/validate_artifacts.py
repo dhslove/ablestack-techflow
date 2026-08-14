@@ -16,12 +16,12 @@ def pdf(path: Path) -> tuple[int, str]:
 
 def main() -> None:
     report_pages, report_text = pdf(REPORT); deck_pages, _ = pdf(DECK_PDF)
-    if report_pages < 4 or "Issue #69" not in report_text or "Post #381" not in report_text or "CLI 블록" not in report_text: raise RuntimeError("report PDF contract failed")
+    if report_pages < 4 or "Issue #69" not in report_text or "Post #383" not in report_text or "ValidationError" not in report_text: raise RuntimeError("report PDF contract failed")
     with zipfile.ZipFile(DECK) as archive:
         slides = len([n for n in archive.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
         notes = len([n for n in archive.namelist() if n.startswith("ppt/notesSlides/notesSlide") and n.endswith(".xml")])
         deck_text = "\n".join(archive.read(n).decode("utf-8", errors="replace") for n in archive.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml"))
-    if deck_pages != 5 or slides != 5 or notes != 5 or "#381" not in deck_text or "0.14.4" not in deck_text or "CLI 코드 블록" not in deck_text: raise RuntimeError(f"presentation contract failed pages={deck_pages} slides={slides} notes={notes}")
+    if deck_pages != 5 or slides != 5 or notes != 5 or "#383" not in deck_text or "0.14.5" not in deck_text or "ValidationError" not in deck_text: raise RuntimeError(f"presentation contract failed pages={deck_pages} slides={slides} notes={notes}")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if manifest.get("issue") != 69 or len(manifest.get("artifacts") or []) != 4: raise RuntimeError("manifest contract failed")
     print(f"artifacts=valid reportPages={report_pages} slides={slides} notes={notes}")

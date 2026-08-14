@@ -1,5 +1,11 @@
 # TechFlow AI Gateway
 
+## v0.14.5 구현 범위
+
+- 누적 대화가 4,000자에 도달해도 반복 방지 재작성 지침을 위한 공간을 먼저 확보합니다.
+- 최신 참여자 질문과 재작성 지침을 모두 보존하여 내부 `ValidationError` 없이 후속 답변을 생성합니다.
+- 기존 Activepieces Webhook 계약과 Flow는 변경하지 않습니다.
+
 ## v0.14.4 구현 범위
 
 - Community 질문과 후속 질문에 AI-Assistant가 관리자 승인 없이 바로 답변합니다.

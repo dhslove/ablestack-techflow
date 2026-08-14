@@ -2,12 +2,13 @@
 
 - 검증일: 2026-08-14
 - 환경: TechFlow 시험 서버, ABLESTACK Community, Synology Chat
-- 릴리스: TechFlow AI Gateway 0.14.4
+- 릴리스: TechFlow AI Gateway 0.14.5
 - 구현 PR: [#65](https://github.com/ablecloud-team/ablestack-techflow/pull/65)
 - 실제 후속 질문: [Discussion #164](https://community.ablecloud.io/d/164-gasangmeosin-sijag-mic-maigeureisyeon-oryu)
 - 자동 게시·KB E2E: [Discussion #165](https://community.ablecloud.io/d/165-techflow-knowledge-base)
 - 해결 우선 후속 답변 E2E: [Discussion #166 Post #377](https://community.ablecloud.io/d/166/377)
 - 다중 참여자·CLI 블록 E2E: [Discussion #167 Post #381](https://community.ablecloud.io/d/167/381)
+- 긴 대화 오류 복구 E2E: [Discussion #167 Post #383](https://community.ablecloud.io/d/167/383)
 
 ## 1. 결론
 
@@ -18,6 +19,8 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 0.14.3에서는 후속 답변이 같은 점검 목록을 반복하지 않도록 해결 우선 정책과 진행성 검사를 추가했다. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법, 근거 있는 CLI, 실행 위치와 성공 기준을 먼저 제시한다. 첫 조치가 실패했을 때만 대안과 정확한 명령 출력·로그를 요청한다. 첫 생성이 직전 답변을 반복하면 한 번 재작성하며, 재작성도 새 단계가 없으면 게시하지 않고 503 재시도로 남긴다.
 
 0.14.4에서는 최초 질문자와 다른 사람의 후속 댓글도 최신 사람 입력으로 처리한다. AI-Assistant 자신의 Post만 재응답 대상에서 제외한다. 설명과 CLI를 같은 문장에 섞지 않고, 설명 다음에 바로 복사할 수 있는 독립된 `bash` 코드 블록을 배치한다.
+
+0.14.5에서는 누적 대화가 모델 입력 상한인 4,000자에 도달한 경우에도 검색용 진단 키워드와 반복 방지 재작성 지침의 공간을 먼저 확보한다. Discussion #167 Post #382에서 발생한 내부 `ValidationError`를 제거했으며, Activepieces Flow와 Webhook 계약은 변경하지 않았다.
 
 0.14.1에서는 `[읽기 전용]`, `[변경 없음]`, `[호스트 관리자]`, `[네트워크 관리자]`처럼 내부 실행 정책을 나타내는 접두어도 사용자 답변에서 제거했다. 안전성 판단은 내부에 유지하되, 사용자가 알아야 할 내용만 `서버 관리자는 D-Bus 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 자연스러운 문장으로 전달한다.
 
@@ -122,6 +125,22 @@ Discussion #167의 최초 질문 Post #378은 User 12가 작성했고 AI-Assista
 
 교정 답변은 AI-Assistant Post #381로 공개됐다. Flarum API 재조회 결과 `isApproved=true`, `<pre><code class="language-bash">` 5개, 실행 명령을 담은 인라인 `<code>` 0개였다. Poller는 Post #381을 Assistant Turn으로 한 번 수집해 `seenPosts=135`, `failed=0`을 기록하고 자기 응답을 다시 만들지 않았다.
 
+### 3.6 Discussion #167 Post #382 Activepieces 오류 복구
+
+질문자가 Post #382에서 `restorecon`으로 문제가 해결됐다고 알리고 `/mnt` 마운트 자체가 문제인지, 다음 볼륨부터 수동 복구를 피하려면 어떻게 해야 하는지 질문했다. Poller와 Activepieces Webhook 실행은 정상 완료됐지만, AI Gateway HTTP 단계는 `INTERNAL_ERROR / ValidationError`를 반환했다.
+
+실제 DB Turn으로 입력을 재현한 결과 누적 Conversation Prompt는 정확히 4,000자였다. 검색용 진단 키워드를 붙인 `QueryRequest`와, 반복 결과를 다시 쓰게 하는 재작성 Prompt가 각각 4,000자 상한을 넘을 수 있었다. 0.14.5는 두 단계 모두 부가 지침 길이를 먼저 예약하고 나머지 공간에 대화 본문을 맞춘다. 짧은 질문과 기존 Activepieces Flow의 동작은 바뀌지 않는다.
+
+기존 Webhook으로 Post #382를 다시 전달한 실제 E2E 결과는 다음과 같다.
+
+- Activepieces Flow ID: `6Yzrh1hYs2rEGB1vfl812`, 기존 Version 유지
+- AI Gateway: HTTP 201, `request_completed`
+- 자동 공개 답변: AI-Assistant Post #383, `isApproved=true`
+- Case: `PUBLISHED / WAITING_RESOLUTION`, Draft Version 2
+- Conversation Turn: #378~#383 총 6개, #382 `REQUESTER`, #383 `ASSISTANT`
+- 답변: `/mnt` 마운트 자체는 문제가 아니며, 볼륨 배포 절차에 `findmnt`, `ls -ldZ`, `matchpathcon`, 조건부 `restorecon` 검사를 포함하도록 안내
+- 내부 근거: 9개 Source Profile 전부 검토, Community 본문에는 Citation·Repository·Commit 비노출
+
 ## 4. 구현 상세
 
 ### 4.1 상태와 데이터
@@ -149,7 +168,11 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 
 Conversation Prompt는 최초 질문·최신 사람 참여자의 추가 정보·직전 TechFlow 답변·최근 Turn을 구분한다. Provider 정책은 `recommendedActions`에 해결 방법을 먼저 쓰고, CLI가 근거에 있을 때 실행 위치·명령·정상 판정 기준을 함께 작성하게 한다. 설명과 명령을 분리하고 실행 명령은 독립된 `bash` 코드 블록으로 출력한다. `unknowns`는 해당 조치 후에도 실패할 때 필요한 정확한 출력에만 사용한다.
 
-Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 실제 조치가 추가됐는지 검사한다. 같은 일반 점검 목록이면 한 번 더 엄격하게 재작성한다. 두 번째 결과도 진행되지 않으면 `COMMUNITY_RESPONSE_NOT_PROGRESSING`으로 게시하지 않으며 Poller가 동일 Post를 재시도한다.
+Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 실제 조치가 추가됐는지 검사한다. 같은 일반 점검 목록이면 한 번 더 엄격하게 재작성한다. 두 번째 결과도 진행되지 않으면 `COMMUNITY_RESPONSE_NOT_PROGRESSING`으로 게시하지 않는다. Activepieces가 Webhook을 먼저 수신 완료한 뒤 비동기 HTTP 단계를 실행하므로, 이미 Poller 체크포인트에 들어간 실패 Post는 운영자가 기존 Webhook으로 동일 이벤트를 재전달한다.
+
+### 4.5 긴 대화 입력 상한
+
+`ComprehensiveQueryRequest`와 내부 검색용 `QueryRequest`의 질문 상한은 4,000자이다. 검색 확장은 진단 키워드 길이를 먼저 제외한 범위에서 원문을 자르고, 진행성 재작성은 필수 지침 길이를 먼저 제외해 Conversation Prompt를 다시 만든다. 두 결과 모두 4,000자를 넘지 않으며 최신 사람 질문과 필수 진단 지침을 보존한다.
 
 ## 5. 장애·재시도 검증
 
@@ -163,21 +186,22 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 
 | 항목 | 결과 |
 | --- | --- |
-| Python 단위·통합 테스트 | 225건 전체 통과 |
+| Python 단위·통합 테스트 | 227건 전체 통과 |
 | OpenAPI | 34 Operations |
 | DB Migration | 24 Tables, KB Columns 8, 검증 통과 |
 | Gateway Health | Process·Database·Vector `ready`, Provider `openai` |
-| Gateway Version | 0.14.4 |
+| Gateway Version | 0.14.5 |
 | Discussion #164 후속 자동 답변 | Post #365, 공개 완료 |
 | Discussion #165 근거 부족 자동 답변 | Post #367, 공개 완료 |
 | Discussion #165 KB | Post #368, Version 1, 최종 Best Answer 지정 완료 |
 | Discussion #166 해결 우선 정정 답변 | Post #377, 공개·Turn 수집 완료 |
 | Discussion #167 다중 참여자 후속 답변 | Post #381, 코드 블록 5개·인라인 CLI 0개·Turn 수집 완료 |
+| Discussion #167 긴 대화 오류 복구 | Post #383, Activepieces 기존 Flow·HTTP 201·자동 공개 완료 |
 | Chat 담당자 | 자동 게시 알림 전송 확인 |
 | 내부 근거·Marker 공개 | 0건 |
 | 루트 디스크 | 1005G 중 44G 사용, 921G 여유 |
 
-0.14.4 시험 서버 Health는 `provider=openai`, `version=0.14.4`, Process·Database·Vector `ready`이다. 실제 Discussion #167 교정 뒤 Poller는 `seenPosts=135`, `failed=0`을 기록했다.
+0.14.5 시험 서버 Health는 `provider=openai`, `version=0.14.5`, Process·Database·Vector `ready`이다. Gateway와 Community Poller는 Image `sha256:372c1e85542c60d525f4640b4d389e0adc72a06105451529312777d06f9467b0`, Restart Count 0으로 동작한다.
 
 ## 7. 배포·복구 자산
 
@@ -214,6 +238,14 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 - 배포 대상: Gateway·Community Poller만 재생성
 - 보호 대상 Event Gateway: Container ID와 Image ID 변경 없음
 
+0.14.5 긴 대화 입력 상한 보완 전 백업은 `/home/ablecloud/techflow-ai-gateway/backups/issue69-post382-predeploy-20260814T041053Z`에 보관했다.
+
+- Runtime Source·Compose SHA-256: `fcbfa4581689820b21231ce9863e9eddcce4964cad600de4541d86e8d242b2ad`
+- DB Schema Migration: 없음
+- 배포 대상: Gateway·Community Poller만 재생성
+- 최종 배포 Image ID: `sha256:372c1e85542c60d525f4640b4d389e0adc72a06105451529312777d06f9467b0`
+- 보호 대상 Event Gateway: Container ID `bf5c76824dbf`, Image ID `sha256:ae33662eb227c9826563e94236272547f586437082f65d4d385837793e63670e`, Restart Count 0 유지
+
 첫 배포 시도에서는 서버 루트의 복사본을 갱신했지만 Compose 실제 Build Context가 `/home/ablecloud/techflow-ai-gateway/services/ai-gateway`인 것을 확인했다. 이 시도는 Docker가 기존 0.14.1 Layer를 재사용해 Schema·데이터 변경 없이 종료됐다. 실제 Build Context를 추가 백업하고 올바른 경로에서 캐시 없이 0.14.2를 빌드해 `knowledgeColumns=8`과 Health를 재검증했다.
 
 최초 재생성 검증에서 기본 Compose만 사용해 Provider가 `mock`으로 기동한 것을 발견했다. 즉시 `compose.openai.override.yml`을 포함해 Gateway와 Poller를 다시 생성했고 최종 Health의 `provider=openai`를 확인했다. 이 재발 방지 조건을 운영 Runbook의 필수 명령으로 추가했다.
@@ -240,3 +272,4 @@ Issue #69의 완료 기준을 충족했다.
 12. 직전 답변을 되풀이하는 결과는 재작성하며 진행되지 않으면 공개하지 않는다.
 13. 최초 질문자와 다른 사람의 후속 댓글도 같은 대화를 진행하고 Assistant 자신의 글은 재응답하지 않는다.
 14. 설명과 CLI를 분리하며 실행 명령은 복사 가능한 `bash` 코드 블록으로 표시한다.
+15. 4,000자 누적 대화에서도 검색 확장과 반복 방지 재작성이 입력 상한을 넘지 않고 답변을 게시한다.

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from app.conversation import build_conversation_question, community_result_advances
+from app.conversation import (
+    PROGRESSION_RETRY_INSTRUCTION,
+    build_conversation_question,
+    build_progression_retry_question,
+    community_result_advances,
+)
 
 
 class ConversationProgressionTest(unittest.TestCase):
@@ -75,6 +80,33 @@ class ConversationProgressionTest(unittest.TestCase):
             }
         }
         self.assertFalse(community_result_advances(result, self.turns))
+
+    def test_progression_retry_reserves_instruction_space_at_question_limit(self) -> None:
+        long_turns = [
+            *self.turns,
+            {
+                "sourcePostId": "381",
+                "postNumber": 4,
+                "role": "ASSISTANT",
+                "content": "직전의 긴 기술지원 답변입니다. " * 300,
+            },
+        ]
+        incoming = {
+            "discussionId": "167",
+            "postId": "382",
+            "postNumber": 5,
+            "turnRole": "REQUESTER",
+            "question": (
+                "restorecon 명령으로 해결했습니다. /mnt에 디스크를 마운트한 것이 문제인가요? "
+                "볼륨을 추가한 뒤 수동 복구를 반복하지 않으려면 어떻게 해야 하나요?"
+            ),
+        }
+
+        prompt = build_progression_retry_question("가상머신 복제 및 스냅샷 생성 시 오류", long_turns, incoming)
+
+        self.assertLessEqual(len(prompt), 4000)
+        self.assertIn("restorecon 명령으로 해결했습니다", prompt)
+        self.assertTrue(prompt.endswith(PROGRESSION_RETRY_INSTRUCTION))
 
 
 if __name__ == "__main__":

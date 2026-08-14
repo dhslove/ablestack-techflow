@@ -42,7 +42,7 @@ addSlide([
   textbox("Community 자동 답변과\n최종 솔루션 Knowledge Base", 64, 150, 1100, 192, 58, true, C.white),
   textbox("승인 대기 제거 · 쉬운 대화 · KB 최종 솔루션", 70, 388, 1030, 52, 28, false, "#CBD5E1"),
   rect(70, 506, 440, 78, C.blue, "result"),
-  textbox("AI Gateway 0.14.4", 88, 518, 404, 52, 26, true, C.white, "center"),
+  textbox("AI Gateway 0.14.5", 88, 518, 404, 52, 26, true, C.white, "center"),
   textbox("Issue #69 · 2026-08-14", 824, 642, 390, 28, 17, false, "#94A3B8", "right"),
 ], ["docs/reports/issue-69-community-auto-publish-kb-validation.md"]);
 
@@ -78,31 +78,31 @@ flow.push(textbox("Chat Bot → 담당자에게 상태와 Community 원문 링�
 addSlide(flow, ["docs/runbooks/community-conversation.md"]);
 
 addSlide([
-  ...header("Discussion #167의 후속 응답 누락과 CLI 가독성을 해결했습니다", 4),
-  textbox("누락", 72, 178, 250, 82, 44, true, C.red, "center"),
-  textbox("Post #380", 72, 270, 250, 38, 21, true, C.ink, "center"),
-  textbox("다른 참여자를 STAFF로\n기록만 하고 응답하지 않음", 72, 342, 250, 92, 21, false, C.gray, "center"),
+  ...header("Discussion #167의 4,000자 입력 오류를 복구했습니다", 4),
+  textbox("오류", 72, 178, 250, 82, 44, true, C.red, "center"),
+  textbox("Post #382", 72, 270, 250, 38, 21, true, C.ink, "center"),
+  textbox("누적 대화 4,000자\nActivepieces HTTP 500", 72, 342, 250, 92, 21, false, C.gray, "center"),
   rect(370, 170, 2, 360, C.rule, "divider-1"),
-  textbox("연결", 420, 178, 250, 82, 44, true, C.blue, "center"),
-  textbox("모든 사람 입력", 420, 270, 250, 38, 21, true, C.ink, "center"),
-  textbox("REQUESTER · STAFF 응답\nAssistant 자신만 제외", 420, 334, 250, 112, 22, false, C.gray, "center"),
+  textbox("원인", 420, 178, 250, 82, 44, true, C.amber, "center"),
+  textbox("ValidationError", 420, 270, 250, 38, 21, true, C.ink, "center"),
+  textbox("검색 키워드와\n재작성 지침을 뒤에 추가", 420, 334, 250, 112, 22, false, C.gray, "center"),
   rect(718, 170, 2, 360, C.rule, "divider-2"),
-  textbox("표시", 768, 178, 250, 82, 44, true, C.green, "center"),
-  textbox("CLI 코드 블록", 768, 270, 250, 38, 21, true, C.ink, "center"),
-  textbox("설명 먼저\n복사 가능한 bash 명령\n인라인 CLI 0개", 768, 334, 250, 112, 21, false, C.gray, "center"),
+  textbox("수정", 768, 178, 250, 82, 44, true, C.blue, "center"),
+  textbox("공간 선예약", 768, 270, 250, 38, 21, true, C.ink, "center"),
+  textbox("부가 지침 길이를 빼고\n대화 본문을 4,000자\n안에 맞춤", 768, 334, 250, 112, 21, false, C.gray, "center"),
   rect(1066, 170, 2, 360, C.rule, "divider-3"),
-  textbox("#381", 1090, 196, 120, 74, 40, true, C.green, "center"),
-  textbox("코드 블록 5개", 1078, 286, 144, 56, 19, true, C.ink, "center"),
-  textbox("225", 1090, 382, 120, 62, 38, true, C.blue, "center"),
+  textbox("#383", 1090, 196, 120, 74, 40, true, C.green, "center"),
+  textbox("HTTP 201", 1078, 286, 144, 56, 19, true, C.ink, "center"),
+  textbox("227", 1090, 382, 120, 62, 38, true, C.blue, "center"),
   textbox("전체 시험 통과", 1078, 458, 144, 44, 17, false, C.gray, "center"),
-], ["docs/reports/issue-69-community-auto-publish-kb-validation.md#3.5", "https://community.ablecloud.io/d/167/381"]);
+], ["docs/reports/issue-69-community-auto-publish-kb-validation.md#3.6", "https://community.ablecloud.io/d/167/383"]);
 
 addSlide([
   rect(0, 0, 1280, 720, C.ink, "closing"),
   textbox("완료", 64, 70, 260, 56, 28, true, C.cyan),
   textbox("사용자는 바로 답을 받고,\n검증된 KB가 최종 솔루션이 됩니다", 64, 162, 1100, 158, 54, true, C.white),
   rect(68, 396, 2, 186, C.cyan, "left-rule"),
-  textbox("AI Gateway 0.14.4 · OpenAI · 다중 참여자 후속 응답", 96, 396, 1030, 44, 24, true, C.white),
+  textbox("AI Gateway 0.14.5 · OpenAI · 긴 대화 입력 상한 보호", 96, 396, 1030, 44, 24, true, C.white),
   textbox("Process · Database · Vector ready", 96, 456, 1030, 40, 21, false, "#CBD5E1"),
   textbox("전체 DB 백업 · 루트 여유 921 GB · 보호 서비스 무변경", 96, 510, 1030, 40, 21, false, "#CBD5E1"),
   textbox("PR #65는 구현 검토를 위해 Draft 상태를 유지합니다", 684, 642, 530, 28, 17, false, "#94A3B8", "right"),

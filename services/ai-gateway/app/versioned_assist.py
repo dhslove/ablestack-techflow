@@ -137,7 +137,7 @@ def _is_fsfreeze_question(question: str) -> bool:
     )
 
 
-def expand_retrieval_question(question: str) -> str:
+def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
     """Add implementation vocabulary without changing the user's visible question."""
     anchors: list[str] = []
     if _is_console_connection_question(question):
@@ -145,8 +145,11 @@ def expand_retrieval_question(question: str) -> str:
     if _is_fsfreeze_question(question):
         anchors.extend(FSFREEZE_MARKERS)
     if not anchors:
-        return question
-    return f"{question}\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
+        return question[:limit]
+    suffix = f"\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
+    if len(suffix) >= limit:
+        raise ValueError("retrieval anchors must be shorter than the question limit")
+    return f"{question[:limit - len(suffix)].rstrip()}{suffix}"
 
 
 def _relevance_score(question: str, item: dict[str, Any]) -> int:

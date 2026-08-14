@@ -70,6 +70,16 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("matchpathcon", expanded)
         self.assertIn("restorecon", expanded)
 
+    def test_fsfreeze_retrieval_expansion_stays_within_query_limit(self) -> None:
+        question = ("guest-fsfreeze-freeze Permission denied /mnt " + ("긴 대화 " * 800))[:4000]
+
+        expanded = expand_retrieval_question(question)
+
+        self.assertLessEqual(len(expanded), 4000)
+        self.assertTrue(expanded.startswith("guest-fsfreeze-freeze Permission denied /mnt"))
+        self.assertIn("진단 검색어:", expanded)
+        self.assertIn("restorecon", expanded)
+
     def test_fsfreeze_question_loads_safe_local_platform_guidance(self) -> None:
         question = "새 볼륨을 /mnt에 마운트한 뒤 guest-fsfreeze-freeze Permission denied가 발생합니다."
         results = curated_platform_results(question)

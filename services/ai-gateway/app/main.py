@@ -62,6 +62,7 @@ from .community import FlarumClient, conversationalize_answer, format_draft, pro
 from .conversation import (
     build_conversation_question,
     build_knowledge_base_question,
+    build_progression_retry_question,
     community_result_advances,
     source_post_id,
 )
@@ -797,11 +798,7 @@ def create_app(
                 "community_answer_progression_retry", correlationId=correlation_id,
                 discussionId=request.discussion_id, sourcePostId=post_id,
             )
-            rewrite_question = conversation_question + (
-                "\n\n[진행성 재작성 필수]\n직전 답변의 설명과 점검 목록을 반복하지 마십시오. "
-                "질문자의 최신 내용에 대한 해결책을 맨 먼저 쓰고, 근거가 있는 정확한 CLI 명령, 실행 위치, "
-                "정상 판정 기준을 포함하십시오. 해결되지 않을 때만 다음 대안과 필요한 명령 결과를 요청하십시오."
-            )
+            rewrite_question = build_progression_retry_question(request.title, turns, event)
             retry_request = ComprehensiveQueryRequest(
                 queryId=uuid4(), question=rewrite_question, actorId=f"community:{request.author_id}",
                 productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,
