@@ -277,9 +277,9 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         headings = ["### 증상", "### 원인", "### 해결 방법", "### 추가 고려사항", "### 적용 버전"]
         self.assertTrue(all(heading in answer for heading in headings), answer)
         self.assertEqual(sorted(answer.index(heading) for heading in headings), [answer.index(heading) for heading in headings])
-        self.assertIn("ABLESTACK Diplo(현재 출시판)", answer)
-        self.assertIn("ABLESTACK Europa(미출시 Preview)", answer)
-        self.assertIn("개선이 진행 중", answer)
+        self.assertIn("- ABLESTACK Diplo", answer)
+        self.assertNotIn("ABLESTACK Europa", answer)
+        self.assertNotIn("개선이 진행 중", answer)
         self.assertNotIn("Foo.java", answer)
         self.assertNotIn("CLOUD_DIPLO", answer)
 
@@ -299,7 +299,28 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         }) or ""
         self.assertIn("현재 근거에서 확인된 원인은 없습니다.", answer)
         self.assertIn("별도의 추가 고려사항은 확인되지 않았습니다.", answer)
-        self.assertIn("차기 버전 비교는 적용 대상이 아닙니다.", answer)
+        self.assertIn("- ABLESTACK Diplo", answer)
+        self.assertNotIn("차기 버전", answer)
+
+    def test_application_version_lists_supported_product_without_internal_preview_assessment(self) -> None:
+        answer = format_knowledge_base({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "복제 오류가 발생했습니다.",
+                "observedFacts": ["가상머신 복제가 실패했습니다."],
+                "diagnoses": [{"title": "SELinux 문맥이 맞지 않습니다."}],
+                "recommendedActions": ["restorecon으로 문맥을 복구합니다."],
+                "unknowns": [], "artifactEvidence": [],
+                "currentAssessment": "CURRENT_CONFIG_ERROR",
+                "previewAssessment": "PREVIEW_NOT_FOUND",
+                "previewGuidance": "차기 버전 코드에서 개선을 확인하지 못해 제품 보완 검토가 필요합니다.",
+            },
+            "citations": [],
+        }) or ""
+        version = answer.split("### 적용 버전", 1)[1]
+        self.assertIn("- ABLESTACK Diplo", version)
+        for hidden in ("현재 적용 기준", "차기 참고 기준", "ABLESTACK Europa", "제품 보완", "개선을 확인"):
+            self.assertNotIn(hidden, answer)
 
     def test_versioned_golden_set_has_required_decision_cases(self) -> None:
         source = Path(__file__).parents[1] / "app" / "data" / "versioned-assist-golden-v1.json"

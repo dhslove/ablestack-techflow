@@ -21,6 +21,7 @@ from .models import (
     ApiMeta,
     CompatibilitySetCreateRequest,
     ComprehensiveQueryRequest,
+    ComprehensiveSynthesisRequest,
     CommunityCaseCreateRequest,
     CommunityDecisionRequest,
     CommunityPublishRequest,
@@ -638,7 +639,7 @@ def create_app(
                         if len(artifact_ids) == 5:
                             break
                     knowledge_result = _query_comprehensive(
-                        ComprehensiveQueryRequest(
+                        ComprehensiveSynthesisRequest(
                             queryId=uuid4(), question=knowledge_question,
                             actorId=f"community-kb:{request.author_id}",
                             productVersion=request.product_version or "diplo",

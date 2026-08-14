@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from uuid import uuid4
 
 from app.conversation import (
     PROGRESSION_RETRY_INSTRUCTION,
     build_conversation_question,
+    build_knowledge_base_question,
     build_progression_retry_question,
     community_result_advances,
 )
+from app.models import CommunityCaseCreateRequest, ComprehensiveQueryRequest, ComprehensiveSynthesisRequest
 
 
 class ConversationProgressionTest(unittest.TestCase):
@@ -107,6 +110,68 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertLessEqual(len(prompt), 4000)
         self.assertIn("restorecon 명령으로 해결했습니다", prompt)
         self.assertTrue(prompt.endswith(PROGRESSION_RETRY_INSTRUCTION))
+
+    def test_knowledge_base_prompt_preserves_selected_solution_within_model_limit(self) -> None:
+        turns = [
+            {
+                "sourcePostId": str(378 + index),
+                "postNumber": index + 1,
+                "role": "ASSISTANT" if index % 2 else "REQUESTER",
+                "content": (f"{index + 1}번째 긴 대화 내용입니다. " * 120),
+            }
+            for index in range(6)
+        ]
+
+        prompt = build_knowledge_base_question("가상머신 복제 및 스냅샷 생성 시 오류", turns, "383")
+
+        self.assertLessEqual(len(prompt), 16000)
+        self.assertGreater(len(prompt), 4000)
+        self.assertIn("[질문자가 선택한 해결 답변]", prompt)
+        self.assertIn("#6 TechFlow-Assistant", prompt)
+        self.assertTrue(prompt.endswith("제목은 만들지 마십시오."))
+        ComprehensiveSynthesisRequest(
+            queryId=uuid4(), question=prompt, actorId="community-kb:12",
+            productVersion="diplo", artifactIds=[], locale="ko-KR", classification="D0",
+        )
+
+        with self.assertRaises(ValueError):
+            ComprehensiveQueryRequest(
+                queryId=uuid4(), question=prompt, actorId="community:12",
+                productVersion="diplo", artifactIds=[], locale="ko-KR", classification="D0",
+            )
+
+    def test_long_community_post_is_stored_but_compacted_for_the_query_contract(self) -> None:
+        long_question = "처음 오류 메시지입니다. " + ("상세 로그 한 줄입니다. " * 500) + "마지막 질문과 오류 코드 E-COMPLETE"
+        artifact_id = uuid4()
+        incoming = CommunityCaseCreateRequest(
+            discussionId="167", discussionUrl="https://community.ablecloud.io/d/167",
+            title="가상머신 복제 및 스냅샷 생성 시 오류", question=long_question,
+            authorId="12", postId="384", postNumber=11, postAuthorId="12",
+            turnRole="REQUESTER", responseRequested=True, artifactIds=[artifact_id],
+        )
+        prior_turns = [
+            {
+                "sourcePostId": str(300 + index), "postNumber": index + 1,
+                "role": "ASSISTANT" if index % 2 else "REQUESTER",
+                "content": f"이전 {index + 1}번 기술지원 내용 " * 100,
+            }
+            for index in range(10)
+        ]
+
+        prompt = build_conversation_question(incoming.title, prior_turns, incoming.model_dump(by_alias=True))
+
+        self.assertEqual(long_question, incoming.question)
+        self.assertEqual([artifact_id], incoming.artifact_ids)
+        self.assertLessEqual(len(prompt), 4000)
+        self.assertIn("처음 오류 메시지입니다", prompt)
+        self.assertIn("마지막 질문과 오류 코드 E-COMPLETE", prompt)
+        self.assertIn("[긴 내용 자동 압축]", prompt)
+        self.assertIn("(첨부자료 포함)", prompt)
+        self.assertTrue(prompt.endswith("직전 답변을 반복하지 마십시오."))
+        ComprehensiveQueryRequest(
+            queryId=uuid4(), question=prompt, actorId="community:12",
+            productVersion="diplo", artifactIds=[], locale="ko-KR", classification="D0",
+        )
 
 
 if __name__ == "__main__":

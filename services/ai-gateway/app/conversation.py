@@ -20,6 +20,19 @@ PROGRESSION_RETRY_INSTRUCTION = (
 )
 
 
+def _excerpt(value: object, limit: int) -> str:
+    """Keep both ends of long support text so errors and final questions survive compaction."""
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    marker = "\n... [긴 내용 자동 압축] ...\n"
+    if limit <= len(marker):
+        return text[:limit]
+    body_limit = limit - len(marker)
+    head = (body_limit * 2) // 3
+    return text[:head] + marker + text[-(body_limit - head):]
+
+
 def source_post_id(request: dict[str, Any]) -> str:
     """Return a stable identifier for legacy and Post-aware Community events."""
     return str(request.get("postId") or f"discussion-{request['discussionId']}-first")
@@ -46,20 +59,21 @@ def build_conversation_question(
         })
     rows.sort(key=lambda item: (int(item.get("postNumber") or 0), str(item.get("sourcePostId") or "")))
     original = next((item for item in rows if item.get("role") == "REQUESTER"), rows[0] if rows else None)
-    original_text = str((original or {}).get("content") or incoming.get("question") or "")[:1200]
+    original_text = _excerpt((original or {}).get("content") or incoming.get("question") or "", 1200)
     transcript: list[str] = []
     for item in rows[-12:]:
         label = ROLE_LABELS.get(str(item.get("role") or "STAFF"), "참여자")
         number = item.get("postNumber") or "-"
-        content = str(item.get("content") or "").strip()[:900]
+        content = _excerpt(item.get("content"), 900)
         suffix = " (첨부자료 포함)" if item.get("artifactIds") else ""
         transcript.append(f"- #{number} {label}{suffix}: {content}")
     human_turns = [item for item in rows if item.get("role") != "ASSISTANT"]
     assistant_turns = [item for item in rows if item.get("role") == "ASSISTANT"]
-    latest_human = str(
-        (human_turns[-1] if human_turns else {}).get("content") or incoming.get("question") or ""
-    )[:1200]
-    previous_assistant = str((assistant_turns[-1] if assistant_turns else {}).get("content") or "")[:1200]
+    latest_human = _excerpt(
+        (human_turns[-1] if human_turns else {}).get("content") or incoming.get("question") or "",
+        1200,
+    )
+    previous_assistant = _excerpt((assistant_turns[-1] if assistant_turns else {}).get("content"), 1200)
     prompt = (
         f"[Community 기술지원 제목]\n{title}\n\n"
         f"[최초 질문]\n{original_text}\n\n"
@@ -78,14 +92,35 @@ def build_conversation_question(
     )
     if len(prompt) <= limit:
         return prompt
-    return (
-        f"[Community 기술지원 제목]\n{title[:200]}\n\n[최초 질문]\n{original_text[:800]}\n\n"
-        f"[참여자의 최신 추가 정보 또는 질문]\n{latest_human[:800]}\n\n"
-        f"[직전 TechFlow 답변]\n{previous_assistant[:800] or '없음'}\n\n"
-        f"[최근 대화]\n{'\n'.join(transcript[-6:])}\n\n[응답 지침]\n"
-        "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. CLI는 설명과 분리한 ```bash 코드 블록으로 작성하십시오. "
-        "해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 직전 답변을 반복하지 마십시오."
-    )[:limit]
+    compact_instruction = (
+        "[응답 지침]\n"
+        "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. "
+        "CLI는 설명과 분리한 ```bash 코드 블록으로 작성하십시오. 해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 "
+        "직전 답변을 반복하지 마십시오."
+    )
+    compact_prefix = (
+        f"[Community 기술지원 제목]\n{title[:200]}\n\n"
+        f"[최초 질문]\n{_excerpt(original_text, 650)}\n\n"
+        f"[참여자의 최신 추가 정보 또는 질문]\n{_excerpt(latest_human, 900)}\n\n"
+        f"[직전 TechFlow 답변]\n{_excerpt(previous_assistant, 650) or '없음'}\n\n"
+        "[최근 대화]\n"
+    )
+    compact_suffix = f"\n\n{compact_instruction}"
+    if len(compact_prefix) + len(compact_suffix) > limit:
+        raise ValueError("conversation essentials exceed the question limit")
+    available = limit - len(compact_prefix) - len(compact_suffix)
+    compact_transcript: list[str] = []
+    used = 0
+    for row in reversed(transcript):
+        row = _excerpt(row, 500)
+        separator = 1 if compact_transcript else 0
+        remaining = available - used - separator
+        if remaining <= 0:
+            break
+        compact_transcript.append(row[:remaining])
+        used += min(len(row), remaining) + separator
+    compact_transcript.reverse()
+    return compact_prefix + "\n".join(compact_transcript) + compact_suffix
 
 
 def build_progression_retry_question(
@@ -162,30 +197,59 @@ def build_knowledge_base_question(
     turns: Iterable[dict[str, Any]],
     resolved_post_id: str,
     *,
-    limit: int = 6000,
+    limit: int = 16000,
 ) -> str:
-    """Build a final synthesis prompt after the requester marks a solution."""
+    """Build a bounded final synthesis prompt that always preserves the selected solution."""
     rows = sorted(
         list(turns),
         key=lambda item: (int(item.get("postNumber") or 0), str(item.get("sourcePostId") or "")),
     )
-    transcript: list[str] = []
-    for item in rows[-20:]:
-        label = ROLE_LABELS.get(str(item.get("role") or "STAFF"), "참여자")
-        content = str(item.get("content") or "").strip()[:1200]
-        selected = " [질문자가 선택한 해결 답변]" if str(item.get("sourcePostId")) == resolved_post_id else ""
-        transcript.append(f"- #{item.get('postNumber') or '-'} {label}{selected}: {content}")
-    prompt = (
-        f"[Community 해결 완료 주제]\n{title}\n\n"
-        "[전체 대화]\n"
-        + "\n".join(transcript)
-        + "\n\n[최종 Knowledge Base 작성 지침]\n"
+
+    selected_row = next(
+        (item for item in rows if str(item.get("sourcePostId")) == resolved_post_id),
+        None,
+    )
+    selected_label = ROLE_LABELS.get(str((selected_row or {}).get("role") or "STAFF"), "참여자")
+    selected_number = (selected_row or {}).get("postNumber") or "-"
+    selected_content = str((selected_row or {}).get("content") or "선택된 답변 본문을 찾을 수 없음").strip()[:1600]
+    selected_section = (
+        "[질문자가 선택한 해결 답변]\n"
+        f"- #{selected_number} {selected_label}: {selected_content}"
+    )
+    instruction = (
+        "[최종 Knowledge Base 작성 지침]\n"
         "질문자가 해결 답변으로 선택한 내용을 중심으로 전체 대화를 종합하십시오. "
         "확인되지 않은 추측이나 대화 중 폐기된 가설은 최종 해결책으로 쓰지 마십시오. "
         "증상에는 사용자가 겪은 현상만, 원인에는 확인된 원인만, 해결 방법에는 실제 해결에 기여한 조치만 배치하십시오. "
+        "적용 버전에는 이 해결 방법을 실제 적용해도 되는 ABLESTACK 제품 버전만 적으십시오. "
+        "미출시 코드 비교, 개선 미확인, 제품 보완 검토 같은 내부 판단은 사용자 문서에 쓰지 마십시오. "
         "일반 사용자도 이해할 수 있는 짧고 쉬운 한국어를 사용하십시오. 제목은 만들지 마십시오."
     )
-    return prompt[:limit]
+    prefix = f"[Community 해결 완료 주제]\n{title[:200]}\n\n{selected_section}\n\n[전체 대화]\n"
+    suffix = f"\n\n{instruction}"
+    if len(prefix) + len(suffix) > limit:
+        raise ValueError("knowledge base selected solution and instruction exceed the question limit")
+
+    transcript: list[str] = []
+    for item in rows:
+        if str(item.get("sourcePostId")) == resolved_post_id:
+            continue
+        label = ROLE_LABELS.get(str(item.get("role") or "STAFF"), "참여자")
+        content = str(item.get("content") or "").strip()[:900]
+        transcript.append(f"- #{item.get('postNumber') or '-'} {label}: {content}")
+
+    available = limit - len(prefix) - len(suffix)
+    selected_transcript: list[str] = []
+    used = 0
+    for row in reversed(transcript):
+        separator = 1 if selected_transcript else 0
+        remaining = available - used - separator
+        if remaining <= 0:
+            break
+        selected_transcript.append(row[:remaining])
+        used += min(len(row), remaining) + separator
+    selected_transcript.reverse()
+    return prefix + "\n".join(selected_transcript) + suffix
 
 
 def conversation_state_for_draft(draft: dict[str, Any]) -> str:

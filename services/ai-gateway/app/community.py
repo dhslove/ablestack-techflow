@@ -304,6 +304,26 @@ class FlarumClient:
             "reused": reused,
         }
 
+    def update_assistant_reply(self, discussion_id: str, post_id: str, answer: str, marker: str) -> dict[str, Any]:
+        """Update an existing assistant-owned post while preserving its idempotency marker."""
+        if not self.enabled:
+            raise InvalidBoundaryError("community publishing is disabled")
+        if not discussion_id.isdigit() or not post_id.isdigit():
+            raise InvalidBoundaryError("invalid Flarum discussion or post identifier")
+        current = self._request(f"/api/posts/{post_id}", as_assistant=True)
+        item = current.get("data") or {}
+        author_id = str((((item.get("relationships") or {}).get("user") or {}).get("data") or {}).get("id") or "")
+        if author_id != self._assistant_user_id():
+            raise InvalidBoundaryError("only an assistant-owned post can be updated")
+        body = json.dumps({
+            "data": {
+                "type": "posts", "id": post_id,
+                "attributes": {"content": _marked_content(answer, marker)},
+            }
+        }, ensure_ascii=False).encode("utf-8")
+        payload = self._request(f"/api/posts/{post_id}", "PATCH", body, as_assistant=True)
+        return self._ensure_public(discussion_id, payload.get("data") or {"id": post_id}, reused=True)
+
     def _ensure_public(self, discussion_id: str, item: dict[str, Any], *, reused: bool) -> dict[str, Any]:
         post_id = str(item["id"])
         attributes = item.get("attributes") or {}

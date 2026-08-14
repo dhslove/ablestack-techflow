@@ -254,6 +254,31 @@ class CommunityTests(unittest.TestCase):
             self.assertEqual(201, payload["data"]["attributes"]["bestAnswerPostId"])
             self.assertEqual("Token " + "a" * 40 + "; userId=1", patched.headers["Authorization"])
 
+    def test_assistant_owned_knowledge_base_can_be_updated_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            key_file = Path(directory) / "key"
+            assistant_file = Path(directory) / "assistant-user-id"
+            key_file.write_text("a" * 40, encoding="utf-8")
+            assistant_file.write_text("40", encoding="utf-8")
+            client = FlarumClient(
+                "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), True,
+                str(assistant_file), False,
+            )
+            responses = [
+                FakeResponse({"data": {"id": "384", "relationships": {"user": {"data": {"id": "40"}}}}}),
+                FakeResponse({"data": {"id": "384", "attributes": {"isApproved": True}}}),
+            ]
+            with patch("urllib.request.urlopen", side_effect=responses) as opened:
+                result = client.update_assistant_reply(
+                    "167", "384", "### 적용 버전\n- ABLESTACK Diplo", "<!-- techflow-kb -->",
+                )
+            self.assertTrue(result["reused"])
+            self.assertTrue(result["isApproved"])
+            updated = opened.call_args_list[1].args[0]
+            self.assertEqual("PATCH", updated.method)
+            payload = json.loads(updated.data.decode("utf-8"))
+            self.assertIn("ABLESTACK Diplo", payload["data"]["attributes"]["content"])
+
     def test_solution_selection_reuses_already_selected_knowledge_base(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             key_file = Path(directory) / "key"

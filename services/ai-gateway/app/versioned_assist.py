@@ -499,8 +499,7 @@ def format_knowledge_base(result: dict[str, Any]) -> str | None:
             "- 현재까지 확인한 내용과 이후 제공되는 자료를 같은 기술지원 맥락으로 계속 검토합니다.",
             "",
             "### 적용 버전",
-            "- 현재 적용 기준: ABLESTACK Diplo(현재 출시판)",
-            "- 차기 참고 기준: ABLESTACK Europa(미출시 Preview)",
+            "- ABLESTACK Diplo",
         ])
         return "\n".join(lines).strip()
     if result.get("state") != "ANSWERED" or not result.get("report"):
@@ -536,28 +535,6 @@ def format_knowledge_base(result: dict[str, Any]) -> str | None:
     ):
         lines.extend(["", f"### {heading}"])
         lines.extend(f"- {value}" for value in values or [empty_message])
-    current = report.get("currentAssessment")
-    if current:
-        labels = {
-            "CURRENT_NORMAL": "현재 출시 버전에서 정상 동작으로 판단됩니다.",
-            "CURRENT_CONFIG_ERROR": "현재 출시 버전의 설정 또는 환경 문제 가능성이 높습니다.",
-            "CURRENT_DEFECT": "현재 출시 버전의 제품 결함 가능성이 확인됩니다.",
-            "CURRENT_RUNTIME_ISSUE": "현재 출시판 코드 결함이 아니라 가상화 프로그램의 일시적인 상태 문제로 판단됩니다.",
-            "INSUFFICIENT_EVIDENCE": "현재 정보만으로는 출시 버전의 상태를 확정하기 어렵습니다.",
-        }
-        current_label = labels.get(current, simplify_public_text(current, citations))
-    preview = report.get("previewAssessment")
-    guidance = simplify_public_text(report.get("previewGuidance"), citations)
-    preview_label = "이번 사례에서 차기 버전 비교는 적용 대상이 아닙니다."
-    if preview and preview != "NOT_APPLICABLE":
-        labels = {
-            "PREVIEW_IMPROVED": "차기 버전 코드에서 관련 개선이 진행 중인 정황이 확인됩니다.",
-            "PREVIEW_PARTIAL": "차기 버전 코드에 일부 관련 개선이 있으나 완전한 해결 여부는 추가 검증이 필요합니다.",
-            "PREVIEW_NOT_FOUND": "차기 버전 코드에서 직접 대응하는 개선을 확인하지 못해 제품 보완 검토가 필요합니다.",
-            "PREVIEW_INSUFFICIENT": "차기 버전 개선 여부를 판단할 근거가 충분하지 않습니다.",
-        }
-        preview_label = labels.get(preview, simplify_public_text(preview, citations))
-
     information_requests: list[str] = []
     considerations: list[str] = list(contextual_artifact_findings)
     for row in report.get("unknowns") or []:
@@ -576,17 +553,11 @@ def format_knowledge_base(result: dict[str, Any]) -> str | None:
             *(f"- {value}" for value in information_requests),
             "",
         ]
-    if guidance and guidance not in considerations:
-        considerations.append(guidance)
     lines.extend(["", "### 추가 고려사항"])
     lines.extend(f"- {value}" for value in considerations or ["별도의 추가 고려사항은 확인되지 않았습니다."])
 
     lines.extend(["", "### 적용 버전"])
-    if current:
-        lines.append(f"- 현재 적용 기준: ABLESTACK Diplo(현재 출시판) - {current_label}")
-    else:
-        lines.append("- 현재 적용 기준: ABLESTACK Diplo(현재 출시판) - 판정 정보가 없습니다.")
-    lines.append(f"- 차기 참고 기준: ABLESTACK Europa(미출시 Preview) - {preview_label}")
+    lines.append("- ABLESTACK Diplo")
     lines.extend(["", "> 이 문서는 질문자가 해결 답변으로 선택한 내용을 중심으로 TechFlow가 대화를 정리한 Knowledge Base입니다."])
     return "\n".join(line for line in lines if line is not None).strip()
 

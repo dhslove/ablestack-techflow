@@ -177,11 +177,17 @@ class ComprehensiveQueryRequest(StrictModel):
         return self
 
 
+class ComprehensiveSynthesisRequest(ComprehensiveQueryRequest):
+    """Trusted internal synthesis request with room for a bounded conversation transcript."""
+
+    question: Annotated[str, StringConstraints(min_length=3, max_length=16000)]
+
+
 class CommunityCaseCreateRequest(StrictModel):
     discussion_id: Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]{0,18}$")] = Field(alias="discussionId")
     discussion_url: Annotated[str, StringConstraints(pattern=r"^https://community\.ablecloud\.io/d/[A-Za-z0-9._~/-]+$")] = Field(alias="discussionUrl")
     title: Annotated[str, StringConstraints(min_length=3, max_length=200)]
-    question: Annotated[str, StringConstraints(min_length=3, max_length=4000)]
+    question: Annotated[str, StringConstraints(min_length=3, max_length=16000)]
     author_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.:@-]{1,128}$")] = Field(alias="authorId")
     tag_slugs: list[Annotated[str, StringConstraints(pattern=r"^[a-z0-9-]{1,64}$")]] = Field(default_factory=list, max_length=20, alias="tagSlugs")
     artifact_ids: list[UUID] = Field(default_factory=list, max_length=5, alias="artifactIds")

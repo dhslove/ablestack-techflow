@@ -2,13 +2,14 @@
 
 - 검증일: 2026-08-14
 - 환경: TechFlow 시험 서버, ABLESTACK Community, Synology Chat
-- 릴리스: TechFlow AI Gateway 0.14.5
+- 릴리스: TechFlow AI Gateway 0.14.6
 - 구현 PR: [#65](https://github.com/ablecloud-team/ablestack-techflow/pull/65)
 - 실제 후속 질문: [Discussion #164](https://community.ablecloud.io/d/164-gasangmeosin-sijag-mic-maigeureisyeon-oryu)
 - 자동 게시·KB E2E: [Discussion #165](https://community.ablecloud.io/d/165-techflow-knowledge-base)
 - 해결 우선 후속 답변 E2E: [Discussion #166 Post #377](https://community.ablecloud.io/d/166/377)
 - 다중 참여자·CLI 블록 E2E: [Discussion #167 Post #381](https://community.ablecloud.io/d/167/381)
 - 긴 대화 오류 복구 E2E: [Discussion #167 Post #383](https://community.ablecloud.io/d/167/383)
+- 솔루션·KB 복구 E2E: [Discussion #167 Post #384](https://community.ablecloud.io/d/167/384)
 
 ## 1. 결론
 
@@ -16,11 +17,15 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 
 진행 중 답변은 더 이상 매번 `증상·원인·해결 방법·추가 고려사항·적용 버전`을 강제하지 않는다. 전문 엔지니어가 플랫폼을 처음 접한 사용자에게 설명하듯 현재 판단, 안전한 확인 순서, 추가로 필요한 정보와 다음 행동을 쉬운 문장으로 안내한다. 질문자가 해결 답변을 선택한 뒤에만 해당 답변과 전체 대화를 다시 종합해 Knowledge Base 최종본을 게시하고, 게시된 KB Post를 Discussion의 최종 솔루션으로 지정한다.
 
+최종 KB의 `적용 버전`은 내부 출시판·Preview 평가가 아니라 해결 방법을 실제 적용해도 되는 제품 버전만 표시한다. Diplo 상태 판정과 Europa Preview 비교는 내부 Evidence Ledger에 유지하되 사용자에게 `제품 보완 검토` 같은 내부 판단을 노출하지 않는다.
+
 0.14.3에서는 후속 답변이 같은 점검 목록을 반복하지 않도록 해결 우선 정책과 진행성 검사를 추가했다. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법, 근거 있는 CLI, 실행 위치와 성공 기준을 먼저 제시한다. 첫 조치가 실패했을 때만 대안과 정확한 명령 출력·로그를 요청한다. 첫 생성이 직전 답변을 반복하면 한 번 재작성하며, 재작성도 새 단계가 없으면 게시하지 않고 503 재시도로 남긴다.
 
 0.14.4에서는 최초 질문자와 다른 사람의 후속 댓글도 최신 사람 입력으로 처리한다. AI-Assistant 자신의 Post만 재응답 대상에서 제외한다. 설명과 CLI를 같은 문장에 섞지 않고, 설명 다음에 바로 복사할 수 있는 독립된 `bash` 코드 블록을 배치한다.
 
 0.14.5에서는 누적 대화가 모델 입력 상한인 4,000자에 도달한 경우에도 검색용 진단 키워드와 반복 방지 재작성 지침의 공간을 먼저 확보한다. Discussion #167 Post #382에서 발생한 내부 `ValidationError`를 제거했으며, Activepieces Flow와 Webhook 계약은 변경하지 않았다.
+
+0.14.6에서는 일반 AI 질의의 4,000자 안전 계약과 해결 후 Knowledge Base 종합의 내부 16,000자 계약을 분리했다. Discussion #167에서 선택된 Post #383을 종합할 때 4,678자 Prompt가 일반 질의 모델에 들어가며 발생한 `ValidationError`를 제거했다. Community 본문은 최대 16,000자로 원문 보관하고, 4,000자를 넘는 일반 질의 문맥은 최초 질문·최신 질문의 앞뒤·직전 답변·필수 지침을 보존해 다시 구성한다. 이미지·첨부파일·로그·압축 로그는 본문 글자 수와 합산하지 않고 별도 Artifact 정책으로 저장·검역·분석한다.
 
 0.14.1에서는 `[읽기 전용]`, `[변경 없음]`, `[호스트 관리자]`, `[네트워크 관리자]`처럼 내부 실행 정책을 나타내는 접두어도 사용자 답변에서 제거했다. 안전성 판단은 내부에 유지하되, 사용자가 알아야 할 내용만 `서버 관리자는 D-Bus 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 자연스러운 문장으로 전달한다.
 
@@ -36,6 +41,7 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 | 근거 부족 | 빈 초안 대신 필요한 버전·시각·로그·화면 요청 |
 | 대화 맥락 | Best Answer 선택 전까지 Discussion 단위 유지 |
 | 첨부자료 | 이미지·로그·ZIP/TAR.GZ 분석 결과를 같은 맥락에 누적 |
+| 본문·첨부 제한 | 본문 16,000자와 Artifact 10MB/추출 20MB를 별도 적용 |
 | 해결 선택 | 질문자 Best Answer만 `RESOLVED`로 인정 |
 | 최종 문서 | 선택 답변 중심 KB를 한 번만 게시 |
 | Chat | 게시·KB·실패 상태와 원문 링크 알림 |
@@ -141,6 +147,30 @@ Discussion #167의 최초 질문 Post #378은 User 12가 작성했고 AI-Assista
 - 답변: `/mnt` 마운트 자체는 문제가 아니며, 볼륨 배포 절차에 `findmnt`, `ls -ldZ`, `matchpathcon`, 조건부 `restorecon` 검사를 포함하도록 안내
 - 내부 근거: 9개 Source Profile 전부 검토, Community 본문에는 Citation·Repository·Commit 비노출
 
+### 3.7 Discussion #167 솔루션 선택 오류 복구
+
+질문자가 Post #383을 해결 답변으로 선택하자 Poller와 Activepieces Flow는 해결 이벤트를 정상 전달했지만 AI Gateway가 `INTERNAL_ERROR / ValidationError`를 반환했다. 실제 DB의 6개 Turn으로 재현한 KB 종합 Prompt는 4,678자였다. 공개 질의용 `ComprehensiveQueryRequest`의 4,000자 상한을 내부 KB 종합에도 재사용한 것이 원인이었다.
+
+0.14.6은 공개·일반 질의의 4,000자 계약은 유지하면서 신뢰된 내부 `ComprehensiveSynthesisRequest`를 16,000자로 분리했다. KB Prompt는 선택된 해결 답변과 최종 작성 지침을 먼저 확보하고, 16,000자를 넘는 경우에만 나머지 최근 대화를 압축한다. Community 원문 16,000자와 Artifact 제한도 분리했으며, 긴 본문과 첨부자료가 함께 있어도 Artifact ID가 본문 글자 수에 포함되지 않는 회귀시험을 추가했다.
+
+기존 Activepieces Webhook으로 같은 해결 상태를 재전달한 실제 결과는 다음과 같다.
+
+- 원본 해결 답변: Post #383, `resolved_post_id=383`
+- 최종 Knowledge Base: AI-Assistant Post #384, `isApproved=true`
+- Flarum 최종 Best Answer: Post #384
+- Case: `RESOLVED`, `knowledge_base_source_post_id=383`, 최초 게시 `knowledge_base_version=1`
+- KB 게시·솔루션 지정·Chat 알림: 모두 성공
+- Activepieces Flow ID와 Version: 기존 값 유지
+- AI Gateway 요청: HTTP 201, 75,213.99ms
+- 보호 대상 GitHub-to-Chat Event Gateway: Container·Image·Restart Count 무변경
+
+최초 KB의 `적용 버전`이 내부 판정 문구를 포함한 문제도 이어서 교정했다. 공개 Post #384를 같은 Post ID로 안전하게 갱신하고 DB의 KB Version을 2로 올린 뒤 최종 Best Answer를 재검증했다.
+
+- 공개 적용 버전: `ABLESTACK Diplo`
+- 비노출 확인: `현재 적용 기준`, `차기 참고 기준`, `ABLESTACK Europa`, `제품 보완` 모두 0건
+- Post #384: `isApproved=true`, 최종 Best Answer 유지
+- Case: `knowledge_base_version=2`, 솔루션 지정 감사 이력 갱신
+
 ## 4. 구현 상세
 
 ### 4.1 상태와 데이터
@@ -172,7 +202,11 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 
 ### 4.5 긴 대화 입력 상한
 
-`ComprehensiveQueryRequest`와 내부 검색용 `QueryRequest`의 질문 상한은 4,000자이다. 검색 확장은 진단 키워드 길이를 먼저 제외한 범위에서 원문을 자르고, 진행성 재작성은 필수 지침 길이를 먼저 제외해 Conversation Prompt를 다시 만든다. 두 결과 모두 4,000자를 넘지 않으며 최신 사람 질문과 필수 진단 지침을 보존한다.
+일반 `ComprehensiveQueryRequest`와 내부 검색용 `QueryRequest`의 질문 상한은 4,000자이다. Community 글·댓글은 최대 16,000자로 원문을 저장하고, 일반 질의 Prompt가 4,000자를 넘으면 최초 질문·최신 질문의 앞뒤·직전 답변·필수 지침을 남겨 다시 구성한다. 검색 확장은 진단 키워드 길이를 먼저 제외하고, 진행성 재작성은 필수 지침 길이를 먼저 제외한다.
+
+해결 후 KB 종합은 외부 입력이 아니라 이미 검역·저장된 Conversation을 처리하므로 별도 내부 `ComprehensiveSynthesisRequest`의 16,000자 상한을 사용한다. 선택 답변과 최종 KB 지침을 우선 보존하고 나머지 대화만 필요할 때 압축한다. 본문 글자 수는 Artifact 크기와 독립적이다. 첨부파일은 1개 10MB, 압축 해제 20MB·100개 항목·20배 압축률, 로그 증거 120,000자 정책으로 처리하고 최대 5개 Artifact ID를 질의에 연결한다.
+
+공개 KB 변환기는 `currentAssessment`, `previewAssessment`, `previewGuidance`를 적용 버전이나 추가 고려사항에 출력하지 않는다. 이 값들은 내부 분석과 Evidence Ledger에만 남긴다. 공개 `적용 버전`에는 현재 검증된 솔루션 적용 대상인 `ABLESTACK Diplo`만 기록한다.
 
 ## 5. 장애·재시도 검증
 
@@ -186,22 +220,23 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 
 | 항목 | 결과 |
 | --- | --- |
-| Python 단위·통합 테스트 | 227건 전체 통과 |
+| Python 단위·통합 테스트 | 231건 전체 통과 |
 | OpenAPI | 34 Operations |
 | DB Migration | 24 Tables, KB Columns 8, 검증 통과 |
 | Gateway Health | Process·Database·Vector `ready`, Provider `openai` |
-| Gateway Version | 0.14.5 |
+| Gateway Version | 0.14.6 |
 | Discussion #164 후속 자동 답변 | Post #365, 공개 완료 |
 | Discussion #165 근거 부족 자동 답변 | Post #367, 공개 완료 |
 | Discussion #165 KB | Post #368, Version 1, 최종 Best Answer 지정 완료 |
 | Discussion #166 해결 우선 정정 답변 | Post #377, 공개·Turn 수집 완료 |
 | Discussion #167 다중 참여자 후속 답변 | Post #381, 코드 블록 5개·인라인 CLI 0개·Turn 수집 완료 |
 | Discussion #167 긴 대화 오류 복구 | Post #383, Activepieces 기존 Flow·HTTP 201·자동 공개 완료 |
+| Discussion #167 솔루션 오류 복구 | Post #384, KB Version 2·적용 버전 교정·최종 Best Answer·Chat 알림 완료 |
 | Chat 담당자 | 자동 게시 알림 전송 확인 |
 | 내부 근거·Marker 공개 | 0건 |
 | 루트 디스크 | 1005G 중 44G 사용, 921G 여유 |
 
-0.14.5 시험 서버 Health는 `provider=openai`, `version=0.14.5`, Process·Database·Vector `ready`이다. Gateway와 Community Poller는 Image `sha256:372c1e85542c60d525f4640b4d389e0adc72a06105451529312777d06f9467b0`, Restart Count 0으로 동작한다.
+0.14.6 시험 서버 Health는 `provider=openai`, `version=0.14.6`, Process·Database·Vector `ready`이다. Gateway와 Community Poller는 Image `sha256:f993768cb0c99f8df78de5253b8855ad7f13cb634dfdd65008a8c260dd49fe47`, Restart Count 0으로 동작한다.
 
 ## 7. 배포·복구 자산
 
@@ -246,6 +281,15 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 - 최종 배포 Image ID: `sha256:372c1e85542c60d525f4640b4d389e0adc72a06105451529312777d06f9467b0`
 - 보호 대상 Event Gateway: Container ID `bf5c76824dbf`, Image ID `sha256:ae33662eb227c9826563e94236272547f586437082f65d4d385837793e63670e`, Restart Count 0 유지
 
+0.14.6 솔루션 선택·KB 종합 보완 전 백업은 `/home/ablecloud/techflow-ai-gateway/backups/issue69-solution-predeploy-20260814T043145Z`에 보관했다.
+
+- 백업 파일별 SHA-256: `SHA256SUMS`에 기록
+- DB Schema Migration: 없음
+- 배포 대상: Gateway·Community Poller만 재생성
+- 최종 배포 Image ID: `sha256:f993768cb0c99f8df78de5253b8855ad7f13cb634dfdd65008a8c260dd49fe47`
+- 컨테이너 이미지 회귀시험: 231건 전체 통과
+- 보호 대상 Event Gateway: Container ID `bf5c76824dbf`, Image ID `sha256:ae33662eb227c9826563e94236272547f586437082f65d4d385837793e63670e`, Restart Count 0 유지
+
 첫 배포 시도에서는 서버 루트의 복사본을 갱신했지만 Compose 실제 Build Context가 `/home/ablecloud/techflow-ai-gateway/services/ai-gateway`인 것을 확인했다. 이 시도는 Docker가 기존 0.14.1 Layer를 재사용해 Schema·데이터 변경 없이 종료됐다. 실제 Build Context를 추가 백업하고 올바른 경로에서 캐시 없이 0.14.2를 빌드해 `knowledgeColumns=8`과 Health를 재검증했다.
 
 최초 재생성 검증에서 기본 Compose만 사용해 Provider가 `mock`으로 기동한 것을 발견했다. 즉시 `compose.openai.override.yml`을 포함해 Gateway와 Poller를 다시 생성했고 최종 Health의 `provider=openai`를 확인했다. 이 재발 방지 조건을 운영 Runbook의 필수 명령으로 추가했다.
@@ -273,3 +317,6 @@ Issue #69의 완료 기준을 충족했다.
 13. 최초 질문자와 다른 사람의 후속 댓글도 같은 대화를 진행하고 Assistant 자신의 글은 재응답하지 않는다.
 14. 설명과 CLI를 분리하며 실행 명령은 복사 가능한 `bash` 코드 블록으로 표시한다.
 15. 4,000자 누적 대화에서도 검색 확장과 반복 방지 재작성이 입력 상한을 넘지 않고 답변을 게시한다.
+16. 본문·Artifact 제한을 분리하고, 해결 후 KB 종합은 내부 16,000자 계약으로 선택 답변과 최종 지침을 보존한다.
+17. 해결 선택 오류를 재처리해 KB Post #384 게시, 최종 Best Answer 지정, Chat 알림까지 완료한다.
+18. 적용 버전은 실제 솔루션 적용 대상만 표시하고 Preview·제품 보완 내부 판단은 공개하지 않는다.

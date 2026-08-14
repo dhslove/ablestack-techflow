@@ -3,7 +3,7 @@
   "info": {
     "title": "TechFlow AI Gateway",
     "description": "TechFlow AI Gateway with grounded Responses generation and deterministic retrieval.",
-    "version": "0.14.5"
+    "version": "0.14.6"
   },
   "paths": {
     "/healthz": {
@@ -1666,7 +1666,7 @@
           },
           "question": {
             "type": "string",
-            "maxLength": 4000,
+            "maxLength": 16000,
             "minLength": 3,
             "title": "Question"
           },
