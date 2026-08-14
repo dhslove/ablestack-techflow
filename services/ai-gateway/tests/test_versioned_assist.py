@@ -148,6 +148,28 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertLess(reason, fallback)
         self.assertIn("sudo ausearch", answer)
 
+    def test_public_answer_separates_explanation_and_copyable_cli(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "summary": "먼저 SELinux 차단 기록을 확인합니다.",
+                "observedFacts": [],
+                "diagnoses": [],
+                "recommendedActions": [
+                    "게스트 운영체제에서 `sudo ausearch -m AVC,USER_AVC -ts recent`를 실행합니다."
+                ],
+                "unknowns": [],
+                "currentAssessment": "INSUFFICIENT_EVIDENCE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }
+        answer = format_public_answer(result) or ""
+        self.assertIn("가상머신 안의 운영체제에서 다음 명령을 실행합니다.", answer)
+        self.assertIn("```bash\nsudo ausearch -m AVC,USER_AVC -ts recent\n```", answer)
+        self.assertNotIn("`sudo ausearch", answer)
+
     def test_public_projection_removes_all_external_urls(self) -> None:
         answer = sanitize_public_text(
             "공식 자료 https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html 를 확인합니다.",

@@ -65,7 +65,7 @@ class CommunityPollerTests(unittest.TestCase):
             events[0]["attachmentUrls"],
         )
 
-    def test_followup_posts_are_role_aware_and_requester_driven(self) -> None:
+    def test_followup_posts_are_role_aware_and_human_driven(self) -> None:
         discussion = {
             "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
             "title": "질문", "authorId": "7", "tagSlugs": ["mold"], "firstPostId": "100",
@@ -77,11 +77,13 @@ class CommunityPollerTests(unittest.TestCase):
              "relationships": {"user": {"data": {"type": "users", "id": "40"}}}},
             {"type": "posts", "id": "102", "attributes": {"number": 3, "contentHtml": "<p>로그 추가</p>"},
              "relationships": {"user": {"data": {"type": "users", "id": "7"}}}},
+            {"type": "posts", "id": "103", "attributes": {"number": 4, "contentHtml": "<p>다른 참여자의 후속 질문</p>"},
+             "relationships": {"user": {"data": {"type": "users", "id": "13"}}}},
         ]}
         events = poll_flarum.normalize_posts(discussion, payload, "40")
-        self.assertEqual(["REQUESTER", "ASSISTANT", "REQUESTER"], [item["turnRole"] for item in events])
-        self.assertEqual([True, False, True], [item["responseRequested"] for item in events])
-        self.assertEqual(["100", "101", "102"], [item["postId"] for item in events])
+        self.assertEqual(["REQUESTER", "ASSISTANT", "REQUESTER", "STAFF"], [item["turnRole"] for item in events])
+        self.assertEqual([True, False, True, True], [item["responseRequested"] for item in events])
+        self.assertEqual(["100", "101", "102", "103"], [item["postId"] for item in events])
 
     def test_resolution_event_carries_best_answer_actor(self) -> None:
         event = poll_flarum.resolution_event({

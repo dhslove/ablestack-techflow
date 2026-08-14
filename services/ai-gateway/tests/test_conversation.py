@@ -31,7 +31,7 @@ class ConversationProgressionTest(unittest.TestCase):
             "question": "새 디스크를 연결한 뒤부터입니다. SELinux가 원인일 수 있나요?",
         }
         prompt = build_conversation_question("스냅샷 생성 실패", self.turns, incoming)
-        self.assertIn("[질문자의 최신 추가 정보 또는 질문]", prompt)
+        self.assertIn("[참여자의 최신 추가 정보 또는 질문]", prompt)
         self.assertIn("SELinux가 원인일 수 있나요?", prompt)
         self.assertIn("[직전 TechFlow 답변]", prompt)
         self.assertIn("QEMU Guest Agent 상태와 마운트 정보", prompt)
@@ -48,6 +48,19 @@ class ConversationProgressionTest(unittest.TestCase):
             }
         }
         self.assertTrue(community_result_advances(result, self.turns))
+
+    def test_staff_followup_becomes_latest_human_question(self) -> None:
+        incoming = {
+            "discussionId": "167",
+            "postId": "380",
+            "postNumber": 3,
+            "turnRole": "STAFF",
+            "question": "새 디스크를 마운트한 뒤 오류가 발생합니다. SELinux 문제일 가능성이 높은가요?",
+        }
+        prompt = build_conversation_question("가상머신 스냅샷 오류", self.turns, incoming)
+        self.assertIn("[참여자의 최신 추가 정보 또는 질문]", prompt)
+        self.assertIn("새 디스크를 마운트한 뒤 오류가 발생합니다", prompt)
+        self.assertIn("독립된 ```bash 코드 블록", prompt)
 
     def test_repeated_generic_checklist_does_not_advance_follow_up(self) -> None:
         repeated = "QEMU Guest Agent 상태와 마운트 정보, SELinux 로그를 확인해 주세요."

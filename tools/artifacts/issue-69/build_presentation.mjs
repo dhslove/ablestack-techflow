@@ -42,7 +42,7 @@ addSlide([
   textbox("Community 자동 답변과\n최종 솔루션 Knowledge Base", 64, 150, 1100, 192, 58, true, C.white),
   textbox("승인 대기 제거 · 쉬운 대화 · KB 최종 솔루션", 70, 388, 1030, 52, 28, false, "#CBD5E1"),
   rect(70, 506, 440, 78, C.blue, "result"),
-  textbox("AI Gateway 0.14.3", 88, 518, 404, 52, 26, true, C.white, "center"),
+  textbox("AI Gateway 0.14.4", 88, 518, 404, 52, 26, true, C.white, "center"),
   textbox("Issue #69 · 2026-08-14", 824, 642, 390, 28, 17, false, "#94A3B8", "right"),
 ], ["docs/reports/issue-69-community-auto-publish-kb-validation.md"]);
 
@@ -54,7 +54,7 @@ addSlide([
   arrow(418, 340, 92),
   rect(536, 174, 330, 330, "#E0F2FE", "ongoing", C.rule),
   textbox("진행 중", 560, 196, 282, 42, 27, true, C.blue, "center"),
-  textbox("해결책과 CLI 우선\n성공 기준 제시\n실패 시에만 자료 요청\n반복 답변 게시 차단", 560, 260, 282, 184, 23, false, C.ink, "center"),
+  textbox("해결책과 CLI 우선\n명령은 코드 블록\n모든 사람의 후속 질문\n반복 답변 게시 차단", 560, 260, 282, 184, 23, false, C.ink, "center"),
   arrow(892, 340, 92),
   rect(1010, 174, 208, 330, "#DCFCE7", "final", C.rule),
   textbox("해결 후", 1024, 196, 180, 42, 27, true, C.green, "center"),
@@ -65,7 +65,7 @@ addSlide([
 const flow = [...header("질문부터 최종 솔루션까지 한 Conversation으로 이어집니다", 3)];
 const xs = [62, 330, 598, 866];
 const titles = ["질문·첨부", "자동 답변", "해결 선택", "KB·최종 지정"];
-const bodies = ["텍스트·이미지\n로그·압축", "쉬운 설명\n다음 행동", "질문자가\n답변 선택", "KB 게시 후\n솔루션 확정"];
+const bodies = ["모든 참여자\n첨부 자료", "쉬운 설명\nCLI 코드 블록", "질문자가\n답변 선택", "KB 게시 후\n솔루션 확정"];
 for (let i = 0; i < xs.length; i++) {
   if (i < xs.length - 1) flow.push(arrow(xs[i] + 210, 320, 46));
   flow.push(rect(xs[i], 205, 216, 236, i === 3 ? "#DCFCE7" : C.pale, `flow-${i}`, C.rule));
@@ -78,31 +78,31 @@ flow.push(textbox("Chat Bot → 담당자에게 상태와 Community 원문 링�
 addSlide(flow, ["docs/runbooks/community-conversation.md"]);
 
 addSlide([
-  ...header("Discussion #166에서 반복 상담을 실제 해결 단계로 바꿨습니다", 4),
-  textbox("반복", 72, 178, 250, 82, 44, true, C.red, "center"),
-  textbox("Post #374 · #376", 72, 270, 250, 38, 21, true, C.ink, "center"),
-  textbox("서비스·마운트·SELinux\n같은 점검 목록 반복", 72, 342, 250, 92, 21, false, C.gray, "center"),
+  ...header("Discussion #167의 후속 응답 누락과 CLI 가독성을 해결했습니다", 4),
+  textbox("누락", 72, 178, 250, 82, 44, true, C.red, "center"),
+  textbox("Post #380", 72, 270, 250, 38, 21, true, C.ink, "center"),
+  textbox("다른 참여자를 STAFF로\n기록만 하고 응답하지 않음", 72, 342, 250, 92, 21, false, C.gray, "center"),
   rect(370, 170, 2, 360, C.rule, "divider-1"),
-  textbox("먼저", 420, 178, 250, 82, 44, true, C.blue, "center"),
-  textbox("정확한 CLI", 420, 270, 250, 38, 21, true, C.ink, "center"),
-  textbox("ausearch\nmatchpathcon\n조건부 restorecon", 420, 334, 250, 112, 22, false, C.gray, "center"),
+  textbox("연결", 420, 178, 250, 82, 44, true, C.blue, "center"),
+  textbox("모든 사람 입력", 420, 270, 250, 38, 21, true, C.ink, "center"),
+  textbox("REQUESTER · STAFF 응답\nAssistant 자신만 제외", 420, 334, 250, 112, 22, false, C.gray, "center"),
   rect(718, 170, 2, 360, C.rule, "divider-2"),
-  textbox("판정", 768, 178, 250, 82, 44, true, C.green, "center"),
-  textbox("재시도 성공 기준", 768, 270, 250, 38, 21, true, C.ink, "center"),
-  textbox("스냅샷·복제 성공\nPermission denied 소멸", 768, 350, 250, 88, 21, false, C.gray, "center"),
+  textbox("표시", 768, 178, 250, 82, 44, true, C.green, "center"),
+  textbox("CLI 코드 블록", 768, 270, 250, 38, 21, true, C.ink, "center"),
+  textbox("설명 먼저\n복사 가능한 bash 명령\n인라인 CLI 0개", 768, 334, 250, 112, 21, false, C.gray, "center"),
   rect(1066, 170, 2, 360, C.rule, "divider-3"),
-  textbox("#377", 1090, 196, 120, 74, 40, true, C.green, "center"),
-  textbox("실제 정정 답변", 1078, 286, 144, 56, 19, true, C.ink, "center"),
-  textbox("223", 1090, 382, 120, 62, 38, true, C.blue, "center"),
+  textbox("#381", 1090, 196, 120, 74, 40, true, C.green, "center"),
+  textbox("코드 블록 5개", 1078, 286, 144, 56, 19, true, C.ink, "center"),
+  textbox("225", 1090, 382, 120, 62, 38, true, C.blue, "center"),
   textbox("전체 시험 통과", 1078, 458, 144, 44, 17, false, C.gray, "center"),
-], ["docs/reports/issue-69-community-auto-publish-kb-validation.md#3.4", "https://community.ablecloud.io/d/166/377"]);
+], ["docs/reports/issue-69-community-auto-publish-kb-validation.md#3.5", "https://community.ablecloud.io/d/167/381"]);
 
 addSlide([
   rect(0, 0, 1280, 720, C.ink, "closing"),
   textbox("완료", 64, 70, 260, 56, 28, true, C.cyan),
   textbox("사용자는 바로 답을 받고,\n검증된 KB가 최종 솔루션이 됩니다", 64, 162, 1100, 158, 54, true, C.white),
   rect(68, 396, 2, 186, C.cyan, "left-rule"),
-  textbox("AI Gateway 0.14.3 · OpenAI · 반복 답변 차단", 96, 396, 1030, 44, 24, true, C.white),
+  textbox("AI Gateway 0.14.4 · OpenAI · 다중 참여자 후속 응답", 96, 396, 1030, 44, 24, true, C.white),
   textbox("Process · Database · Vector ready", 96, 456, 1030, 40, 21, false, "#CBD5E1"),
   textbox("전체 DB 백업 · 루트 여유 921 GB · 보호 서비스 무변경", 96, 510, 1030, 40, 21, false, "#CBD5E1"),
   textbox("PR #65는 구현 검토를 위해 Draft 상태를 유지합니다", 684, 642, 530, 28, 17, false, "#94A3B8", "right"),

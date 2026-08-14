@@ -47,16 +47,16 @@ def build_conversation_question(
         content = str(item.get("content") or "").strip()[:900]
         suffix = " (첨부자료 포함)" if item.get("artifactIds") else ""
         transcript.append(f"- #{number} {label}{suffix}: {content}")
-    requester_turns = [item for item in rows if item.get("role") == "REQUESTER"]
+    human_turns = [item for item in rows if item.get("role") != "ASSISTANT"]
     assistant_turns = [item for item in rows if item.get("role") == "ASSISTANT"]
-    latest_requester = str(
-        (requester_turns[-1] if requester_turns else {}).get("content") or incoming.get("question") or ""
+    latest_human = str(
+        (human_turns[-1] if human_turns else {}).get("content") or incoming.get("question") or ""
     )[:1200]
     previous_assistant = str((assistant_turns[-1] if assistant_turns else {}).get("content") or "")[:1200]
     prompt = (
         f"[Community 기술지원 제목]\n{title}\n\n"
         f"[최초 질문]\n{original_text}\n\n"
-        f"[질문자의 최신 추가 정보 또는 질문]\n{latest_requester}\n\n"
+        f"[참여자의 최신 추가 정보 또는 질문]\n{latest_human}\n\n"
         f"[직전 TechFlow 답변]\n{previous_assistant or '없음'}\n\n"
         "[지금까지의 대화]\n"
         + "\n".join(transcript)
@@ -65,6 +65,7 @@ def build_conversation_question(
         "가장 가능성이 높고 안전한 해결 방법을 맨 먼저 제시하십시오. 근거가 있는 경우 실행 위치, 정확한 CLI 명령, "
         "정상 판정 기준을 함께 적으십시오. 그 방법으로 해결되지 않을 때 적용할 대안과 다음 진단 단계를 이어서 제시하십시오. "
         "추가 자료는 앞선 조치로 해결되지 않은 경우에만, 사용자가 그대로 실행하거나 찾을 수 있는 명령 결과·로그 이름으로 구체적으로 요청하십시오. "
+        "설명 문장과 CLI 명령을 섞지 마십시오. CLI는 설명 다음 줄의 독립된 ```bash 코드 블록에 넣고, 블록 안에는 바로 복사해 실행할 명령만 쓰십시오. "
         "직전 TechFlow 답변의 원인 설명이나 점검 목록을 다시 말하지 마십시오. 후속 답변은 반드시 진단을 한 단계 더 진행해야 합니다. "
         "SELinux 전체 비활성화, chmod 777, 근거 없는 audit2allow처럼 위험하거나 과도한 우회 조치는 제안하지 마십시오."
     )
@@ -72,10 +73,10 @@ def build_conversation_question(
         return prompt
     return (
         f"[Community 기술지원 제목]\n{title[:200]}\n\n[최초 질문]\n{original_text[:800]}\n\n"
-        f"[질문자의 최신 추가 정보 또는 질문]\n{latest_requester[:800]}\n\n"
+        f"[참여자의 최신 추가 정보 또는 질문]\n{latest_human[:800]}\n\n"
         f"[직전 TechFlow 답변]\n{previous_assistant[:800] or '없음'}\n\n"
         f"[최근 대화]\n{'\n'.join(transcript[-6:])}\n\n[응답 지침]\n"
-        "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. "
+        "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. CLI는 설명과 분리한 ```bash 코드 블록으로 작성하십시오. "
         "해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 직전 답변을 반복하지 마십시오."
     )[:limit]
 

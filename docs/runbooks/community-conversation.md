@@ -2,12 +2,12 @@
 
 ## 1. 정상 처리 흐름
 
-1. 질문자가 Discussion 또는 후속 댓글을 등록한다.
+1. 질문자 또는 다른 참여자가 Discussion이나 후속 댓글을 등록한다.
 2. Poller가 새 Post와 이미지·로그·압축 로그를 수집한다.
 3. AI Gateway가 기존 대화, ABLESTACK 문서와 코드, 승인된 플랫폼 자료를 함께 분석한다.
 4. `TechFlow-Assistant`가 이해하기 쉬운 대화체 답변을 바로 공개한다.
 5. Chat Bot이 게시 결과와 Community 링크를 담당자에게 알린다.
-6. 질문자가 추가 정보를 올리면 같은 Case에서 분석과 답변을 반복한다.
+6. 사람 참여자가 추가 정보나 후속 질문을 올리면 같은 Case에서 분석과 답변을 반복한다. `TechFlow-Assistant` 자신의 Post는 재응답하지 않는다.
 7. 질문자가 Best Answer를 선택하면 해당 답변 중심의 Knowledge Base 최종본을 게시한다.
 8. KB 공개를 확인한 뒤 해당 KB Post를 최종 Best Answer로 지정하고 Flarum 재조회 결과가 일치하는지 확인한다.
 9. 해결 표시가 해제되거나 후속 질문이 생기면 같은 Case를 다시 연다.
@@ -17,7 +17,7 @@
 후속 답변은 다음 순서를 지킨다.
 
 1. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법을 먼저 제시한다.
-2. 근거가 있는 경우 실행 위치, 정확한 CLI 명령과 정상 판정 기준을 함께 제공한다.
+2. 근거가 있는 경우 실행 위치, 정확한 CLI 명령과 정상 판정 기준을 함께 제공한다. 설명은 문장으로 먼저 쓰고 CLI는 바로 아래의 독립된 `bash` 코드 블록에 표시한다.
 3. 첫 조치로 해결되지 않을 때 적용할 대안을 제시한다.
 4. 그래도 해결되지 않을 때만 정확한 명령 출력이나 로그 이름을 요청한다.
 
@@ -139,8 +139,8 @@ TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE=/run/secrets/flarum_solution_sele
 ```
 
 5. `TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_SECRET_FILE`은 Best Answer 변경 권한이 있는 Flarum 관리자 ID 파일을 가리키게 한다. 시험 서버에서는 검증된 관리자 User 1을 사용한다.
-6. Gateway와 Poller만 0.14.3 이미지로 교체한다.
-7. Health에서 `version=0.14.3`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+6. Gateway와 Poller만 0.14.4 이미지로 교체한다.
+7. Health에서 `version=0.14.4`, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
 8. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
 OpenAI 시험 환경에서는 재생성 명령에 `compose.openai.override.yml`을 반드시 포함한다. 기본 `compose.yml`만 사용하면 Gateway가 안전 기본값인 Mock Provider로 기동한다.
@@ -158,6 +158,8 @@ docker compose --env-file .env \
 | 답변 생성 후 공개되지 않음 | `community_answer_auto_publish_failed`, Flarum Post 상태 | API 권한과 Assistant ID를 확인하고 동일 Post 이벤트 재시도 |
 | 같은 답변이 중복 게시됨 | 본문 Marker와 Case Draft Version | Marker 검색 권한과 Post 조회 범위 확인 |
 | 후속 답변이 같은 점검을 반복함 | `community_answer_progression_retry`, `community_answer_progression_rejected` | 최신 사용자 Turn이 저장됐는지 확인하고, 근거 Context에 구체적인 다음 단계가 있는지 점검 |
+| 다른 참여자의 후속 댓글에 답하지 않음 | Poller의 `turnRole`, `responseRequested`, `seenPosts` | 사람 글은 `REQUESTER` 또는 `STAFF`이고 `responseRequested=true`인지, Assistant 글만 false인지 확인 |
+| 명령이 설명 문장 안에 섞임 | 공개 Post의 HTML `<pre><code class="language-bash">` | AI Gateway 0.14.4 이상인지 확인하고, 코드 블록 수와 인라인 CLI가 없는지 점검 |
 | 해결 표시 후 KB가 없음 | `resolved_post_id`, KB 실패 로그 | 선택 사용자와 최초 질문자 일치 여부, AI 응답과 Flarum API 확인 |
 | KB는 있으나 최종 솔루션이 아님 | `knowledge_base_solution_selected_at`, `community_knowledge_base_solution_selection_failed`, Flarum `bestAnswerPost` | selector identity 권한을 확인하고 동일 해결 이벤트를 재시도한다. 기존 KB Post는 재사용한다. |
 | Chat 알림만 실패 | `community_chat_notification_failed` | Community 게시 상태를 먼저 확인하고 Chat Bot 연결 복구 |

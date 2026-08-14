@@ -10,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import BaseDocTemplate, Frame, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "docs/reports/issue-69-community-auto-publish-kb-validation.md"
@@ -90,7 +90,11 @@ def story() -> list:
         flush_table()
         if not line: flush_paragraph(); continue
         if line.startswith("# "): flush_paragraph(); output.append(Paragraph(inline(line[2:]), style["title"])); continue
-        if line.startswith("## "): flush_paragraph(); output.append(Paragraph(inline(line[3:]), style["h1"])); continue
+        if line.startswith("## "):
+            flush_paragraph()
+            if line.startswith("## 8."):
+                output.append(PageBreak())
+            output.append(Paragraph(inline(line[3:]), style["h1"])); continue
         if line.startswith("### "): flush_paragraph(); output.append(Paragraph(inline(line[4:]), style["h2"])); continue
         if re.match(r"^[-*] ", line): flush_paragraph(); output.append(Paragraph("- " + inline(line[2:]), style["bullet"])); continue
         if re.match(r"^\d+\. ", line): flush_paragraph(); output.append(Paragraph(inline(line), style["bullet"])); continue

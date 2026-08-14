@@ -2,11 +2,12 @@
 
 - 검증일: 2026-08-14
 - 환경: TechFlow 시험 서버, ABLESTACK Community, Synology Chat
-- 릴리스: TechFlow AI Gateway 0.14.3
+- 릴리스: TechFlow AI Gateway 0.14.4
 - 구현 PR: [#65](https://github.com/ablecloud-team/ablestack-techflow/pull/65)
 - 실제 후속 질문: [Discussion #164](https://community.ablecloud.io/d/164-gasangmeosin-sijag-mic-maigeureisyeon-oryu)
 - 자동 게시·KB E2E: [Discussion #165](https://community.ablecloud.io/d/165-techflow-knowledge-base)
 - 해결 우선 후속 답변 E2E: [Discussion #166 Post #377](https://community.ablecloud.io/d/166/377)
+- 다중 참여자·CLI 블록 E2E: [Discussion #167 Post #381](https://community.ablecloud.io/d/167/381)
 
 ## 1. 결론
 
@@ -16,6 +17,8 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 
 0.14.3에서는 후속 답변이 같은 점검 목록을 반복하지 않도록 해결 우선 정책과 진행성 검사를 추가했다. 최신 질문에 직접 답하고 가장 가능성이 높은 안전한 해결 방법, 근거 있는 CLI, 실행 위치와 성공 기준을 먼저 제시한다. 첫 조치가 실패했을 때만 대안과 정확한 명령 출력·로그를 요청한다. 첫 생성이 직전 답변을 반복하면 한 번 재작성하며, 재작성도 새 단계가 없으면 게시하지 않고 503 재시도로 남긴다.
 
+0.14.4에서는 최초 질문자와 다른 사람의 후속 댓글도 최신 사람 입력으로 처리한다. AI-Assistant 자신의 Post만 재응답 대상에서 제외한다. 설명과 CLI를 같은 문장에 섞지 않고, 설명 다음에 바로 복사할 수 있는 독립된 `bash` 코드 블록을 배치한다.
+
 0.14.1에서는 `[읽기 전용]`, `[변경 없음]`, `[호스트 관리자]`, `[네트워크 관리자]`처럼 내부 실행 정책을 나타내는 접두어도 사용자 답변에서 제거했다. 안전성 판단은 내부에 유지하되, 사용자가 알아야 할 내용만 `서버 관리자는 D-Bus 상태를 확인해 주세요`, `DB의 template ID는 직접 수정하지 마세요`처럼 자연스러운 문장으로 전달한다.
 
 ## 2. 최종 동작
@@ -23,7 +26,9 @@ Community Assist의 관리자 승인 단계를 제거했다. AI-Assistant는 신
 | 구분 | 구현 결과 |
 | --- | --- |
 | 신규·후속 질문 | AI-Assistant 답변 즉시 공개 |
+| 다중 참여자 | 최초 질문자와 다른 사람의 댓글도 같은 Conversation 진행 |
 | 후속 답변 진행 | 해결책·CLI·성공 기준 우선, 미해결 시에만 대안·로그 요청 |
+| CLI 표시 | 설명 다음의 독립된 `bash` 코드 블록, 인라인 실행 명령 금지 |
 | 반복 답변 | 한 번 재작성 후에도 새 단계가 없으면 게시 차단 |
 | 근거 부족 | 빈 초안 대신 필요한 버전·시각·로그·화면 요청 |
 | 대화 맥락 | Best Answer 선택 전까지 Discussion 단위 유지 |
@@ -109,6 +114,14 @@ Discussion #166의 Post #374와 #376은 모두 QEMU Guest Agent 상태, 마운�
 
 정정 답변은 TechFlow-Assistant Post #377로 공개됐고 `isApproved=true`를 재조회했다. Poller는 이를 `ASSISTANT` Turn으로 수집해 `seenPosts=131`, `failed=0`을 기록했다. 공개 본문에는 내부 Citation·Repository·Commit·Source 경로가 없으며, SELinux 전체 비활성화, `chmod 777`, 근거 없는 `audit2allow`을 사용하지 말라는 안전 조건을 포함한다.
 
+### 3.5 Discussion #167 다른 참여자의 후속 질문 복구
+
+Discussion #167의 최초 질문 Post #378은 User 12가 작성했고 AI-Assistant가 Post #379로 답했다. 후속 질문 Post #380은 User 13이 작성했다. 기존 Poller는 최초 작성자만 `REQUESTER / responseRequested=true`로 처리하고 다른 사람을 `STAFF / responseRequested=false`로 저장했기 때문에 Gateway는 Post #380을 10.28ms 만에 기록만 하고 AI 분석을 시작하지 않았다. Provider, Gateway, 반복 답변 차단의 장애는 아니었다.
+
+0.14.4는 `REQUESTER`와 `STAFF`를 모두 사람 입력으로 처리한다. Post #380은 이미 구버전 체크포인트에 저장돼 있어 전체 대화를 새 분석 경로에 한 번 다시 넣었다. 실제 OpenAI 응답은 `ANSWERED / INSUFFICIENT_EVIDENCE`, Europa 비교는 `PREVIEW_NOT_FOUND`였고 9개 Source Profile을 모두 검토했다. SELinux 가능성은 AVC와 보안 문맥 불일치가 함께 있을 때만 높다고 답하고 `ausearch`, `matchpathcon`, 조건부 `restorecon`, 권한·마운트 확인, QEMU Guest Agent 로그 순서로 진행했다.
+
+교정 답변은 AI-Assistant Post #381로 공개됐다. Flarum API 재조회 결과 `isApproved=true`, `<pre><code class="language-bash">` 5개, 실행 명령을 담은 인라인 `<code>` 0개였다. Poller는 Post #381을 Assistant Turn으로 한 번 수집해 `seenPosts=135`, `failed=0`을 기록하고 자기 응답을 다시 만들지 않았다.
+
 ## 4. 구현 상세
 
 ### 4.1 상태와 데이터
@@ -134,7 +147,7 @@ Chat의 `승인`, `수정`, `반려` 명령은 상태를 바꾸지 않고 자동
 
 ### 4.4 해결 우선 생성과 진행성 검사
 
-Conversation Prompt는 최초 질문·최신 질문자 추가 정보·직전 TechFlow 답변·최근 Turn을 구분한다. Provider 정책은 `recommendedActions`에 해결 방법을 먼저 쓰고, CLI가 근거에 있을 때 실행 위치·명령·정상 판정 기준을 함께 작성하게 한다. `unknowns`는 해당 조치 후에도 실패할 때 필요한 정확한 출력에만 사용한다.
+Conversation Prompt는 최초 질문·최신 사람 참여자의 추가 정보·직전 TechFlow 답변·최근 Turn을 구분한다. Provider 정책은 `recommendedActions`에 해결 방법을 먼저 쓰고, CLI가 근거에 있을 때 실행 위치·명령·정상 판정 기준을 함께 작성하게 한다. 설명과 명령을 분리하고 실행 명령은 독립된 `bash` 코드 블록으로 출력한다. `unknowns`는 해당 조치 후에도 실패할 때 필요한 정확한 출력에만 사용한다.
 
 Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 실제 조치가 추가됐는지 검사한다. 같은 일반 점검 목록이면 한 번 더 엄격하게 재작성한다. 두 번째 결과도 진행되지 않으면 `COMMUNITY_RESPONSE_NOT_PROGRESSING`으로 게시하지 않으며 Poller가 동일 Post를 재시도한다.
 
@@ -150,20 +163,21 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 
 | 항목 | 결과 |
 | --- | --- |
-| Python 단위·통합 테스트 | 223건 전체 통과 |
+| Python 단위·통합 테스트 | 225건 전체 통과 |
 | OpenAPI | 34 Operations |
 | DB Migration | 24 Tables, KB Columns 8, 검증 통과 |
 | Gateway Health | Process·Database·Vector `ready`, Provider `openai` |
-| Gateway Version | 0.14.3 |
+| Gateway Version | 0.14.4 |
 | Discussion #164 후속 자동 답변 | Post #365, 공개 완료 |
 | Discussion #165 근거 부족 자동 답변 | Post #367, 공개 완료 |
 | Discussion #165 KB | Post #368, Version 1, 최종 Best Answer 지정 완료 |
 | Discussion #166 해결 우선 정정 답변 | Post #377, 공개·Turn 수집 완료 |
+| Discussion #167 다중 참여자 후속 답변 | Post #381, 코드 블록 5개·인라인 CLI 0개·Turn 수집 완료 |
 | Chat 담당자 | 자동 게시 알림 전송 확인 |
 | 내부 근거·Marker 공개 | 0건 |
 | 루트 디스크 | 1005G 중 44G 사용, 921G 여유 |
 
-0.14.3 시험 서버 Health는 `provider=openai`, `version=0.14.3`, Process·Database·Vector `ready`이다. 실제 Discussion #166 교정 뒤 Poller는 `seenPosts=131`, `failed=0`을 기록했다.
+0.14.4 시험 서버 Health는 `provider=openai`, `version=0.14.4`, Process·Database·Vector `ready`이다. 실제 Discussion #167 교정 뒤 Poller는 `seenPosts=135`, `failed=0`을 기록했다.
 
 ## 7. 배포·복구 자산
 
@@ -190,6 +204,16 @@ Gateway는 직전 Assistant Turn이 있는 후속 답변에서 새 CLI 또는 �
 - 배포 Image ID: `sha256:561755edc470d4e3c095ab97034dfe19989c8c5e907255aae2903ddf1ff833cf`
 - DB Schema Migration: 없음
 
+0.14.4 다중 참여자·CLI 블록 배포 전 백업은 `/home/ablecloud/techflow-ai-gateway/backups/issue69-participant-followup-predeploy-20260814T0337Z`에 보관했다.
+
+- Runtime Source·Compose SHA-256: `7dda0166a9e7a13fd7d539b33bcc2efd4c96b2c0a524d2f749e7f863948efabf`
+- PostgreSQL 전체 Dump SHA-256: `7eba47e7f849ed176da55908a74576e1879188a37d8ce6a6d3b95cf52de5951a`
+- PostgreSQL 압축 Dump 크기: 약 1.7GB
+- 배포 Image ID: `sha256:855a25eda14d758a4150604672f9df837e6c352d5725161d616edf5aabf82819`
+- DB Schema Migration: 없음
+- 배포 대상: Gateway·Community Poller만 재생성
+- 보호 대상 Event Gateway: Container ID와 Image ID 변경 없음
+
 첫 배포 시도에서는 서버 루트의 복사본을 갱신했지만 Compose 실제 Build Context가 `/home/ablecloud/techflow-ai-gateway/services/ai-gateway`인 것을 확인했다. 이 시도는 Docker가 기존 0.14.1 Layer를 재사용해 Schema·데이터 변경 없이 종료됐다. 실제 Build Context를 추가 백업하고 올바른 경로에서 캐시 없이 0.14.2를 빌드해 `knowledgeColumns=8`과 Health를 재검증했다.
 
 최초 재생성 검증에서 기본 Compose만 사용해 Provider가 `mock`으로 기동한 것을 발견했다. 즉시 `compose.openai.override.yml`을 포함해 Gateway와 Poller를 다시 생성했고 최종 Health의 `provider=openai`를 확인했다. 이 재발 방지 조건을 운영 Runbook의 필수 명령으로 추가했다.
@@ -214,3 +238,5 @@ Issue #69의 완료 기준을 충족했다.
 10. 내부 작업 분류는 공개되지 않고 필요한 담당자·주의사항만 자연어로 전달된다.
 11. 후속 답변은 해결책·CLI·성공 기준을 먼저 제공하고, 실패한 경우에만 대안·정확한 로그를 요청한다.
 12. 직전 답변을 되풀이하는 결과는 재작성하며 진행되지 않으면 공개하지 않는다.
+13. 최초 질문자와 다른 사람의 후속 댓글도 같은 대화를 진행하고 Assistant 자신의 글은 재응답하지 않는다.
+14. 설명과 CLI를 분리하며 실행 명령은 복사 가능한 `bash` 코드 블록으로 표시한다.

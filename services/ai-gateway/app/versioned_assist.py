@@ -368,6 +368,39 @@ def _is_causal_artifact_finding(value: str) -> bool:
     return subject and state
 
 
+_INLINE_CODE = re.compile(r"`([^`\r\n]+)`")
+_CLI_PREFIXES = (
+    "sudo ", "systemctl ", "journalctl ", "ausearch ", "findmnt ", "namei ",
+    "getfacl ", "matchpathcon ", "restorecon ", "virsh ", "qemu-ga ", "ls ",
+    "grep ", "curl ", "ip ", "ss ", "getenforce", "sestatus", "mount ", "cat ",
+)
+
+
+def _looks_like_cli(value: str) -> bool:
+    candidate = value.strip().removeprefix("$ ").casefold()
+    return any(candidate == prefix.strip() or candidate.startswith(prefix) for prefix in _CLI_PREFIXES)
+
+
+def _format_copyable_cli(value: str) -> str:
+    """Move inline shell commands below their explanation as copy-ready blocks."""
+    if "```" in value:
+        return value
+    commands: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        candidate = match.group(1).strip()
+        if not _looks_like_cli(candidate):
+            return match.group(0)
+        commands.append(candidate.removeprefix("$ "))
+        return "다음 명령"
+
+    explanation = _INLINE_CODE.sub(replace, value).strip().replace("다음 명령를", "다음 명령을")
+    if not commands:
+        return value
+    unique_commands = list(dict.fromkeys(commands))
+    return f"{explanation}\n\n```bash\n" + "\n".join(unique_commands) + "\n```"
+
+
 def format_public_answer(result: dict[str, Any]) -> str | None:
     """Render an ongoing Community reply in a friendly engineer-to-user voice.
 
@@ -417,7 +450,7 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
 
     if actions:
         lines.extend(["", "먼저 다음 해결 방법을 적용해 보세요."])
-        lines.extend(f"{index}. {value}" for index, value in enumerate(actions[:6], 1))
+        lines.extend(f"{index}. {_format_copyable_cli(value)}" for index, value in enumerate(actions[:6], 1))
     if artifact_findings:
         lines.extend(["", "첨부해 주신 자료에서는 다음 내용을 확인했습니다."])
         lines.extend(f"- {value}" for value in artifact_findings[:3])
@@ -434,7 +467,7 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
             "",
             "위 조치로 해결되지 않으면 아래 결과를 알려주세요. 이미 제공한 내용은 다시 보내지 않으셔도 됩니다.",
         ])
-        lines.extend(f"- {value}" for value in unknowns[:6])
+        lines.extend(f"- {_format_copyable_cli(value)}" for value in unknowns[:6])
     if not actions and not unknowns:
         lines.extend(["", "진행 결과를 알려주시면 같은 맥락에서 다음 확인을 이어가겠습니다."])
     return "\n".join(lines).strip()

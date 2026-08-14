@@ -112,7 +112,9 @@ def normalize_posts(discussion: dict, payload: dict, assistant_user_id: str | No
             "title": discussion["title"], "question": "\n".join(parser.text)[:4000],
             "authorId": discussion["authorId"], "postAuthorId": post_author,
             "postId": str(post["id"]), "postNumber": int(attrs.get("number") or 1),
-            "turnRole": role, "responseRequested": role == "REQUESTER",
+            # Every human participant can advance a support conversation. The
+            # assistant is the only author that must never trigger itself.
+            "turnRole": role, "responseRequested": role != "ASSISTANT",
             "resolutionOnly": False, "tagSlugs": discussion["tagSlugs"],
             "attachmentUrls": parser.links[:5],
         })
