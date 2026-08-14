@@ -1371,6 +1371,7 @@ class PostgresStore:
                 raise NotFoundError("community conversation not found")
             best_post = request.get("bestAnswerPostId")
             best_user = request.get("bestAnswerUserId")
+            selected_by_administrator = request.get("bestAnswerSelectedByAdministrator") is True
             knowledge_post = row.get("knowledge_base_post_id")
             if best_post and knowledge_post and best_post == knowledge_post:
                 state, event_type = "RESOLVED", "KNOWLEDGE_BASE_SOLUTION_CONFIRMED"
@@ -1380,8 +1381,13 @@ class PostgresStore:
                 )
                 resolved_at = row.get("resolved_at")
                 preserve_resolution = True
-            elif best_post and best_user == row.get("requester_user_id"):
-                state, event_type = "RESOLVED", "RESOLVED_BY_REQUESTER"
+            elif best_post and (best_user == row.get("requester_user_id") or selected_by_administrator):
+                state = "RESOLVED"
+                event_type = (
+                    "RESOLVED_BY_REQUESTER"
+                    if best_user == row.get("requester_user_id")
+                    else "RESOLVED_BY_ADMINISTRATOR"
+                )
                 changed = row.get("conversation_state") != state or row.get("resolved_post_id") != best_post
                 resolved_at = request.get("bestAnswerSetAt")
                 preserve_resolution = False
@@ -1426,7 +1432,14 @@ class PostgresStore:
                        (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                     (uuid4(), row["id"], event_type, f"flarum:{best_user or row.get('requester_user_id') or 'unknown'}",
-                     idempotency_key, correlation_id, json.dumps({"bestAnswerPostId": best_post})),
+                     idempotency_key, correlation_id, json.dumps({
+                         "bestAnswerPostId": best_post,
+                         "resolutionActorRole": (
+                             "REQUESTER" if best_user == row.get("requester_user_id")
+                             else "ADMINISTRATOR" if selected_by_administrator
+                             else "OTHER"
+                         ),
+                     })),
                 )
             result = self._community_payload(updated)
             result["resolutionChanged"] = changed
@@ -1711,7 +1724,7 @@ class PostgresStore:
             if not row:
                 raise NotFoundError("community case not found")
             if row.get("conversation_state") != "RESOLVED" or not row.get("resolved_post_id"):
-                raise InvalidStateError("knowledge base publication requires a requester resolution")
+                raise InvalidStateError("knowledge base publication requires a requester or administrator resolution")
             updated = connection.execute(
                 """UPDATE community_case SET knowledge_base_post_id=%s,knowledge_base_post_url=%s,
                    knowledge_base_source_post_id=resolved_post_id,knowledge_base_answer=%s,

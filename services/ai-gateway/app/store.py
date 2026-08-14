@@ -923,6 +923,7 @@ class MemoryStore:
             value = self._community_cases[case_id]
             best_post = request.get("bestAnswerPostId")
             best_user = request.get("bestAnswerUserId")
+            selected_by_administrator = request.get("bestAnswerSelectedByAdministrator") is True
             requester = value.get("requesterUserId")
             now = utc_now()
             knowledge_post = value.get("knowledgeBasePostId")
@@ -938,7 +939,7 @@ class MemoryStore:
                     updatedAt=now,
                 )
                 event_type = "KNOWLEDGE_BASE_SOLUTION_CONFIRMED"
-            elif best_post and best_user == requester:
+            elif best_post and (best_user == requester or selected_by_administrator):
                 changed = value.get("conversationState") != "RESOLVED" or value.get("resolvedPostId") != best_post
                 value.update(
                     conversationState="RESOLVED", resolvedPostId=best_post, resolvedByUserId=best_user,
@@ -947,7 +948,7 @@ class MemoryStore:
                     knowledgeBaseSolutionSelectedByUserId=None,
                     updatedAt=now,
                 )
-                event_type = "RESOLVED_BY_REQUESTER"
+                event_type = "RESOLVED_BY_REQUESTER" if best_user == requester else "RESOLVED_BY_ADMINISTRATOR"
             elif best_post:
                 changed = value.get("resolvedPostId") != best_post or value.get("conversationState") == "RESOLVED"
                 value.update(
@@ -974,7 +975,14 @@ class MemoryStore:
             if changed:
                 self._community_events.append({
                     "caseId": case_id, "eventType": event_type, "actor": f"flarum:{best_user or requester or 'unknown'}",
-                    "createdAt": now, "details": {"bestAnswerPostId": best_post},
+                    "createdAt": now, "details": {
+                        "bestAnswerPostId": best_post,
+                        "resolutionActorRole": (
+                            "REQUESTER" if best_user == requester
+                            else "ADMINISTRATOR" if selected_by_administrator
+                            else "OTHER"
+                        ),
+                    },
                 })
             result = self._remember("sync_community_resolution", idempotency_key, value)
             result["resolutionChanged"] = changed
@@ -1175,7 +1183,7 @@ class MemoryStore:
             if not value:
                 raise NotFoundError("community case not found")
             if value.get("conversationState") != "RESOLVED" or not value.get("resolvedPostId"):
-                raise InvalidStateError("knowledge base publication requires a requester resolution")
+                raise InvalidStateError("knowledge base publication requires a requester or administrator resolution")
             now = utc_now()
             value.update(
                 knowledgeBasePostId=publication["postId"], knowledgeBasePostUrl=publication["postUrl"],

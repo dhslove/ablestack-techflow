@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import asyncio
 import json
 import logging
+from pathlib import Path
 import re
 import time
 from typing import Annotated, Any
@@ -16,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .config import ConfigurationError, Settings
+from .config import ConfigurationError, FLARUM_USER_ID_PATTERN, Settings
 from .models import (
     ApiMeta,
     CompatibilitySetCreateRequest,
@@ -106,6 +107,20 @@ def _json_log(event: str, **fields: object) -> None:
 
 
 MANUAL_REVIEW_ERROR_CODES = {"CONFLICT", "INVALID_STATE", "SOURCE_HEAD_MOVED"}
+
+
+def _resolution_administrator_ids(settings: Settings) -> set[str]:
+    """Return operator-authorized Flarum identities without trusting the inbound event."""
+    identities = set(settings.flarum_resolution_admin_user_ids)
+    selector_file = settings.flarum_solution_selector_user_id_file
+    if selector_file:
+        try:
+            selector = Path(selector_file).read_text(encoding="utf-8").strip()
+        except OSError:
+            selector = ""
+        if FLARUM_USER_ID_PATTERN.fullmatch(selector):
+            identities.add(selector)
+    return identities
 
 
 def _error(correlation_id: str, status_code: int, code: str) -> JSONResponse:
@@ -634,6 +649,10 @@ def create_app(
             )
         post_id = source_post_id(event)
         if request.resolution_only:
+            event["bestAnswerSelectedByAdministrator"] = bool(
+                request.best_answer_user_id
+                and request.best_answer_user_id in _resolution_administrator_ids(runtime_settings)
+            )
             result = runtime_store.sync_community_resolution(event, idempotency_key, correlation_id)
             if (
                 runtime_settings.community_auto_publish_enabled

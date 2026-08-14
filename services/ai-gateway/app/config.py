@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import re
 import tempfile
 
 
 class ConfigurationError(RuntimeError):
     """Raised when the runtime boundary is unsafe or incomplete."""
+
+
+FLARUM_USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:@-]{1,128}$")
 
 
 @dataclass(frozen=True, repr=False)
@@ -38,6 +42,7 @@ class Settings:
     flarum_api_key_file: str | None = None
     flarum_assistant_user_id_file: str | None = None
     flarum_solution_selector_user_id_file: str | None = None
+    flarum_resolution_admin_user_ids: tuple[str, ...] = ()
     community_publish_enabled: bool = False
     community_review_post_enabled: bool = False
     community_auto_publish_enabled: bool = False
@@ -76,6 +81,11 @@ class Settings:
             flarum_api_key_file=os.getenv("TECHFLOW_FLARUM_API_KEY_FILE") or None,
             flarum_assistant_user_id_file=os.getenv("TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE") or None,
             flarum_solution_selector_user_id_file=os.getenv("TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE") or None,
+            flarum_resolution_admin_user_ids=tuple(
+                item.strip()
+                for item in os.getenv("TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS", "").split(",")
+                if item.strip()
+            ),
             community_publish_enabled=os.getenv("TECHFLOW_COMMUNITY_PUBLISH_ENABLED", "false").lower() == "true",
             community_review_post_enabled=os.getenv("TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED", "false").lower() == "true",
             community_auto_publish_enabled=os.getenv("TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED", "false").lower() == "true",
@@ -146,6 +156,11 @@ class Settings:
             )
         if self.community_auto_publish_enabled and self.community_review_post_enabled:
             raise ConfigurationError("automatic publication and review posting are mutually exclusive")
+        if any(
+            not FLARUM_USER_ID_PATTERN.fullmatch(item)
+            for item in self.flarum_resolution_admin_user_ids
+        ):
+            raise ConfigurationError("TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS contains an invalid Flarum user ID")
         if self.chat_base_url != "https://chat.ablecloud.io":
             raise ConfigurationError("TECHFLOW_CHAT_BASE_URL must use the approved HTTPS Chat origin")
         if self.chat_bot_enabled:
@@ -170,6 +185,7 @@ class Settings:
             "artifact_max_log_evidence_chars={!r}, flarum_base_url={!r}, flarum_public_url={!r}, "
             "flarum_api_key_file=<redacted>, flarum_assistant_user_id_file=<redacted>, "
             "flarum_solution_selector_user_id_file=<redacted>, "
+            "flarum_resolution_admin_user_ids=<redacted>, "
             "community_publish_enabled={!r}, community_review_post_enabled={!r}, community_auto_publish_enabled={!r}, chat_bot_enabled={!r}, "
             "chat_base_url={!r}, chat_bot_token_file=<redacted>, chat_reviewer_usernames=<redacted>, "
             "community_approve_webhook_file=<redacted>, community_reject_webhook_file=<redacted>)"

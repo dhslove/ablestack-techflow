@@ -3,11 +3,11 @@
 - 작성일: 2026-08-13
 - 대상: Issue #21 Community Assist 후속 구현
 - 관련 이슈: #23, #24, #64, #66, #67, #68
-- 구현 버전: TechFlow AI Gateway 0.13.0
+- 구현 버전: TechFlow AI Gateway 0.13.0, 해결 승인 정책 0.14.8
 
 ## 1. 목표
 
-하나의 Community 질문을 한 번 답하고 끝내지 않는다. 질문자가 후속 댓글과 이미지, 로그, 로그 압축 파일을 추가하면 같은 Case의 대화 맥락으로 누적 분석한다. 담당자 승인 답변이 공개된 뒤에도 질문자가 Best Answer로 해결 표시를 하기 전까지 Case를 유지한다. 해결 표시를 해제하면 같은 Case를 다시 연다.
+하나의 Community 질문을 한 번 답하고 끝내지 않는다. 질문자가 후속 댓글과 이미지, 로그, 로그 압축 파일을 추가하면 같은 Case의 대화 맥락으로 누적 분석한다. 답변 공개 뒤에도 최초 질문자 또는 운영 설정에 등록된 Community 관리자가 Best Answer로 해결 표시를 하기 전까지 Case를 유지한다. 해결 표시를 해제하면 같은 Case를 다시 연다.
 
 사용자에게 보이는 답변에는 별도 제목을 만들지 않는다. 본문은 `증상`, `원인`, `추가로 필요한 정보`, `해결 방법`, `추가 고려사항`, `적용 버전`으로 시작한다. 적용 버전의 제품 표기는 `ABLESTACK Diplo`, `ABLESTACK Europa`를 사용한다.
 
@@ -23,6 +23,7 @@
 | TechFlow-Assistant | 미승인 답변 원문을 Flarum에 등록하는 일반 계정 |
 | 담당자 | Community Approval로 답변 승인·수정·반려 |
 | 질문자 | Best Answer 설정·해제로 최종 해결 여부 결정 |
+| 등록된 Community 관리자 | 질문자를 대신해 Best Answer를 설정하고 최종 해결 승인 가능 |
 
 Activepieces는 정책을 소유하지 않는다. 질문자 판정, 상태 전이, 승인 무효화, 근거 공개 제한은 AI Gateway와 Flarum이 소유한다.
 
@@ -48,9 +49,9 @@ sequenceDiagram
     R->>F: 승인·수정·반려
     P->>G: 승인 상태 동기화
     G->>G: WAITING_RESOLUTION
-    U->>F: Best Answer 설정
+    U->>F: 최초 질문자 또는 등록 관리자 Best Answer 설정
     P->>A: 해결 상태 이벤트
-    A->>G: 질문자 해결 판정
+    A->>G: 승인된 해결 선택자 판정
     G->>G: RESOLVED
 ```
 
@@ -82,17 +83,17 @@ stateDiagram-v2
     WAITING_REVIEW --> WAITING_RESOLUTION: 담당자 승인
     WAITING_REVIEW --> ANALYZING: 반려 또는 Review Post 유실
     WAITING_RESOLUTION --> ANALYZING: 질문자 후속 댓글
-    WAITING_RESOLUTION --> RESOLVED: 질문자가 Best Answer 설정
+    WAITING_RESOLUTION --> RESOLVED: 최초 질문자 또는 등록 관리자가 Best Answer 설정
     RESOLVED --> ANALYZING: Best Answer 해제 또는 후속 질문
     ANALYZING --> WAITING_REQUESTER: 추가 정보 필요
     WAITING_REQUESTER --> ANALYZING: 질문자 자료 제공
 ```
 
-`RESOLVED`는 Best Answer 설정자가 최초 질문자와 같을 때만 허용한다. 다른 사용자가 선택한 답변은 `WAITING_RESOLUTION`에 남기고 별도 확인 대상으로 기록한다.
+`RESOLVED`는 Best Answer 설정자가 최초 질문자이거나 Gateway 운영 설정에 등록된 Community 관리자인 경우에 허용한다. 관리자 여부는 `TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS`와 최종 KB selector identity로 판정한다. 그 밖의 사용자가 선택한 답변은 `WAITING_RESOLUTION`에 남기고 별도 확인 대상으로 기록한다.
 
 ## 6. 이벤트 계약
 
-Post 이벤트는 Discussion ID, Post ID·번호, 최초 질문자, Post 작성자, 역할, 답변 생성 여부, 본문, 태그, Artifact ID를 포함한다. 해결 이벤트는 `resolutionOnly=true`, Best Answer Post·User·시각을 포함한다.
+Post 이벤트는 Discussion ID, Post ID·번호, 최초 질문자, Post 작성자, 역할, 답변 생성 여부, 본문, 태그, Artifact ID를 포함한다. 해결 이벤트는 `resolutionOnly=true`, Best Answer Post·User·시각을 포함한다. Gateway는 전달된 User ID를 자체 관리자 허용 목록과 비교해 내부 `bestAnswerSelectedByAdministrator` 판정을 만든다.
 
 해결 이벤트 멱등성 키에는 원본 ISO 시각을 직접 넣지 않는다. `discussion|post|setAt`을 SHA-256으로 요약해 허용 문자만 포함한 키를 만든다. 이 규칙은 `:`와 `+`가 들어간 ISO 8601 시각 때문에 요청이 거절되는 문제를 방지한다.
 
@@ -124,7 +125,7 @@ Post 이벤트는 Discussion ID, Post ID·번호, 최초 질문자, Post 작성�
 - 이미지와 ZIP 로그가 같은 Turn의 Artifact로 연결
 - Assistant와 담당자 댓글은 자동 답변을 재귀 생성하지 않음
 - 승인 후 `WAITING_RESOLUTION`
-- 질문자 Best Answer 후 `RESOLVED`
+- 최초 질문자 또는 등록 관리자 Best Answer 후 `RESOLVED`
 - Best Answer 해제 후 `ANALYZING`, 재설정 후 다시 `RESOLVED`
 - 중복 Post·해결 이벤트가 상태나 응답을 중복 생성하지 않음
 - GitHub→Chat 보호 서비스 무변경

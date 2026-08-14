@@ -85,6 +85,17 @@ class SettingsTest(unittest.TestCase):
                 flarum_solution_selector_user_id_file="/run/secrets/flarum_solution_selector_user_id",
             ).validate()
 
+    def test_resolution_administrator_ids_are_loaded_and_validated(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS": "1, 7,admin-support"},
+            clear=True,
+        ):
+            settings = Settings.from_env()
+        self.assertEqual(("1", "7", "admin-support"), settings.flarum_resolution_admin_user_ids)
+        with self.assertRaises(ConfigurationError):
+            Settings(flarum_resolution_admin_user_ids=("invalid user",)).validate()
+
     def test_chat_bot_requires_all_runtime_secret_references(self) -> None:
         with self.assertRaises(ConfigurationError):
             Settings(chat_bot_enabled=True).validate()

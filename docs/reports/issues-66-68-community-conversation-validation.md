@@ -21,7 +21,7 @@ Community 질문을 단발성 답변이 아닌 지속 Conversation으로 처리�
 | 이미지·ZIP 로그 누적 분석 | 완료 |
 | 후속 질문별 Draft Version | 완료 |
 | Flarum 미승인 원문 검토 | 완료 |
-| 질문자 Best Answer 해결 판정 | 완료 |
+| 최초 질문자 또는 등록 관리자 Best Answer 해결 판정 | 완료 |
 | 해결 해제 재개 | 완료 |
 | 제목 없는 답변 | 완료 |
 | `ABLESTACK Diplo/Europa` 표기 | 완료 |
@@ -64,7 +64,7 @@ ZIP 로그에서 다음 상태를 분리했다.
 | --- | --- | --- |
 | Post #353 생성 | `DRAFT_PENDING / WAITING_REVIEW` | 일치 |
 | 담당자 승인 | `PUBLISHED / WAITING_RESOLUTION` | 일치 |
-| 질문자 Best Answer | `PUBLISHED / RESOLVED` | 일치 |
+| 최초 질문자 또는 등록 관리자 Best Answer | `PUBLISHED / RESOLVED` | 일치 |
 | Best Answer 해제 | `PUBLISHED / ANALYZING` | 일치 |
 | 질문자 재설정 | `PUBLISHED / RESOLVED` | 일치 |
 
@@ -117,7 +117,7 @@ Gateway와 Poller만 `techflow/ai-gateway:issue-68-community-conversation` 이�
 
 Issues #66-#68의 구현 완료 기준을 충족했다. PR 병합 전 검토자는 다음을 확인하면 된다.
 
-1. 질문자의 Best Answer만 자동 해결로 인정하는 정책
+1. 최초 질문자 또는 운영 설정에 등록된 Community 관리자의 Best Answer를 자동 해결로 인정하는 정책
 2. 해결 해제 후 같은 Case를 재개하는 정책
 3. 사용자 출력에서 내부 근거를 숨기는 정책
 4. 답변 제목 제거와 `ABLESTACK Diplo/Europa` 표기

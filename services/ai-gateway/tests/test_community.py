@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.community import FlarumClient, FlarumResourceNotFound, conversationalize_answer, format_draft, profiles_for_tags
 from app.versioned_assist import format_knowledge_base
 from app.config import Settings
-from app.main import create_app
+from app.main import _resolution_administrator_ids, create_app
 from app.store import MemoryStore
 
 
@@ -487,6 +487,73 @@ class CommunityTests(unittest.TestCase):
         events = store.list_community_case_events(case["caseId"], 10)
         self.assertIn("RESOLUTION_UNSET_REOPENED", [item["eventType"] for item in events])
 
+    def test_configured_administrator_best_answer_resolves_conversation(self) -> None:
+        store = MemoryStore()
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
+        case = store.create_community_case(
+            first, {"draftAnswer": "답변", "answerState": "ANSWERED", "citations": []},
+            "administrator-resolution-first", "administrator-resolution-correlation",
+        )
+        result = store.sync_community_resolution(
+            {
+                **first, "bestAnswerPostId": "200", "bestAnswerUserId": "1",
+                "bestAnswerSelectedByAdministrator": True,
+            },
+            "administrator-resolution-selected", "administrator-resolution-selected-correlation",
+        )
+        self.assertEqual("RESOLVED", result["conversationState"])
+        self.assertEqual("200", result["resolvedPostId"])
+        self.assertEqual("1", result["resolvedByUserId"])
+        events = store.list_community_case_events(case["caseId"], 10)
+        resolved_event = next(item for item in events if item["eventType"] == "RESOLVED_BY_ADMINISTRATOR")
+        self.assertEqual("ADMINISTRATOR", resolved_event["details"]["resolutionActorRole"])
+
+    def test_gateway_derives_administrator_role_from_operator_configuration(self) -> None:
+        store = MemoryStore()
+        client = TestClient(create_app(Settings(flarum_resolution_admin_user_ids=("1",)), store))
+        first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
+        created = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "administrator-gateway-first"},
+            json=first,
+        )
+        self.assertEqual(201, created.status_code)
+        selected = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "administrator-gateway-resolution"},
+            json={
+                **first, "question": "Community 해결 상태가 변경되었습니다.",
+                "resolutionOnly": True, "responseRequested": False,
+                "bestAnswerPostId": "200", "bestAnswerUserId": "1",
+            },
+        )
+        self.assertEqual(201, selected.status_code)
+        self.assertEqual("RESOLVED", selected.json()["data"]["conversationState"])
+
+    def test_inbound_event_cannot_claim_administrator_role(self) -> None:
+        client = TestClient(create_app(Settings(), MemoryStore()))
+        attempted = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "administrator-role-forgery"},
+            json={
+                **self.payload(), "postId": "200", "postNumber": 2, "postAuthorId": "1",
+                "resolutionOnly": True, "responseRequested": False,
+                "bestAnswerPostId": "200", "bestAnswerUserId": "1",
+                "bestAnswerSelectedByAdministrator": True,
+            },
+        )
+        self.assertEqual(422, attempted.status_code)
+
+    def test_solution_selector_identity_is_an_implicit_administrator(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            selector = Path(directory) / "selector-user-id"
+            selector.write_text("1", encoding="utf-8")
+            identities = _resolution_administrator_ids(Settings(
+                flarum_solution_selector_user_id_file=str(selector),
+                flarum_resolution_admin_user_ids=("7",),
+            ))
+        self.assertEqual({"1", "7"}, identities)
+
     def test_resolved_conversation_publishes_a_versioned_knowledge_base(self) -> None:
         store = MemoryStore()
         first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
@@ -585,7 +652,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual("techflow:auto", published["reviewer"])
         self.assertEqual("사용 중인 버전과 오류 시각을 알려주세요.", published["draftAnswer"])
 
-    def test_moderator_best_answer_does_not_impersonate_requester_resolution(self) -> None:
+    def test_unconfigured_participant_best_answer_does_not_resolve_conversation(self) -> None:
         store = MemoryStore()
         first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}
         store.create_community_case(

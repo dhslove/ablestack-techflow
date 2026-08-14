@@ -2,6 +2,7 @@
 
 - 상태: 승인됨
 - 결정일: 2026-08-13
+- 변경일: 2026-08-14
 - 범위: ABLESTACK Community Assist
 - 관련: Issue #69, PR #65
 
@@ -13,9 +14,9 @@
 
 1. 진행 중 답변은 전문 엔지니어가 플랫폼을 처음 접한 사용자에게 설명하는 대화체로 작성한다.
 2. AI-Assistant 답변은 관리자 승인 없이 즉시 공개한다.
-3. 질문자가 Best Answer를 선택하기 전까지 Discussion 단위 Conversation과 첨부 자료 맥락을 유지한다.
-4. 질문자가 해결 답변을 선택하면 해당 답변을 중심으로 전체 대화를 다시 종합해 Knowledge Base 최종본을 게시한다.
-5. Knowledge Base 게시가 확인되면 해당 KB Post를 Discussion의 최종 Best Answer(솔루션)로 지정한다. 질문자가 처음 선택한 답변은 KB 생성 원본과 감사 이력으로 보존한다.
+3. 최초 질문자 또는 운영 설정에 등록된 Community 관리자가 Best Answer를 선택하기 전까지 Discussion 단위 Conversation과 첨부 자료 맥락을 유지한다.
+4. 최초 질문자 또는 등록된 관리자가 해결 답변을 선택하면 해당 답변을 중심으로 전체 대화를 다시 종합해 Knowledge Base 최종본을 게시한다. 일반 참여자의 선택은 해결 승인으로 인정하지 않는다.
+5. Knowledge Base 게시가 확인되면 해당 KB Post를 Discussion의 최종 Best Answer(솔루션)로 지정한다. 최초 해결 승인자가 선택한 답변은 KB 생성 원본과 감사 이력으로 보존한다.
 6. Knowledge Base 본문은 제목 없이 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전` 순서로 작성한다.
 7. Chat은 승인 수단이 아니라 답변 게시, Knowledge Base 게시·솔루션 지정, 처리 실패를 확인하는 관찰 채널로 사용한다.
 8. 인프라 상태를 변경하는 Ops 작업의 사람 승인은 그대로 유지한다. 이번 결정은 Community 답변 게시에만 적용한다.
@@ -23,6 +24,7 @@
 10. 직전 답변과 같은 점검 목록은 한 번 재작성하고, 재작성도 진행되지 않으면 공개하지 않는다.
 11. 최초 질문자와 다른 사람의 후속 댓글도 사람 참여자의 최신 입력으로 처리해 같은 Conversation을 진행한다. AI-Assistant 자신의 Post만 재응답 대상에서 제외한다.
 12. CLI는 설명 문장과 분리하고, 설명 다음의 독립된 `bash` 코드 블록에 복사 가능한 완전한 명령으로 표시한다.
+13. 관리자 해결 권한은 inbound 이벤트의 역할 필드가 아니라 Gateway 운영 설정의 Flarum User ID 허용 목록과 최종 KB selector identity로 판정한다.
 
 ## 안전장치
 
@@ -46,7 +48,7 @@ stateDiagram-v2
     ANALYZING --> WAITING_RESOLUTION: 답변 자동 게시
     WAITING_REQUESTER --> ANALYZING: 질문자 자료 추가
     WAITING_RESOLUTION --> ANALYZING: 질문자 후속 질문
-    WAITING_RESOLUTION --> RESOLVED: 질문자가 Best Answer 선택
+    WAITING_RESOLUTION --> RESOLVED: 최초 질문자 또는 등록 관리자 Best Answer 선택
     RESOLVED --> RESOLVED: Knowledge Base 게시 및 최종 솔루션 지정
     RESOLVED --> ANALYZING: 해결 해제 또는 후속 질문
 ```

@@ -2,13 +2,13 @@
 
 ## 목표
 
-Community Assist의 진행 중 답변은 친절한 엔지니어 대화로 제공하고, 질문자가 해결 표시를 한 뒤에만 검증된 대화를 Knowledge Base 문서로 확정한다. 관리자 승인 단계는 제거하고 Chat은 처리 관찰 채널로 전환한다.
+Community Assist의 진행 중 답변은 친절한 엔지니어 대화로 제공하고, 최초 질문자 또는 운영 설정에 등록된 Community 관리자가 해결 표시를 한 뒤에 검증된 대화를 Knowledge Base 문서로 확정한다. 답변별 관리자 사전 승인 단계는 제거하고 Chat은 처리 관찰 채널로 전환한다.
 
 ## 아키텍처
 
 ```mermaid
 sequenceDiagram
-    participant U as 질문자
+    participant U as 질문자/관리자
     participant F as Flarum
     participant P as Poller/Activepieces
     participant G as AI Gateway
@@ -20,7 +20,7 @@ sequenceDiagram
     G->>G: 전체 맥락·문서·코드·플랫폼 자료 분석
     G->>F: 친절한 대화체 답변 자동 공개
     G-->>C: 게시 상태와 원문 링크 알림
-    U->>F: Best Answer 선택
+    U->>F: 최초 질문자 또는 관리자 Best Answer 선택
     P->>G: 해결 이벤트
     G->>G: 선택 답변 중심 최종 종합
     G->>F: Knowledge Base 최종본 자동 공개
@@ -44,13 +44,15 @@ sequenceDiagram
 
 ### 해결 후 Knowledge Base
 
-- 질문자가 선택한 해결 답변을 최우선 사실로 사용한다.
+- 최초 질문자 또는 등록된 관리자가 선택한 해결 답변을 최우선 사실로 사용한다.
 - 전체 대화와 첨부에서 실제로 확인된 결과를 보완한다.
 - 제목 없이 증상, 원인, 해결 방법, 추가 고려사항, 적용 버전으로 정리한다.
 - 적용 버전은 `ABLESTACK Diplo`, `ABLESTACK Europa`로 표시한다.
 - 내부 Evidence Ledger와 소스 위치는 공개하지 않는다.
 - KB 게시 성공 후 해당 Post를 최종 Best Answer로 지정한다.
-- 최초 질문자 선택 Post는 `knowledge_base_source_post_id`로 유지하고 KB Post와 덮어쓰지 않는다.
+- 최초 해결 승인자가 선택한 Post는 `knowledge_base_source_post_id`로 유지하고 KB Post와 덮어쓰지 않는다.
+- 관리자 여부는 inbound 이벤트가 주장하는 역할을 신뢰하지 않고 Gateway의 `TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS`와 최종 KB selector ID로 판정한다.
+- 최초 질문자도 관리자도 아닌 참여자의 선택은 `WAITING_RESOLUTION`에 남기고 KB를 만들지 않는다.
 
 ## 실패와 재시도
 
@@ -75,7 +77,7 @@ sequenceDiagram
 - 직전 답변을 반복하는 결과는 공개되지 않는다.
 - 답변은 승인 없이 AI-Assistant 계정으로 공개된다.
 - Chat 버튼은 상태 확인과 내부 근거 조회만 제공한다.
-- 질문자 해결 선택 후 KB가 한 번만 생성된다.
+- 최초 질문자 또는 등록된 관리자 해결 선택 후 KB가 한 번만 생성된다.
 - KB Post가 최종 Best Answer로 지정되고 Flarum 재조회 결과와 DB 감사 상태가 일치한다.
 - 해결 해제·후속 질문 시 Case가 재개된다.
 - 자동 테스트, 시험 서버 E2E, PDF/PPTX 보고 자산이 통과한다.
