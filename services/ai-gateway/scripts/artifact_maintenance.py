@@ -7,7 +7,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import time
+
+sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from app.artifacts import ArtifactStore
 
