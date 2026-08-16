@@ -317,7 +317,9 @@ def upload_artifacts(
     raw_urls = event.pop("attachmentUrls", [])
     reference_count = max(int(event.pop("_attachmentReferenceCount", 0) or 0), len(raw_urls))
     public_origin = urllib.parse.urlparse(public_url)
-    temp_root = Path(os.getenv("TECHFLOW_COMMUNITY_ATTACHMENT_TMP_DIR", "/var/lib/techflow-community-poller/tmp"))
+    temp_root = Path(os.getenv(
+        "TECHFLOW_COMMUNITY_ATTACHMENT_TMP_DIR", str(Path(tempfile.gettempdir()) / "techflow-community-poller")
+    ))
     temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     for raw_url in raw_urls:
         public_attachment_url = urllib.parse.urljoin(public_url + "/", raw_url)

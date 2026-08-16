@@ -68,8 +68,11 @@ class ContainerContractTest(unittest.TestCase):
         self.assertIn("TECHFLOW_TREE_SITTER_CACHE", DOCKERFILE)
 
     def test_large_artifacts_use_streaming_and_separate_archive_boundary(self) -> None:
-        self.assertIn("request.stream()", MAIN)
-        self.assertNotIn("await request.body()", MAIN)
+        start = MAIN.index('@application.post("/v1/artifacts"')
+        end = MAIN.index('@application.get("/v1/artifacts', start)
+        artifact_route = MAIN[start:end]
+        self.assertIn("request.stream()", artifact_route)
+        self.assertNotIn("await request.body()", artifact_route)
         self.assertIn("async def put_stream", ARTIFACTS)
         self.assertIn("TECHFLOW_ARTIFACT_MAX_ARCHIVE_BYTES", COMPOSE)
         self.assertIn("TECHFLOW_COMMUNITY_ARCHIVE_MAX_BYTES", COMPOSE)
