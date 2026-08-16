@@ -136,6 +136,7 @@ def main() -> int:
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=7200)
     parser.add_argument("--keep-files", action="store_true")
+    parser.add_argument("--reuse-files", action="store_true")
     args = parser.parse_args()
     args.workdir.mkdir(parents=True, exist_ok=True)
     log_path = args.workdir / "issue72-exact-1g.log"
@@ -143,8 +144,17 @@ def main() -> int:
     results: dict[str, object] = {"limits": {"regularBytes": REGULAR_LIMIT, "archiveBytes": ARCHIVE_LIMIT}}
     artifact_ids: list[str] = []
     try:
-        results["generatedRegular"] = create_exact_log(log_path)
-        results["generatedArchive"] = create_exact_zip(zip_path)
+        if args.reuse_files:
+            if log_path.stat().st_size != REGULAR_LIMIT or zip_path.stat().st_size != ARCHIVE_LIMIT:
+                raise RuntimeError("reused boundary files do not have the exact required sizes")
+            with zipfile.ZipFile(zip_path, "r", allowZip64=True) as archive:
+                if archive.testzip() is not None:
+                    raise RuntimeError("reused ZIP boundary file failed integrity validation")
+            results["generatedRegular"] = {"path": str(log_path), "sizeBytes": log_path.stat().st_size}
+            results["generatedArchive"] = {"path": str(zip_path), "sizeBytes": zip_path.stat().st_size}
+        else:
+            results["generatedRegular"] = create_exact_log(log_path)
+            results["generatedArchive"] = create_exact_zip(zip_path)
         regular = upload(args.base_url, log_path, log_path.name, "text/plain", args.timeout)
         artifact_ids.append(str(regular["artifactId"]))
         results["regularBoundary"] = regular

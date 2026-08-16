@@ -27,6 +27,10 @@ ARCHIVE_SUFFIXES = (".zip", ".gz", ".tgz", ".tar.gz", ".7z", ".rar", ".bz2", ".x
 INTERESTING = re.compile(
     r"(?i)(fatal|panic|exception|traceback|error|failed|failure|timeout|timed out|out of memory|oom|warn|denied|refused)"
 )
+INTERESTING_TOKENS = (
+    b"fatal", b"panic", b"exception", b"traceback", b"error", b"failed", b"failure", b"timeout",
+    b"timed out", b"out of memory", b"oom", b"warn", b"denied", b"refused",
+)
 SECRET_PATTERNS = (
     re.compile(r"(?i)\b(authorization\s*:\s*(?:bearer|basic))\s+\S+"),
     re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\b(\s*[:=]\s*)[^\s,;]+"),
@@ -160,6 +164,27 @@ class _EvidenceSelector:
             self.after -= 1
         self.previous.append(item)
 
+    def plain_chunk(self, text: str) -> None:
+        """Advance a complete, non-interesting block without per-line regex calls."""
+        line_count = text.count("\n")
+        if not line_count:
+            return
+        first_number = self.line_number + 1
+        needed = max(0, 20 - len(self.first))
+        if needed:
+            take = min(needed, line_count)
+            for offset, line in enumerate(text.split("\n", take)[:take]):
+                self.first.append((first_number + offset, line.rstrip("\r")))
+        trailing = text[:-1].rsplit("\n", 20)[-20:]
+        trailing_start = first_number + line_count - len(trailing)
+        for offset, line in enumerate(trailing):
+            self.last.append((trailing_start + offset, line.rstrip("\r")))
+        self.previous.clear()
+        self.previous.extend(self.last)
+        while len(self.previous) > 2:
+            self.previous.popleft()
+        self.line_number += line_count
+
     def result(self, bytes_read: int) -> _EntryScan:
         if not self.line_number:
             raise InvalidBoundaryError("empty log entries are not permitted")
@@ -196,10 +221,19 @@ def _scan_log_stream(name: str, stream: BinaryIO, *, max_bytes: int, max_evidenc
             text = decoder.decode(chunk)
             controls += len(CONTROL_BYTES.findall(chunk))
             characters += len(text)
-            lines = (buffered + text).split("\n")
-            buffered = lines.pop()
-            for line in lines:
-                selector.line(line)
+            combined = buffered + text
+            last_newline = combined.rfind("\n")
+            if last_newline < 0:
+                buffered = combined
+            else:
+                complete = combined[:last_newline + 1]
+                buffered = combined[last_newline + 1:]
+                lowered = complete.encode("utf-8").lower()
+                if selector.after or any(token in lowered for token in INTERESTING_TOKENS):
+                    for line in complete[:-1].split("\n"):
+                        selector.line(line)
+                else:
+                    selector.plain_chunk(complete)
             if len(buffered) > MAX_LOG_LINE_CHARS:
                 raise InvalidBoundaryError("log line exceeds the permitted boundary")
         buffered += decoder.decode(b"", final=True)
