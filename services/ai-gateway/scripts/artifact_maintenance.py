@@ -28,8 +28,9 @@ def _percent_env(name: str, default: int) -> int:
 def maintain_once(root: Path) -> dict[str, int | str]:
     store = ArtifactStore(
         str(root), retention_hours=int(os.getenv("TECHFLOW_ARTIFACT_RETENTION_HOURS", "24")),
-        max_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_BYTES", str(50 * 1024 * 1024))),
-        max_extracted_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_EXTRACTED_BYTES", str(100 * 1024 * 1024))),
+        max_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_BYTES", str(1024 * 1024 * 1024))),
+        max_archive_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_ARCHIVE_BYTES", str(10 * 1024 * 1024 * 1024))),
+        max_extracted_bytes=int(os.getenv("TECHFLOW_ARTIFACT_MAX_EXTRACTED_BYTES", str(100 * 1024 * 1024 * 1024))),
         max_archive_entries=int(os.getenv("TECHFLOW_ARTIFACT_MAX_ARCHIVE_ENTRIES", "100")),
         max_compression_ratio=int(os.getenv("TECHFLOW_ARTIFACT_MAX_COMPRESSION_RATIO", "20")),
         max_log_evidence_chars=int(os.getenv("TECHFLOW_ARTIFACT_MAX_LOG_EVIDENCE_CHARS", "120000")),

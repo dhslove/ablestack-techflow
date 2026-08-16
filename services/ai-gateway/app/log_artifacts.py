@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import codecs
+from collections import deque
 from dataclasses import dataclass
 import gzip
-from io import BytesIO
 from pathlib import Path, PurePosixPath
 import re
 import stat
 import tarfile
+import tempfile
+from typing import BinaryIO
 import zipfile
 
 from .store import InvalidBoundaryError
@@ -70,21 +73,6 @@ def _safe_member_name(name: str) -> str:
     return normalized
 
 
-def _decode_log(data: bytes) -> str:
-    if not data:
-        raise InvalidBoundaryError("empty log entries are not permitted")
-    if b"\x00" in data:
-        raise InvalidBoundaryError("binary log content is not permitted")
-    try:
-        text = data.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise InvalidBoundaryError("log content must be UTF-8") from exc
-    controls = sum(ord(char) < 32 and char not in "\r\n\t" for char in text)
-    if controls > max(2, len(text) // 100):
-        raise InvalidBoundaryError("binary-like log content is not permitted")
-    return text.replace("\r\n", "\n").replace("\r", "\n")
-
-
 def _redact(text: str) -> tuple[str, int]:
     count = 0
     for pattern in SECRET_PATTERNS:
@@ -100,58 +88,161 @@ def _redact(text: str) -> tuple[str, int]:
     return text, count
 
 
-def _selected_ranges(lines: list[str]) -> list[tuple[int, int]]:
-    interesting = {index for index, line in enumerate(lines) if INTERESTING.search(line)}
-    selected: set[int] = set()
-    if interesting:
-        for index in interesting:
-            selected.update(range(max(0, index - 2), min(len(lines), index + 3)))
-    else:
-        selected.update(range(min(20, len(lines))))
-        selected.update(range(max(0, len(lines) - 20), len(lines)))
-    ranges: list[tuple[int, int]] = []
-    for index in sorted(selected):
-        if not ranges or index > ranges[-1][1] + 1:
-            ranges.append((index, index))
+def parse_log_artifact(
+    filename: str, media_type: str, data: bytes, *, max_entries: int, max_extracted_bytes: int,
+    max_ratio: int, max_evidence_chars: int,
+) -> LogAnalysis:
+    with tempfile.NamedTemporaryFile(prefix="techflow-log-", suffix=".bin") as temporary:
+        temporary.write(data)
+        temporary.flush()
+        return parse_log_artifact_path(
+            filename, media_type, Path(temporary.name), max_entries=max_entries,
+            max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio,
+            max_evidence_chars=max_evidence_chars,
+        )
+
+
+STREAM_CHUNK_BYTES = 1024 * 1024
+MAX_LOG_LINE_CHARS = 1024 * 1024
+CONTROL_BYTES = re.compile(rb"[\x01-\x08\x0b\x0c\x0e-\x1f]")
+
+
+@dataclass(frozen=True)
+class _EntryScan:
+    name: str
+    selected: tuple[tuple[int, str], ...]
+    bytes_read: int
+    truncated: bool
+    redaction_count: int
+
+
+class _EvidenceSelector:
+    def __init__(self, name: str, max_chars: int) -> None:
+        self.name = name
+        self.max_chars = max_chars
+        self.first: list[tuple[int, str]] = []
+        self.last: deque[tuple[int, str]] = deque(maxlen=20)
+        self.previous: deque[tuple[int, str]] = deque(maxlen=2)
+        self.selected: dict[int, str] = {}
+        self.selected_chars = 0
+        self.interesting = False
+        self.after = 0
+        self.line_number = 0
+        self.redactions = 0
+        self.truncated = False
+
+    def _keep(self, number: int, line: str) -> None:
+        if number in self.selected:
+            return
+        rendered, count = _redact(line[:4000])
+        if self.selected_chars + len(rendered) > self.max_chars * 2:
+            self.truncated = True
+            return
+        self.selected[number] = rendered
+        self.selected_chars += len(rendered)
+        self.redactions += count
+
+    def line(self, raw: str) -> None:
+        self.line_number += 1
+        line = raw.rstrip("\r\n")
+        item = (self.line_number, line)
+        if len(self.first) < 20:
+            self.first.append(item)
+        self.last.append(item)
+        if INTERESTING.search(line):
+            self.interesting = True
+            for number, previous in self.previous:
+                self._keep(number, previous)
+            self._keep(*item)
+            self.after = 2
+        elif self.after:
+            self._keep(*item)
+            self.after -= 1
+        self.previous.append(item)
+
+    def result(self, bytes_read: int) -> _EntryScan:
+        if not self.line_number:
+            raise InvalidBoundaryError("empty log entries are not permitted")
+        if self.interesting:
+            selected = self.selected
         else:
-            ranges[-1] = (ranges[-1][0], index)
-    return ranges
+            selected = {}
+            for number, line in self.first + list(self.last):
+                if number not in selected:
+                    redacted, count = _redact(line[:4000])
+                    selected[number] = redacted
+                    self.redactions += count
+        return _EntryScan(
+            self.name, tuple(sorted(selected.items())), bytes_read,
+            self.truncated, self.redactions,
+        )
 
 
-def _evidence(entries: list[tuple[str, str]], max_chars: int) -> tuple[str, bool, int]:
+def _scan_log_stream(name: str, stream: BinaryIO, *, max_bytes: int, max_evidence_chars: int) -> _EntryScan:
+    decoder = codecs.getincrementaldecoder("utf-8-sig")("strict")
+    selector = _EvidenceSelector(name, max_evidence_chars)
+    buffered = ""
+    total = controls = characters = 0
+    try:
+        while True:
+            chunk = stream.read(STREAM_CHUNK_BYTES)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise InvalidBoundaryError("archive expansion exceeds the permitted boundary")
+            if b"\x00" in chunk:
+                raise InvalidBoundaryError("binary log content is not permitted")
+            text = decoder.decode(chunk)
+            controls += len(CONTROL_BYTES.findall(chunk))
+            characters += len(text)
+            lines = (buffered + text).split("\n")
+            buffered = lines.pop()
+            for line in lines:
+                selector.line(line)
+            if len(buffered) > MAX_LOG_LINE_CHARS:
+                raise InvalidBoundaryError("log line exceeds the permitted boundary")
+        buffered += decoder.decode(b"", final=True)
+    except UnicodeDecodeError as exc:
+        raise InvalidBoundaryError("log content must be UTF-8") from exc
+    if buffered:
+        selector.line(buffered)
+    if controls > max(2, characters // 100):
+        raise InvalidBoundaryError("binary-like log content is not permitted")
+    return selector.result(total)
+
+
+def _render_streamed_evidence(entries: list[_EntryScan], max_chars: int) -> tuple[str, bool, int]:
     blocks: list[str] = []
-    redactions = 0
-    truncated = False
-    for name, raw_text in entries:
-        text, count = _redact(raw_text)
-        redactions += count
-        lines = text.splitlines()
-        for start, end in _selected_ranges(lines):
-            rendered = [f"@@ {name}:{start + 1}-{end + 1}"]
-            rendered.extend(f"{number + 1}: {lines[number][:4000]}" for number in range(start, end + 1))
-            block = "\n".join(rendered) + "\n"
-            if sum(len(item) for item in blocks) + len(block) > max_chars:
+    used = 0
+    truncated = any(entry.truncated for entry in entries)
+    redactions = sum(entry.redaction_count for entry in entries)
+    for entry in entries:
+        selected = list(entry.selected)
+        index = 0
+        while index < len(selected):
+            start = index
+            while index + 1 < len(selected) and selected[index + 1][0] == selected[index][0] + 1:
+                index += 1
+            end = index
+            lines = selected[start:end + 1]
+            block = [f"@@ {entry.name}:{lines[0][0]}-{lines[-1][0]}"]
+            block.extend(f"{number}: {line}" for number, line in lines)
+            rendered = "\n".join(block) + "\n"
+            if used + len(rendered) > max_chars:
                 truncated = True
-                remaining = max_chars - sum(len(item) for item in blocks)
+                remaining = max_chars - used
                 if remaining > 128:
-                    blocks.append(block[:remaining] + "\n[TRUNCATED]\n")
+                    blocks.append(rendered[:remaining] + "\n[TRUNCATED]\n")
                 return "".join(blocks), truncated, redactions
-            blocks.append(block)
+            blocks.append(rendered)
+            used += len(rendered)
+            index += 1
     return "".join(blocks), truncated, redactions
 
 
-def _validate_limits(
-    entries: list[tuple[str, bytes]], compressed_bytes: int, *, max_entries: int,
-    max_extracted_bytes: int, max_ratio: int,
-) -> int:
-    if not entries or len(entries) > max_entries:
-        raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
-    total = sum(len(data) for _, data in entries)
-    if total > max_extracted_bytes:
-        raise InvalidBoundaryError("extracted log size exceeds the permitted boundary")
-    if total > max(compressed_bytes, 1) * max_ratio:
-        raise InvalidBoundaryError("archive compression ratio exceeds the permitted boundary")
-    return total
+def _archive_total_allowed(compressed_bytes: int, max_extracted_bytes: int, max_ratio: int) -> int:
+    return min(max_extracted_bytes, max(compressed_bytes, 1) * max_ratio)
 
 
 def _is_ignored_archive_metadata(name: str) -> bool:
@@ -163,17 +254,21 @@ def _is_ignored_archive_metadata(name: str) -> bool:
     return "__MACOSX" in parts or basename == ".DS_Store" or basename.startswith("._")
 
 
-def _read_zip(data: bytes, *, max_entries: int, max_extracted_bytes: int, max_ratio: int) -> list[tuple[str, bytes]]:
+def _scan_zip_path(
+    path: Path, *, max_entries: int, max_extracted_bytes: int, max_ratio: int, max_evidence_chars: int,
+) -> tuple[list[_EntryScan], int]:
+    compressed_bytes = path.stat().st_size
+    allowed = _archive_total_allowed(compressed_bytes, max_extracted_bytes, max_ratio)
     try:
-        with zipfile.ZipFile(BytesIO(data)) as archive:
+        with zipfile.ZipFile(path) as archive:
             infos = [
                 item for item in archive.infolist()
                 if not item.is_dir() and not _is_ignored_archive_metadata(item.filename)
             ]
             if not infos or len(infos) > max_entries:
                 raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
-            entries: list[tuple[str, bytes]] = []
             declared_total = 0
+            scans: list[_EntryScan] = []
             for info in infos:
                 name = _safe_member_name(info.filename)
                 if info.flag_bits & 0x1:
@@ -182,95 +277,119 @@ def _read_zip(data: bytes, *, max_entries: int, max_extracted_bytes: int, max_ra
                 if file_type not in {0, stat.S_IFREG}:
                     raise InvalidBoundaryError("archive links and special files are not permitted")
                 declared_total += info.file_size
-                if declared_total > max_extracted_bytes or declared_total > max(len(data), 1) * max_ratio:
+                if declared_total > allowed:
                     raise InvalidBoundaryError("archive expansion exceeds the permitted boundary")
-                member = archive.read(info)
-                if len(member) != info.file_size:
+                with archive.open(info) as stream:
+                    scan = _scan_log_stream(
+                        name, stream, max_bytes=info.file_size, max_evidence_chars=max_evidence_chars,
+                    )
+                if scan.bytes_read != info.file_size:
                     raise InvalidBoundaryError("archive member size is inconsistent")
-                entries.append((name, member))
-            _validate_limits(entries, len(data), max_entries=max_entries, max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio)
-            return entries
+                scans.append(scan)
+            return scans, declared_total
     except InvalidBoundaryError:
         raise
-    except (zipfile.BadZipFile, RuntimeError, EOFError) as exc:
+    except (zipfile.BadZipFile, RuntimeError, EOFError, OSError) as exc:
         raise InvalidBoundaryError("invalid ZIP log archive") from exc
 
 
-def _read_gzip(data: bytes, filename: str, *, max_extracted_bytes: int, max_ratio: int) -> list[tuple[str, bytes]]:
-    try:
-        with gzip.GzipFile(fileobj=BytesIO(data)) as stream:
-            content = stream.read(max_extracted_bytes + 1)
-    except (gzip.BadGzipFile, EOFError, OSError) as exc:
-        raise InvalidBoundaryError("invalid GZIP log archive") from exc
-    if len(content) > max_extracted_bytes or len(content) > max(len(data), 1) * max_ratio:
-        raise InvalidBoundaryError("archive expansion exceeds the permitted boundary")
+def _scan_gzip_path(
+    filename: str, path: Path, *, max_extracted_bytes: int, max_ratio: int, max_evidence_chars: int,
+) -> tuple[list[_EntryScan], int]:
     name = filename[:-3] if filename.casefold().endswith(".gz") else filename + ".log"
     if not _is_log_name(name):
         raise InvalidBoundaryError("GZIP payload filename is not a supported log")
-    return [(Path(name).name, content)]
-
-
-def _read_tar_gz(
-    data: bytes, *, max_entries: int, max_extracted_bytes: int, max_ratio: int,
-) -> list[tuple[str, bytes]]:
+    allowed = _archive_total_allowed(path.stat().st_size, max_extracted_bytes, max_ratio)
     try:
-        with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as archive:
-            members = [
-                item for item in archive.getmembers()
-                if not item.isdir() and not _is_ignored_archive_metadata(item.name)
-            ]
-            if not members or len(members) > max_entries:
-                raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
-            entries: list[tuple[str, bytes]] = []
-            declared_total = 0
-            for member in members:
+        with gzip.open(path, "rb") as stream:
+            scan = _scan_log_stream(
+                Path(name).name, stream, max_bytes=allowed, max_evidence_chars=max_evidence_chars,
+            )
+        return [scan], scan.bytes_read
+    except InvalidBoundaryError:
+        raise
+    except (gzip.BadGzipFile, EOFError, OSError) as exc:
+        raise InvalidBoundaryError("invalid GZIP log archive") from exc
+
+
+def _scan_tar_gz_path(
+    path: Path, *, max_entries: int, max_extracted_bytes: int, max_ratio: int, max_evidence_chars: int,
+) -> tuple[list[_EntryScan], int]:
+    allowed = _archive_total_allowed(path.stat().st_size, max_extracted_bytes, max_ratio)
+    scans: list[_EntryScan] = []
+    total = 0
+    try:
+        with tarfile.open(path, mode="r|gz") as archive:
+            for member in archive:
+                if member.isdir():
+                    continue
+                if _is_ignored_archive_metadata(member.name):
+                    continue
                 if not member.isfile():
                     raise InvalidBoundaryError("archive links and special files are not permitted")
+                if len(scans) >= max_entries:
+                    raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
                 name = _safe_member_name(member.name)
-                declared_total += member.size
-                if declared_total > max_extracted_bytes or declared_total > max(len(data), 1) * max_ratio:
+                total += member.size
+                if total > allowed:
                     raise InvalidBoundaryError("archive expansion exceeds the permitted boundary")
                 stream = archive.extractfile(member)
                 if stream is None:
                     raise InvalidBoundaryError("archive member cannot be read")
-                content = stream.read(member.size + 1)
-                if len(content) != member.size:
+                scan = _scan_log_stream(
+                    name, stream, max_bytes=member.size, max_evidence_chars=max_evidence_chars,
+                )
+                if scan.bytes_read != member.size:
                     raise InvalidBoundaryError("archive member size is inconsistent")
-                entries.append((name, content))
-            _validate_limits(entries, len(data), max_entries=max_entries, max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio)
-            return entries
+                scans.append(scan)
+        if not scans:
+            raise InvalidBoundaryError("archive entry count is outside the permitted boundary")
+        return scans, total
+    except InvalidBoundaryError:
+        raise
     except (tarfile.TarError, EOFError, OSError) as exc:
         raise InvalidBoundaryError("invalid TAR.GZ log archive") from exc
 
 
-def parse_log_artifact(
-    filename: str, media_type: str, data: bytes, *, max_entries: int, max_extracted_bytes: int,
+def parse_log_artifact_path(
+    filename: str, media_type: str, path: Path, *, max_entries: int, max_extracted_bytes: int,
     max_ratio: int, max_evidence_chars: int,
 ) -> LogAnalysis:
     lowered = filename.casefold()
+    with path.open("rb") as source:
+        header = source.read(4)
     if media_type in PLAIN_MEDIA_TYPES:
         if not _is_log_name(filename):
             raise InvalidBoundaryError("filename is not a supported log")
-        entries = [(filename, data)]
+        with path.open("rb") as source:
+            scans = [_scan_log_stream(
+                filename, source, max_bytes=path.stat().st_size,
+                max_evidence_chars=max_evidence_chars,
+            )]
+        extracted = scans[0].bytes_read
     elif media_type == "application/zip":
-        if not lowered.endswith(".zip") or data[:4] not in {b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"}:
+        if not lowered.endswith(".zip") or header not in {b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"}:
             raise InvalidBoundaryError("artifact bytes do not match ZIP")
-        entries = _read_zip(data, max_entries=max_entries, max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio)
+        scans, extracted = _scan_zip_path(
+            path, max_entries=max_entries, max_extracted_bytes=max_extracted_bytes,
+            max_ratio=max_ratio, max_evidence_chars=max_evidence_chars,
+        )
     elif media_type in {"application/gzip", "application/x-gzip"}:
-        if not lowered.endswith((".gz", ".tgz")) or data[:2] != b"\x1f\x8b":
+        if not lowered.endswith((".gz", ".tgz")) or header[:2] != b"\x1f\x8b":
             raise InvalidBoundaryError("artifact bytes do not match GZIP")
         if lowered.endswith((".tar.gz", ".tgz")):
-            entries = _read_tar_gz(data, max_entries=max_entries, max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio)
+            scans, extracted = _scan_tar_gz_path(
+                path, max_entries=max_entries, max_extracted_bytes=max_extracted_bytes,
+                max_ratio=max_ratio, max_evidence_chars=max_evidence_chars,
+            )
         else:
-            entries = _read_gzip(data, filename, max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio)
+            scans, extracted = _scan_gzip_path(
+                filename, path, max_extracted_bytes=max_extracted_bytes,
+                max_ratio=max_ratio, max_evidence_chars=max_evidence_chars,
+            )
     else:
         raise InvalidBoundaryError("unsupported log artifact media type")
-
-    extracted = _validate_limits(
-        entries, len(data), max_entries=max_entries, max_extracted_bytes=max_extracted_bytes, max_ratio=max_ratio,
-    )
-    decoded = [(name, _decode_log(content)) for name, content in entries]
-    evidence, truncated, redactions = _evidence(decoded, max_evidence_chars)
+    evidence, truncated, redactions = _render_streamed_evidence(scans, max_evidence_chars)
     if not evidence:
         raise InvalidBoundaryError("log artifact produced no usable evidence")
-    return LogAnalysis(evidence, len(entries), extracted, truncated, redactions)
+    return LogAnalysis(evidence, len(scans), extracted, truncated, redactions)

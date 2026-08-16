@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import gzip
 from io import BytesIO
@@ -208,6 +209,37 @@ class ArtifactTest(unittest.TestCase):
             record = store.put("service.log", "application/octet-stream", b"INFO start\nERROR stopped\n")
             self.assertEqual("text/plain", record.media_type)
             self.assertEqual("LOG", record.kind)
+
+    def test_regular_and_archive_upload_boundaries_are_distinct(self) -> None:
+        archive_buffer = BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_STORED) as archive:
+            archive.writestr("service.log", "INFO ready\nERROR failed\n" * 8)
+        self.assertGreater(len(archive_buffer.getvalue()), 64)
+        with tempfile.TemporaryDirectory() as root:
+            store = ArtifactStore(
+                root, retention_hours=1, max_bytes=64, max_archive_bytes=4096,
+                max_extracted_bytes=8192, max_compression_ratio=100,
+            )
+            with self.assertRaises(InvalidBoundaryError):
+                store.put("service.log", "text/plain", b"A" * 64 + b"\n")
+            record = store.put("support.zip", "application/zip", archive_buffer.getvalue())
+            self.assertEqual("application/zip", record.media_type)
+
+    def test_stream_content_length_is_rejected_before_body_consumption(self) -> None:
+        consumed = False
+
+        async def chunks():
+            nonlocal consumed
+            consumed = True
+            yield b"INFO ready\n"
+
+        with tempfile.TemporaryDirectory() as root:
+            store = ArtifactStore(root, retention_hours=1, max_bytes=64, max_archive_bytes=256)
+            with self.assertRaises(InvalidBoundaryError):
+                asyncio.run(store.put_stream(
+                    "service.log", "text/plain", chunks(), content_length=65,
+                ))
+        self.assertFalse(consumed)
 
 
 class _Responses:

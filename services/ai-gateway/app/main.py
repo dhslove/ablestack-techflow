@@ -185,6 +185,7 @@ def create_app(
         runtime_settings.artifact_root,
         retention_hours=runtime_settings.artifact_retention_hours,
         max_bytes=runtime_settings.artifact_max_bytes,
+        max_archive_bytes=runtime_settings.artifact_max_archive_bytes,
         max_extracted_bytes=runtime_settings.artifact_max_extracted_bytes,
         max_archive_entries=runtime_settings.artifact_max_archive_entries,
         max_compression_ratio=runtime_settings.artifact_max_compression_ratio,
@@ -514,7 +515,14 @@ def create_app(
         if classification != "D0":
             raise InvalidBoundaryError("only D0 artifacts are permitted")
         media_type = request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-        record = artifact_store.put(filename, media_type, await request.body())
+        length_header = request.headers.get("Content-Length")
+        try:
+            content_length = int(length_header) if length_header is not None else None
+        except ValueError as exc:
+            raise InvalidBoundaryError("Content-Length must be an integer") from exc
+        record = await artifact_store.put_stream(
+            filename, media_type, request.stream(), content_length=content_length,
+        )
         return _envelope(record.payload(), correlation_id)
 
     @application.get("/v1/artifacts/{artifactId}", response_model=Envelope, operation_id="getArtifact")

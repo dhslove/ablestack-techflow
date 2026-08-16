@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[1]
 DOCKERFILE = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 COMPOSE = (REPO / "deploy" / "compose" / "ai-gateway" / "compose.yml").read_text(encoding="utf-8")
+MAIN = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+ARTIFACTS = (ROOT / "app" / "artifacts.py").read_text(encoding="utf-8")
 
 
 class ContainerContractTest(unittest.TestCase):
@@ -64,6 +66,13 @@ class ContainerContractTest(unittest.TestCase):
     def test_tree_sitter_parsers_are_prefetched_in_the_image(self) -> None:
         self.assertIn("scripts/prefetch_parsers.py", DOCKERFILE)
         self.assertIn("TECHFLOW_TREE_SITTER_CACHE", DOCKERFILE)
+
+    def test_large_artifacts_use_streaming_and_separate_archive_boundary(self) -> None:
+        self.assertIn("request.stream()", MAIN)
+        self.assertNotIn("await request.body()", MAIN)
+        self.assertIn("async def put_stream", ARTIFACTS)
+        self.assertIn("TECHFLOW_ARTIFACT_MAX_ARCHIVE_BYTES", COMPOSE)
+        self.assertIn("TECHFLOW_COMMUNITY_ARCHIVE_MAX_BYTES", COMPOSE)
 
 
 if __name__ == "__main__":

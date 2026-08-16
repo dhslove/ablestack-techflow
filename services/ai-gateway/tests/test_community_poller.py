@@ -173,42 +173,55 @@ class CommunityPollerTests(unittest.TestCase):
 
     def test_attachment_policy_accepts_exact_boundary_and_rejects_one_byte_over(self) -> None:
         exact = b"A" * 2048
-        with patch.object(poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(exact)):
-            content, media_type, _ = poll_flarum._read_attachment(
-                poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.log"),
-                max_bytes=2048, timeout=5, retries=0,
-            )
-        self.assertEqual(exact, content)
-        self.assertEqual("text/plain", media_type)
-
-        with patch.object(poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(exact + b"!")):
-            with self.assertRaisesRegex(ValueError, "size"):
-                poll_flarum._read_attachment(
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "a.log"
+            with patch.object(poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(exact)):
+                size, media_type, _, _ = poll_flarum._read_attachment(
                     poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.log"),
-                    max_bytes=2048, timeout=5, retries=0,
+                    destination, filename="a.log", max_bytes=2048, max_archive_bytes=4096,
+                    timeout=5, retries=0,
                 )
+            self.assertEqual(2048, size)
+            self.assertEqual(exact, destination.read_bytes())
+            self.assertEqual("text/plain", media_type)
+
+            with patch.object(poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(exact + b"!")):
+                with self.assertRaisesRegex(ValueError, "size"):
+                    poll_flarum._read_attachment(
+                        poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.log"),
+                        destination, filename="a.log", max_bytes=2048, max_archive_bytes=4096,
+                        timeout=5, retries=0,
+                    )
 
     def test_content_length_is_rejected_before_body_download(self) -> None:
-        with patch.object(
-            poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(b"", content_length=2049),
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            poll_flarum.urllib.request, "urlopen", return_value=FakeResponse(
+                b"", content_type="application/zip", content_length=4097,
+            ),
         ):
             with self.assertRaisesRegex(ValueError, "size"):
                 poll_flarum._read_attachment(
                     poll_flarum.urllib.request.Request("https://community.ablecloud.io/a.zip"),
-                    max_bytes=2048, timeout=5, retries=0,
+                    Path(directory) / "a.zip", filename="a.zip", max_bytes=2048,
+                    max_archive_bytes=4096, timeout=5, retries=0,
                 )
 
     def test_attachment_policy_environment_is_bounded(self) -> None:
-        with patch.dict(os.environ, {"TECHFLOW_COMMUNITY_ATTACHMENT_MAX_BYTES": "52428801"}, clear=False):
+        with patch.dict(
+            os.environ, {"TECHFLOW_COMMUNITY_ATTACHMENT_MAX_BYTES": str(1024 * 1024 * 1024 + 1)}, clear=False,
+        ):
             with self.assertRaises(RuntimeError):
                 poll_flarum._attachment_policy()
 
     def test_external_attachment_is_skipped_with_understandable_warning(self) -> None:
         event = {"attachmentUrls": ["https://example.invalid/secret.log"]}
-        ids, warnings = poll_flarum.upload_artifacts(
-            event, "http://gateway:8090", "http://172.16.0.234",
-            "https://community.ablecloud.io", "runtime-token", "community-test-0001",
-        )
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"TECHFLOW_COMMUNITY_ATTACHMENT_TMP_DIR": directory}, clear=False,
+        ):
+            ids, warnings = poll_flarum.upload_artifacts(
+                event, "http://gateway:8090", "http://172.16.0.234",
+                "https://community.ablecloud.io", "runtime-token", "community-test-0001",
+            )
         self.assertEqual([], ids)
         self.assertIn("Community 외부 주소", warnings[0])
 
