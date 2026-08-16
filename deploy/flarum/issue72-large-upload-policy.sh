@@ -21,6 +21,12 @@ nginx_site_file() {
   fi
   local candidate
   candidate=$(grep -lR 'server_name[[:space:]].*community\.ablecloud\.io' /etc/nginx/sites-enabled 2>/dev/null | head -n1)
+  if [[ -z $candidate ]]; then
+    mapfile -t candidates < <(find /etc/nginx/sites-enabled -maxdepth 1 \( -type f -o -type l \) -print)
+    if [[ ${#candidates[@]} -eq 1 ]]; then
+      candidate=${candidates[0]}
+    fi
+  fi
   [[ -n $candidate ]] || { echo "Community nginx site file not found" >&2; exit 2; }
   readlink -f "$candidate"
 }
