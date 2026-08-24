@@ -224,11 +224,13 @@ class CommunityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             key_file = Path(directory) / "key"
             user_file = Path(directory) / "assistant-user-id"
+            selector_file = Path(directory) / "solution-selector-user-id"
             key_file.write_text("a" * 40, encoding="utf-8")
             user_file.write_text("40", encoding="utf-8")
+            selector_file.write_text("1", encoding="utf-8")
             client = FlarumClient(
                 "http://172.16.0.234", "https://community.ablecloud.io", str(key_file), True,
-                str(user_file), False,
+                str(user_file), False, str(selector_file),
             )
             responses = [
                 FakeResponse({"data": []}),
@@ -240,7 +242,10 @@ class CommunityTests(unittest.TestCase):
             self.assertTrue(result["isApproved"])
             self.assertEqual("https://community.ablecloud.io/d/901/89", result["postUrl"])
             self.assertEqual("PATCH", opened.call_args_list[2].args[0].method)
-            self.assertEqual("Token " + "a" * 40, opened.call_args_list[2].args[0].headers["Authorization"])
+            self.assertEqual(
+                "Token " + "a" * 40 + "; userId=1",
+                opened.call_args_list[2].args[0].headers["Authorization"],
+            )
 
     def test_knowledge_base_post_is_selected_and_verified_as_solution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

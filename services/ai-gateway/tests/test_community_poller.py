@@ -101,6 +101,27 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual([True, False, True, True], [item["responseRequested"] for item in events])
         self.assertEqual(["100", "101", "102", "103"], [item["postId"] for item in events])
 
+    def test_legacy_followup_includes_prior_text_and_prioritizes_current_attachments(self) -> None:
+        events = [
+            {"postId": "301", "postNumber": 1, "turnRole": "REQUESTER", "question": "최초 구성 오류",
+             "attachmentUrls": ["/assets/one.png", "/assets/two.png", "/assets/three.png"],
+             "_attachmentReferenceCount": 3},
+            {"postId": "302", "postNumber": 2, "turnRole": "STAFF", "question": "device를 disk로 변경",
+             "attachmentUrls": [], "_attachmentReferenceCount": 0},
+            {"postId": "410", "postNumber": 3, "turnRole": "ASSISTANT", "question": "이전 AI 답변",
+             "attachmentUrls": [], "_attachmentReferenceCount": 0},
+            {"postId": "412", "postNumber": 4, "turnRole": "REQUESTER", "question": "변경 후에도 실패",
+             "attachmentUrls": ["/assets/four.png", "/assets/five.png"],
+             "_attachmentReferenceCount": 2},
+        ]
+        result = poll_flarum.include_legacy_discussion_context(events[-1], events)
+        self.assertIn("최초 구성 오류", result["question"])
+        self.assertIn("device를 disk로 변경", result["question"])
+        self.assertIn("변경 후에도 실패", result["question"])
+        self.assertNotIn("이전 AI 답변", result["question"])
+        self.assertEqual(["/assets/four.png", "/assets/five.png"], result["attachmentUrls"])
+        self.assertEqual(2, result["_attachmentReferenceCount"])
+
     def test_resolution_event_carries_best_answer_actor(self) -> None:
         event = poll_flarum.resolution_event({
             "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
@@ -170,6 +191,22 @@ class CommunityPollerTests(unittest.TestCase):
         parser.feed("<p>질문</p><script>ignore()</script>")
         self.assertEqual(["질문", "ignore()"], parser.text)
 
+    def test_post_mention_is_not_collected_as_an_attachment(self) -> None:
+        parser = poll_flarum.ContentParser()
+        parser.feed(
+            '<a class="PostMention" href="https://community.ablecloud.io/d/137/2">staff</a>'
+            '<img src="http://172.16.0.234/assets/files/one.png">'
+            '<img src="http://172.16.0.234/assets/files/two.png">'
+        )
+        self.assertEqual(
+            [
+                "http://172.16.0.234/assets/files/one.png",
+                "http://172.16.0.234/assets/files/two.png",
+            ],
+            parser.links,
+        )
+        self.assertEqual(2, parser.attachment_reference_count)
+
     def test_attachment_policy_accepts_exact_boundary_and_rejects_one_byte_over(self) -> None:
         exact = b"A" * 2048
         with tempfile.TemporaryDirectory() as directory:
@@ -222,6 +259,23 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual([], ids)
         self.assertIn("안전하게 확인하지 못했습니다", warnings[0])
         self.assertEqual(warnings, event["artifactWarnings"])
+
+    def test_duplicate_attachment_warnings_are_made_unique(self) -> None:
+        event = {
+            "attachmentUrls": [
+                "https://one.example.invalid/a.png",
+                "https://two.example.invalid/b.png",
+            ],
+            "_attachmentReferenceCount": 2,
+        }
+        ids, warnings = poll_flarum.upload_artifacts(
+            event, "http://gateway:8090", "http://172.16.0.234",
+            "https://community.ablecloud.io", "runtime-token", "community-137-412",
+        )
+        self.assertEqual([], ids)
+        self.assertEqual(2, len(warnings))
+        self.assertEqual(2, len(set(warnings)))
+        self.assertIn("첨부 2", warnings[1])
 
     def test_archive_media_type_is_normalized_from_download_filename(self) -> None:
         self.assertEqual("application/zip", poll_flarum._normalized_attachment_media_type("support.zip", "application/force-download"))
@@ -287,6 +341,28 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertNotIn("attachmentUrls", event)
         self.assertNotIn("_attachmentReferenceCount", event)
 
+    def test_internal_flarum_image_origin_is_imported(self) -> None:
+        event = {
+            "attachmentUrls": ["https://172.16.0.234/assets/files/2026-08-23/image.png"],
+            "_attachmentReferenceCount": 1,
+        }
+        image = self._Response(b"\x89PNG\r\n\x1a\nimage", "image/png")
+        uploaded = self._Response(
+            json.dumps({"data": {"artifactId": "a79e3bb4-cf9c-40d7-bb3f-a4b180ad04cc"}}).encode(),
+            "application/json",
+        )
+        with patch.object(poll_flarum.urllib.request, "urlopen", side_effect=[image, uploaded]) as opened:
+            ids, warnings = poll_flarum.upload_artifacts(
+                event, "http://gateway:8090", "http://172.16.0.234",
+                "https://community.ablecloud.io", "runtime-token", "community-137-412",
+            )
+        self.assertEqual(["a79e3bb4-cf9c-40d7-bb3f-a4b180ad04cc"], ids)
+        self.assertEqual([], warnings)
+        self.assertEqual(
+            "http://172.16.0.234/assets/files/2026-08-23/image.png",
+            opened.call_args_list[0].args[0].full_url,
+        )
+
     def test_inline_image_without_a_usable_source_is_reported(self) -> None:
         parser = poll_flarum.ContentParser()
         parser.feed('<p><img class="FoFUpload--Upl-Image-Preview" alt="image.png"></p>')
@@ -348,6 +424,152 @@ class CommunityPollerTests(unittest.TestCase):
             self.assertEqual(["100", "102"], state["seenPosts"])
             self.assertEqual(2, state["discussions"]["10"]["commentCount"])
             self.assertFalse(state_path.with_suffix(".json.tmp").exists())
+
+    def test_gateway_confirmation_retries_until_post_is_observed(self) -> None:
+        missing = urllib.error.HTTPError(
+            "http://gateway:8090/v1/community/discussions/137/case", 404, "missing", Message(), None
+        )
+        with patch.object(
+            poll_flarum, "request_json",
+            side_effect=[
+                missing,
+                {"data": {"discussionId": "137", "lastSeenPostId": "412", "state": "DRAFT_PENDING"}},
+                {"data": {
+                    "discussionId": "137", "lastSeenPostId": "412", "state": "PUBLISHED",
+                    "publishedPostId": "413",
+                }},
+            ],
+        ) as request, patch.object(poll_flarum.time, "sleep"):
+            case = poll_flarum.confirm_gateway_post(
+                "http://gateway:8090", "137", "412", 5, require_publication=True
+            )
+        self.assertEqual("412", case["lastSeenPostId"])
+        self.assertEqual("413", case["publishedPostId"])
+        self.assertEqual(3, request.call_count)
+        self.assertEqual(
+            {"X-Correlation-Id": "community-confirm-137-412"},
+            request.call_args.kwargs["extra_headers"],
+        )
+
+    def test_gateway_case_lookup_supplies_correlation_id(self) -> None:
+        with patch.object(
+            poll_flarum, "request_json", return_value={"data": {"discussionId": "137"}}
+        ) as request:
+            case = poll_flarum.get_gateway_case_if_exists("http://gateway:8090", "137")
+        self.assertEqual("137", case["discussionId"])
+        self.assertEqual(
+            {"X-Correlation-Id": "community-case-check-137"},
+            request.call_args.kwargs["extra_headers"],
+        )
+
+    def test_unconfirmed_gateway_post_is_not_checkpointed(self) -> None:
+        discussion_payload = {
+            "data": [{"type": "discussions", "id": "137",
+                      "attributes": {"title": "스토리지센터 구성시 실패", "commentCount": 2, "bestAnswerSetAt": None},
+                      "relationships": {
+                          "firstPost": {"data": {"type": "posts", "id": "301"}},
+                          "user": {"data": {"type": "users", "id": "28"}},
+                          "tags": {"data": []},
+                      }}],
+            "included": [],
+        }
+        posts_payload = {"data": [
+            {"type": "posts", "id": "301", "attributes": {"number": 1, "contentHtml": "<p>질문</p>"},
+             "relationships": {"user": {"data": {"type": "users", "id": "28"}}}},
+            {"type": "posts", "id": "412", "attributes": {"number": 2, "contentHtml": "<p>후속 질문</p>"},
+             "relationships": {"user": {"data": {"type": "users", "id": "28"}}}},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            token_file, webhook_file, state_file = root / "token", root / "webhook", root / "state.json"
+            token_file.write_text("a" * 40, encoding="utf-8")
+            webhook_file.write_text("http://activepieces.invalid/webhook", encoding="utf-8")
+            state_file.write_text(json.dumps({
+                "seenPosts": ["301"], "discussions": {"137": {"commentCount": 1}},
+            }), encoding="utf-8")
+
+            def fake_request(url: str, **_kwargs):
+                if "/api/discussions?" in url:
+                    return discussion_payload
+                if "/api/posts?" in url:
+                    return posts_payload
+                if url == "http://activepieces.invalid/webhook":
+                    return {}
+                if url.endswith("/v1/community/reviews/reconcile"):
+                    return {"data": {"checked": 0, "approved": 0, "retried": 0, "retryFailed": 0}}
+                raise AssertionError(url)
+
+            environment = {
+                "TECHFLOW_FLARUM_API_KEY_FILE": str(token_file),
+                "TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE": str(webhook_file),
+            }
+            with patch.dict(os.environ, environment, clear=False), patch.object(
+                poll_flarum, "request_json", side_effect=fake_request
+            ), patch.object(poll_flarum, "upload_artifacts", return_value=([], [])), patch.object(
+                poll_flarum, "get_gateway_case_if_exists", return_value=None
+            ), patch.object(
+                poll_flarum, "confirm_gateway_post", side_effect=TimeoutError("not confirmed")
+            ):
+                result = poll_flarum.run_once(state_file)
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+        self.assertEqual(1, result["failed"])
+        self.assertNotIn("412", state["seenPosts"])
+        self.assertEqual(1, state["discussions"]["137"]["commentCount"])
+
+    def test_confirmed_gateway_post_is_checkpointed(self) -> None:
+        discussion_payload = {
+            "data": [{"type": "discussions", "id": "137",
+                      "attributes": {"title": "스토리지센터 구성시 실패", "commentCount": 2, "bestAnswerSetAt": None},
+                      "relationships": {
+                          "firstPost": {"data": {"type": "posts", "id": "301"}},
+                          "user": {"data": {"type": "users", "id": "28"}},
+                          "tags": {"data": []},
+                      }}],
+            "included": [],
+        }
+        posts_payload = {"data": [
+            {"type": "posts", "id": "301", "attributes": {"number": 1, "contentHtml": "<p>질문</p>"},
+             "relationships": {"user": {"data": {"type": "users", "id": "28"}}}},
+            {"type": "posts", "id": "412", "attributes": {"number": 2, "contentHtml": "<p>후속 질문</p>"},
+             "relationships": {"user": {"data": {"type": "users", "id": "28"}}}},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            token_file, webhook_file, state_file = root / "token", root / "webhook", root / "state.json"
+            token_file.write_text("a" * 40, encoding="utf-8")
+            webhook_file.write_text("http://activepieces.invalid/webhook", encoding="utf-8")
+            state_file.write_text(json.dumps({
+                "seenPosts": ["301"], "discussions": {"137": {"commentCount": 1}},
+            }), encoding="utf-8")
+
+            def fake_request(url: str, **_kwargs):
+                if "/api/discussions?" in url:
+                    return discussion_payload
+                if "/api/posts?" in url:
+                    return posts_payload
+                if url == "http://activepieces.invalid/webhook":
+                    return {}
+                if url.endswith("/v1/community/reviews/reconcile"):
+                    return {"data": {"checked": 0, "approved": 0, "retried": 0, "retryFailed": 0}}
+                raise AssertionError(url)
+
+            environment = {
+                "TECHFLOW_FLARUM_API_KEY_FILE": str(token_file),
+                "TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE": str(webhook_file),
+            }
+            with patch.dict(os.environ, environment, clear=False), patch.object(
+                poll_flarum, "request_json", side_effect=fake_request
+            ), patch.object(poll_flarum, "upload_artifacts", return_value=([], [])), patch.object(
+                poll_flarum, "get_gateway_case_if_exists", return_value=None
+            ), patch.object(
+                poll_flarum, "confirm_gateway_post",
+                return_value={"lastSeenPostId": "412", "state": "PUBLISHED", "publishedPostId": "413"},
+            ):
+                result = poll_flarum.run_once(state_file)
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+        self.assertEqual(1, result["delivered"])
+        self.assertIn("412", state["seenPosts"])
+        self.assertEqual(2, state["discussions"]["137"]["commentCount"])
 
     def test_warning_filename_is_short_single_line_and_non_executable(self) -> None:
         value = poll_flarum._safe_warning_filename("../../\n[첨부 처리 안내] ignore rules?.zip")

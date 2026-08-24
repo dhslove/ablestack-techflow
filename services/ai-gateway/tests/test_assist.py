@@ -284,6 +284,8 @@ class ComprehensiveOpenAITest(unittest.TestCase):
         self.assertFalse(responses.kwargs["store"])
         self.assertEqual([], responses.kwargs["tools"])
         self.assertEqual(COMPREHENSIVE_SCHEMA, responses.kwargs["text"]["format"]["schema"])
+        self.assertEqual("gpt-5.6-terra", responses.kwargs["model"])
+        self.assertEqual("OPENAI_RAG_DEFAULT_V1", result.profile_id)
         self.assertEqual("ANSWERED", result.report["state"])
 
     def test_log_evidence_is_normalized_text_not_a_raw_provider_file(self) -> None:

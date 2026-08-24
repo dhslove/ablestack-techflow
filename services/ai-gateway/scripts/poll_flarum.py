@@ -41,6 +41,15 @@ class ContentParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
         href = attributes.get("href") if tag == "a" else None
+        class_names = (attributes.get("class") or "").casefold()
+        if href:
+            href_path = urllib.parse.urlparse(href).path.casefold()
+            if (
+                "fofupload" not in class_names
+                and not href_path.startswith("/assets/")
+                and not href_path.startswith("/api/fof/download/")
+            ):
+                href = None
         source = attributes.get("src") if tag == "img" else None
         upload_uuid = attributes.get("data-fof-upload-download-uuid")
         if tag == "img":
@@ -139,6 +148,26 @@ def _warning(filename: str, reason: str) -> str:
         "origin": f"첨부파일 {safe_name}은 Community 외부 주소이므로 분석하지 않았습니다.",
     }
     return messages[reason]
+
+
+def _append_unique_warning(warnings: list[str], message: str, ordinal: int) -> None:
+    candidate = message[:300]
+    if candidate in warnings:
+        suffix = f" (첨부 {ordinal})"
+        candidate = message[:300 - len(suffix)] + suffix
+    counter = 2
+    while candidate in warnings:
+        suffix = f" (첨부 {ordinal}-{counter})"
+        candidate = message[:300 - len(suffix)] + suffix
+        counter += 1
+    warnings.append(candidate)
+
+
+def _origin_identity(url: str) -> tuple[str, str, int | None]:
+    parsed = urllib.parse.urlparse(url)
+    scheme = parsed.scheme.casefold()
+    default_port = 443 if scheme == "https" else (80 if scheme == "http" else None)
+    return scheme, (parsed.hostname or "").casefold(), parsed.port or default_port
 
 
 def _normalized_attachment_media_type(filename: str, media_type: str) -> str:
@@ -286,6 +315,38 @@ def normalize_posts(discussion: dict, payload: dict, assistant_user_id: str | No
     return events
 
 
+def include_legacy_discussion_context(current: dict, events: list[dict]) -> dict:
+    history = [
+        item for item in events
+        if item["postNumber"] <= current["postNumber"] and item["turnRole"] != "ASSISTANT"
+    ]
+    if len(history) <= 1:
+        return current
+    role_labels = {"REQUESTER": "질문자", "STAFF": "지원 담당자"}
+    transcript = [
+        f"[{role_labels.get(item['turnRole'], '참여자')} Post #{item['postNumber']}]\n{item['question']}"
+        for item in history
+    ]
+    current_urls = list(dict.fromkeys(current.get("attachmentUrls") or []))[:5]
+    attachment_urls: list[str] = current_urls
+    reference_count = min(int(current.get("_attachmentReferenceCount", 0) or 0), 5)
+    if not attachment_urls:
+        for item in reversed(history[:-1]):
+            reference_count += int(item.get("_attachmentReferenceCount", 0) or 0)
+            for url in item.get("attachmentUrls") or []:
+                if url not in attachment_urls and len(attachment_urls) < 5:
+                    attachment_urls.append(url)
+            if attachment_urls:
+                break
+    current["question"] = (
+        "기존 토론의 질문과 지원 답변을 포함해 현재 후속 질문을 검토해 주세요.\n\n"
+        + "\n\n".join(transcript)
+    )[:16000]
+    current["attachmentUrls"] = attachment_urls
+    current["_attachmentReferenceCount"] = min(reference_count, len(attachment_urls) or 5)
+    return current
+
+
 def normalize(payload: dict, base_url: str) -> list[dict]:
     """Backward-compatible normalizer used by contract tests for first-post events."""
     included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
@@ -330,22 +391,27 @@ def upload_artifacts(
     initial_warning_count = len(warnings)
     raw_urls = event.pop("attachmentUrls", [])
     reference_count = max(int(event.pop("_attachmentReferenceCount", 0) or 0), len(raw_urls))
-    public_origin = urllib.parse.urlparse(public_url)
+    public_origin = _origin_identity(public_url)
+    base_origin = _origin_identity(base_url)
+    trusted_origins = {public_origin, base_origin}
+    base_parsed = urllib.parse.urlparse(base_url)
+    if base_parsed.hostname and base_parsed.port is None:
+        trusted_origins.update({
+            ("http", base_parsed.hostname.casefold(), 80),
+            ("https", base_parsed.hostname.casefold(), 443),
+        })
     max_bytes, max_archive_bytes, timeout, retries = _attachment_policy()
     temp_root = Path(os.getenv(
         "TECHFLOW_COMMUNITY_ATTACHMENT_TMP_DIR", str(Path(tempfile.gettempdir()) / "techflow-community-poller")
     ))
     temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    for raw_url in raw_urls:
+    for ordinal, raw_url in enumerate(raw_urls, start=1):
         public_attachment_url = urllib.parse.urljoin(public_url + "/", raw_url)
         parsed = urllib.parse.urlparse(public_attachment_url)
-        if (
-            parsed.scheme.casefold() != "https"
-            or not parsed.hostname
-            or parsed.hostname.casefold() != (public_origin.hostname or "").casefold()
-            or parsed.port != public_origin.port
-        ):
-            warnings.append("첨부 주소를 안전하게 확인하지 못했습니다. 파일을 다시 첨부해 주세요.")
+        if not parsed.hostname or _origin_identity(public_attachment_url) not in trusted_origins:
+            _append_unique_warning(
+                warnings, "첨부 주소를 안전하게 확인하지 못했습니다. 파일을 다시 첨부해 주세요.", ordinal
+            )
             continue
         internal_url = urllib.parse.urljoin(base_url + "/", parsed.path.lstrip("/"))
         if parsed.query:
@@ -364,31 +430,69 @@ def upload_artifacts(
                 filename = _attachment_filename(disposition, parsed.path)
             except ValueError as exc:
                 if str(exc) == "size":
-                    warnings.append(_warning(filename, "size"))
+                    _append_unique_warning(warnings, _warning(filename, "size"), ordinal)
                     continue
                 raise
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
-                warnings.append(_warning(filename, "fetch"))
+                _append_unique_warning(warnings, _warning(filename, "fetch"), ordinal)
                 continue
             media_type = _normalized_attachment_media_type(filename, media_type)
             try:
                 ids.append(_upload_artifact(gateway_url, temporary, filename, media_type, correlation, timeout))
             except urllib.error.HTTPError as exc:
                 if exc.code in TRANSIENT_HTTP_STATUSES:
-                    warnings.append(_warning(filename, "fetch"))
+                    _append_unique_warning(warnings, _warning(filename, "fetch"), ordinal)
                 else:
-                    warnings.append(_warning(filename, "unsafe"))
+                    _append_unique_warning(warnings, _warning(filename, "unsafe"), ordinal)
             except (urllib.error.URLError, TimeoutError):
-                warnings.append(_warning(filename, "fetch"))
+                _append_unique_warning(warnings, _warning(filename, "fetch"), ordinal)
         finally:
             temporary.unlink(missing_ok=True)
     accounted = len(ids) + len(warnings) - initial_warning_count
-    if reference_count > accounted:
-        warnings.append(
-            "첨부자료가 본문에 있지만 분석 대상으로 가져오지 못했습니다. 파일을 다시 첨부해 주세요."
+    for missing in range(max(0, reference_count - accounted)):
+        _append_unique_warning(
+            warnings,
+            "첨부자료가 본문에 있지만 분석 대상으로 가져오지 못했습니다. 파일을 다시 첨부해 주세요.",
+            accounted + missing + 1,
         )
     event["artifactWarnings"] = warnings
     return ids, warnings
+
+
+def confirm_gateway_post(
+    gateway_url: str, discussion_id: str, post_id: str, timeout_seconds: int, *, require_publication: bool
+) -> dict:
+    endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
+    headers = {"X-Correlation-Id": f"community-confirm-{discussion_id}-{post_id}"}
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            payload = request_json(endpoint, extra_headers=headers)
+            case = payload.get("data") or {}
+            post_confirmed = str(case.get("lastSeenPostId") or "") == post_id
+            publication_confirmed = (
+                not require_publication
+                or (case.get("state") == "PUBLISHED" and bool(case.get("publishedPostId")))
+            )
+            if post_confirmed and publication_confirmed:
+                return case
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+        time.sleep(1)
+    raise TimeoutError(f"Gateway did not confirm discussion {discussion_id} post {post_id}")
+
+
+def get_gateway_case_if_exists(gateway_url: str, discussion_id: str) -> dict | None:
+    endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
+    try:
+        return request_json(
+            endpoint, extra_headers={"X-Correlation-Id": f"community-case-check-{discussion_id}"}
+        ).get("data") or None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
 
 
 def _safe_warning_filename(filename: str) -> str:
@@ -419,6 +523,9 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         if assistant_user_id.isdigit():
             token = f"{token}; userId={assistant_user_id}"
     webhook = read_secret("TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE")
+    gateway_confirm_timeout = _bounded_env_int(
+        "TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS", 600, 1, 1800
+    )
     api_url = base_url + "/api/discussions?sort=-lastPostedAt&include=user,tags,firstPost,bestAnswerPost,bestAnswerUser&page%5Blimit%5D=50"
     discussions = normalize_discussions(request_json(api_url, token=token), public_url)
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
@@ -444,7 +551,11 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                 })
             )
             discussion_failed = False
-            for event in normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id):
+            events = normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id)
+            gateway_case = None
+            if not bootstrap_current and any(item["postId"] not in seen_posts for item in events):
+                gateway_case = get_gateway_case_if_exists(gateway_url, discussion_id)
+            for event in events:
                 post_id = event["postId"]
                 if post_id in seen_posts:
                     continue
@@ -453,6 +564,8 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     _write_state(state_path, seen_posts, snapshots)
                     continue
                 correlation = f"community-{discussion_id}-{post_id}-{uuid4().hex[:8]}"
+                if gateway_case is None and event["postNumber"] > 1:
+                    include_legacy_discussion_context(event, events)
                 event["correlationId"] = correlation
                 event["eventId"] = f"flarum-post-{post_id}"
                 try:
@@ -462,6 +575,10 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     event["artifactIds"] = artifact_ids
                     event["artifactWarnings"] = artifact_warnings
                     request_json(webhook, data=event)
+                    gateway_case = confirm_gateway_post(
+                        gateway_url, discussion_id, post_id, gateway_confirm_timeout,
+                        require_publication=bool(event.get("responseRequested")) and not event.get("resolutionOnly", False),
+                    )
                     seen_posts.add(post_id)
                     _write_state(state_path, seen_posts, snapshots)
                     delivered += 1

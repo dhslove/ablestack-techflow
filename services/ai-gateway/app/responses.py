@@ -630,7 +630,8 @@ class OpenAIResponsesAdapter:
             ) from None
 
     def generate_comprehensive(self, request: ComprehensiveResponsesRequest) -> ComprehensiveResponsesResult:
-        profile = PROVIDER_PROFILES["OPENAI_RAG_ESCALATION_V1"]
+        profile_id = "OPENAI_RAG_DEFAULT_V1" if request.artifacts else "OPENAI_RAG_ESCALATION_V1"
+        profile = PROVIDER_PROFILES[profile_id]
         if not request.context or len(request.context) > 20 or len(request.artifacts) > 5:
             raise ProviderContractError("invalid comprehensive request boundary")
         if any(chunk.classification != "D0" for chunk in request.context):
@@ -721,6 +722,7 @@ class OpenAIResponsesAdapter:
             return ComprehensiveResponsesResult(parsed, citations, profile.model, str(getattr(response, "model", profile.model)),
                                                 str(getattr(response, "_request_id", "") or "unavailable"),
                                                 str(getattr(response, "id", "") or "unavailable"), provider="openai",
+                                                profile_id=profile.profile_id,
                                                 latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
                                                 input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
                                                 output_tokens=int(getattr(usage, "output_tokens", 0) or 0))

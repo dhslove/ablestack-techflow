@@ -331,7 +331,9 @@ class FlarumClient:
             body = json.dumps({
                 "data": {"type": "posts", "id": post_id, "attributes": {"isApproved": True}}
             }).encode("utf-8")
-            payload = self._request(f"/api/posts/{post_id}", "PATCH", body)
+            payload = self._request(
+                f"/api/posts/{post_id}", "PATCH", body, as_solution_selector=True
+            )
             attributes = payload.get("data", {}).get("attributes") or {}
         if attributes.get("isApproved") is False:
             raise RuntimeError("Flarum assistant reply remained unapproved")

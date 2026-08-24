@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-24T13:19:00Z",
+  "issue": 96,
+  "pullRequest": 97,
+  "discussion": {
+    "discussionId": "137",
+    "sourcePostId": "412",
+    "publishedPostId": "414",
+    "assistantUserId": "40",
+    "caseId": "8ad7004f-a996-471a-adba-04dcb80d7e97",
+    "caseState": "PUBLISHED",
+    "answerState": "ANSWERED",
+    "conversationState": "WAITING_RESOLUTION",
+    "contextVersion": 2,
+    "artifactCount": 2,
+    "internalEvidenceExposed": false,
+    "visibleHeadingExposed": false
+  },
+  "provider": {
+    "profileId": "OPENAI_RAG_DEFAULT_V1",
+    "model": "gpt-5.6-terra",
+    "latencyMs": 17116,
+    "status": "SUCCEEDED"
+  },
+  "sourceCoverage": {
+    "profileCount": 9,
+    "allEvidenceFound": true
+  },
+  "runtime": {
+    "version": "0.15.1",
+    "image": "techflow/ai-gateway:issue96-0.15.1-3194967",
+    "gateway": "healthy",
+    "communityPoller": "running",
+    "pollCompletedInFinalWindow": 4,
+    "pollFailedInFinalWindow": 0,
+    "chatNotificationSent": true,
+    "operationState": "RECOVERED"
+  },
+  "publicEndpoints": {
+    "community": 200,
+    "chat": 200,
+    "activepieces": 200
+  },
+  "protectedServices": {
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  },
+  "backups": {
+    "recoveryCleanup": "/home/ablecloud/techflow-backups/issue96-20260824T124907Z",
+    "finalDeployment": "/home/ablecloud/techflow-backups/issue96-latest-20260824T131537Z"
+  },
+  "repositoryTestsPassed": 280
+}
