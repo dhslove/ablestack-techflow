@@ -19,7 +19,9 @@ GitHub→Chat Webhook의 `github-chat-v1`, `chat-adapter`, `activepieces-control
 
 ## 3. Community 연속성
 
-Poller는 게시물을 성공적으로 Gateway에 전달한 뒤에만 Post ID를 원자적으로 체크포인트한다. 다운로드·Artifact·Webhook·AI 처리 중 하나라도 실패하면 해당 Post ID를 완료 처리하지 않으므로 다음 주기에 다시 시도한다. Gateway는 Flarum Post ID 기반 Event ID와 Idempotency Key로 같은 답변이 중복 게시되는 것을 막는다.
+Poller는 Activepieces Webhook 수락만으로 게시물을 완료하지 않는다. Gateway Case의 `lastSeenPostId`가 현재 Flarum Post ID와 일치하는 것을 확인한 뒤에만 Post ID를 원자적으로 체크포인트한다. 다운로드·Artifact·Webhook·AI 처리·Gateway 확인 중 하나라도 실패하면 해당 Post ID를 완료 처리하지 않으므로 다음 주기에 다시 시도한다. Gateway는 Flarum Post ID 기반 Event ID와 Idempotency Key로 같은 답변이 중복 게시되는 것을 막는다.
+
+Gateway 확인 제한시간은 기본 600초이며 `TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS`로 조정한다. 제한시간이 지나면 `community_post_delivery_failed`를 기록하고 장애 상태를 Chat에 한 번 알린다. 같은 Post가 이후 성공하면 복구 상태로 전환한다.
 
 운영 Poller의 Flarum API 주소는 내부 경로 `http://172.16.0.234`이고 사용자에게 제공하는 링크는 `https://community.ablecloud.io`다. 외부 공개 주소를 운영 서버의 수집 경로로 바꾸지 않는다.
 

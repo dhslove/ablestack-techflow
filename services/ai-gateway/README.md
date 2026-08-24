@@ -1,5 +1,13 @@
 # TechFlow AI Gateway
 
+## v0.15.1 수정 범위
+
+- Flarum 답글 멘션과 일반 링크를 첨부파일 후보에서 제외
+- 내부 Flarum 주소로 렌더링된 이미지도 신뢰된 내부 Origin으로 안전하게 수집
+- 여러 첨부파일이 같은 경고를 만들 때 순서를 유지하며 고유한 경고로 정규화
+- Activepieces Webhook 수락 후 Gateway의 `lastSeenPostId` 확인 전에는 Poller 체크포인트 금지
+- Gateway 처리 실패·지연 시 Post를 미완료 상태로 유지하고 다음 Poll에서 재시도
+
 ## v0.15.0 구현 범위
 
 - Chat 기술지원 대화를 사용자별 맥락으로 유지하고 `해결` 시점에 종료

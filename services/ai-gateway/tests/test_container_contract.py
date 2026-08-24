@@ -104,6 +104,13 @@ class ContainerContractTest(unittest.TestCase):
     def test_healthcheck_exists(self) -> None:
         self.assertGreaterEqual(COMPOSE.count("healthcheck:"), 2)
 
+    def test_community_checkpoint_waits_for_gateway_confirmation(self) -> None:
+        self.assertIn(
+            "TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS: "
+            "${TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS:-600}",
+            COMPOSE,
+        )
+
     def test_tree_sitter_parsers_are_prefetched_in_the_image(self) -> None:
         self.assertIn("scripts/prefetch_parsers.py", DOCKERFILE)
         self.assertIn("TECHFLOW_TREE_SITTER_CACHE", DOCKERFILE)

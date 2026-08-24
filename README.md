@@ -2,7 +2,7 @@
 
 ## Epic #4 사내 Assist 실증과 Epic #5 준비
 
-TechFlow AI Gateway 0.15.0은 Community 자동 답변과 사내 Chat 직접 기술지원을 해결 시점까지 연속 대화로 제공한다. 두 채널은 DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드와 ABLESTACK Europa Preview를 종합하며 이미지·로그·압축파일을 함께 분석한다. Community의 실패 Post는 성공 전까지 다시 처리하고, 같은 Event의 중복 답변은 멱등 키로 막는다. 정상 주기 알림은 보내지 않으며 최초 장애와 실제 복구만 Chat으로 알린다.
+TechFlow AI Gateway 0.15.1은 Community 자동 답변과 사내 Chat 직접 기술지원을 해결 시점까지 연속 대화로 제공한다. 두 채널은 DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드와 ABLESTACK Europa Preview를 종합하며 이미지·로그·압축파일을 함께 분석한다. Community의 실패 Post는 Gateway가 해당 Post 처리를 확인할 때까지 완료하지 않고, 같은 Event의 중복 답변은 멱등 키로 막는다. 정상 주기 알림은 보내지 않으며 최초 장애와 실제 복구만 Chat으로 알린다.
 
 - [Epic #4 완료 보고서](docs/reports/epic4-assist-validation.md)
 - [Chat·Community 서비스 연속성 Runbook](docs/runbooks/epic4-service-continuity.md)
