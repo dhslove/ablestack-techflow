@@ -101,6 +101,27 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual([True, False, True, True], [item["responseRequested"] for item in events])
         self.assertEqual(["100", "101", "102", "103"], [item["postId"] for item in events])
 
+    def test_legacy_followup_includes_prior_human_context_and_attachments(self) -> None:
+        events = [
+            {"postId": "301", "postNumber": 1, "turnRole": "REQUESTER", "question": "최초 구성 오류",
+             "attachmentUrls": ["/assets/one.png", "/assets/two.png", "/assets/three.png"],
+             "_attachmentReferenceCount": 3},
+            {"postId": "302", "postNumber": 2, "turnRole": "STAFF", "question": "device를 disk로 변경",
+             "attachmentUrls": [], "_attachmentReferenceCount": 0},
+            {"postId": "410", "postNumber": 3, "turnRole": "ASSISTANT", "question": "이전 AI 답변",
+             "attachmentUrls": [], "_attachmentReferenceCount": 0},
+            {"postId": "412", "postNumber": 4, "turnRole": "REQUESTER", "question": "변경 후에도 실패",
+             "attachmentUrls": ["/assets/four.png", "/assets/five.png"],
+             "_attachmentReferenceCount": 2},
+        ]
+        result = poll_flarum.include_legacy_discussion_context(events[-1], events)
+        self.assertIn("최초 구성 오류", result["question"])
+        self.assertIn("device를 disk로 변경", result["question"])
+        self.assertIn("변경 후에도 실패", result["question"])
+        self.assertNotIn("이전 AI 답변", result["question"])
+        self.assertEqual(5, len(result["attachmentUrls"]))
+        self.assertEqual(5, result["_attachmentReferenceCount"])
+
     def test_resolution_event_carries_best_answer_actor(self) -> None:
         event = poll_flarum.resolution_event({
             "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
@@ -459,6 +480,8 @@ class CommunityPollerTests(unittest.TestCase):
             with patch.dict(os.environ, environment, clear=False), patch.object(
                 poll_flarum, "request_json", side_effect=fake_request
             ), patch.object(poll_flarum, "upload_artifacts", return_value=([], [])), patch.object(
+                poll_flarum, "get_gateway_case_if_exists", return_value=None
+            ), patch.object(
                 poll_flarum, "confirm_gateway_post", side_effect=TimeoutError("not confirmed")
             ):
                 result = poll_flarum.run_once(state_file)
@@ -511,6 +534,8 @@ class CommunityPollerTests(unittest.TestCase):
             with patch.dict(os.environ, environment, clear=False), patch.object(
                 poll_flarum, "request_json", side_effect=fake_request
             ), patch.object(poll_flarum, "upload_artifacts", return_value=([], [])), patch.object(
+                poll_flarum, "get_gateway_case_if_exists", return_value=None
+            ), patch.object(
                 poll_flarum, "confirm_gateway_post", return_value={"lastSeenPostId": "412"}
             ):
                 result = poll_flarum.run_once(state_file)

@@ -7,6 +7,7 @@
 - 여러 첨부파일이 같은 경고를 만들 때 순서를 유지하며 고유한 경고로 정규화
 - Activepieces Webhook 수락 후 Gateway의 `lastSeenPostId` 확인 전에는 Poller 체크포인트 금지
 - Gateway 처리 실패·지연 시 Post를 미완료 상태로 유지하고 다음 Poll에서 재시도
+- 기존 Discussion에 Case가 없으면 현재 후속 질문 1건에 앞선 질문·지원 답변·첨부를 합쳐 한 번만 분석
 
 ## v0.15.0 구현 범위
 

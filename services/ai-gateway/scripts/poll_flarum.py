@@ -315,6 +315,34 @@ def normalize_posts(discussion: dict, payload: dict, assistant_user_id: str | No
     return events
 
 
+def include_legacy_discussion_context(current: dict, events: list[dict]) -> dict:
+    history = [
+        item for item in events
+        if item["postNumber"] <= current["postNumber"] and item["turnRole"] != "ASSISTANT"
+    ]
+    if len(history) <= 1:
+        return current
+    role_labels = {"REQUESTER": "질문자", "STAFF": "지원 담당자"}
+    transcript = [
+        f"[{role_labels.get(item['turnRole'], '참여자')} Post #{item['postNumber']}]\n{item['question']}"
+        for item in history
+    ]
+    attachment_urls: list[str] = []
+    reference_count = 0
+    for item in history:
+        reference_count += int(item.get("_attachmentReferenceCount", 0) or 0)
+        for url in item.get("attachmentUrls") or []:
+            if url not in attachment_urls and len(attachment_urls) < 5:
+                attachment_urls.append(url)
+    current["question"] = (
+        "기존 토론의 질문과 지원 답변을 포함해 현재 후속 질문을 검토해 주세요.\n\n"
+        + "\n\n".join(transcript)
+    )[:16000]
+    current["attachmentUrls"] = attachment_urls
+    current["_attachmentReferenceCount"] = min(reference_count, 5)
+    return current
+
+
 def normalize(payload: dict, base_url: str) -> list[dict]:
     """Backward-compatible normalizer used by contract tests for first-post events."""
     included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
@@ -435,6 +463,16 @@ def confirm_gateway_post(gateway_url: str, discussion_id: str, post_id: str, tim
     raise TimeoutError(f"Gateway did not confirm discussion {discussion_id} post {post_id}")
 
 
+def get_gateway_case_if_exists(gateway_url: str, discussion_id: str) -> dict | None:
+    endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
+    try:
+        return request_json(endpoint).get("data") or None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+
+
 def _safe_warning_filename(filename: str) -> str:
     """Reduce untrusted attachment names to a short, single-line display value."""
     basename = Path(filename.replace("\\", "/")).name
@@ -491,7 +529,11 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                 })
             )
             discussion_failed = False
-            for event in normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id):
+            events = normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id)
+            gateway_case = None
+            if not bootstrap_current and any(item["postId"] not in seen_posts for item in events):
+                gateway_case = get_gateway_case_if_exists(gateway_url, discussion_id)
+            for event in events:
                 post_id = event["postId"]
                 if post_id in seen_posts:
                     continue
@@ -500,6 +542,8 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     _write_state(state_path, seen_posts, snapshots)
                     continue
                 correlation = f"community-{discussion_id}-{post_id}-{uuid4().hex[:8]}"
+                if gateway_case is None and event["postNumber"] > 1:
+                    include_legacy_discussion_context(event, events)
                 event["correlationId"] = correlation
                 event["eventId"] = f"flarum-post-{post_id}"
                 try:
@@ -509,7 +553,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     event["artifactIds"] = artifact_ids
                     event["artifactWarnings"] = artifact_warnings
                     request_json(webhook, data=event)
-                    confirm_gateway_post(
+                    gateway_case = confirm_gateway_post(
                         gateway_url, discussion_id, post_id, gateway_confirm_timeout
                     )
                     seen_posts.add(post_id)
