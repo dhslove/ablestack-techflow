@@ -343,7 +343,7 @@ class CommunityPollerTests(unittest.TestCase):
 
     def test_internal_flarum_image_origin_is_imported(self) -> None:
         event = {
-            "attachmentUrls": ["http://172.16.0.234/assets/files/2026-08-23/image.png"],
+            "attachmentUrls": ["https://172.16.0.234/assets/files/2026-08-23/image.png"],
             "_attachmentReferenceCount": 1,
         }
         image = self._Response(b"\x89PNG\r\n\x1a\nimage", "image/png")
@@ -431,10 +431,21 @@ class CommunityPollerTests(unittest.TestCase):
         )
         with patch.object(
             poll_flarum, "request_json",
-            side_effect=[missing, {"data": {"discussionId": "137", "lastSeenPostId": "412"}}],
+            side_effect=[
+                missing,
+                {"data": {"discussionId": "137", "lastSeenPostId": "412", "state": "DRAFT_PENDING"}},
+                {"data": {
+                    "discussionId": "137", "lastSeenPostId": "412", "state": "PUBLISHED",
+                    "publishedPostId": "413",
+                }},
+            ],
         ) as request, patch.object(poll_flarum.time, "sleep"):
-            case = poll_flarum.confirm_gateway_post("http://gateway:8090", "137", "412", 5)
+            case = poll_flarum.confirm_gateway_post(
+                "http://gateway:8090", "137", "412", 5, require_publication=True
+            )
         self.assertEqual("412", case["lastSeenPostId"])
+        self.assertEqual("413", case["publishedPostId"])
+        self.assertEqual(3, request.call_count)
         self.assertEqual(
             {"X-Correlation-Id": "community-confirm-137-412"},
             request.call_args.kwargs["extra_headers"],
@@ -551,7 +562,8 @@ class CommunityPollerTests(unittest.TestCase):
             ), patch.object(poll_flarum, "upload_artifacts", return_value=([], [])), patch.object(
                 poll_flarum, "get_gateway_case_if_exists", return_value=None
             ), patch.object(
-                poll_flarum, "confirm_gateway_post", return_value={"lastSeenPostId": "412"}
+                poll_flarum, "confirm_gateway_post",
+                return_value={"lastSeenPostId": "412", "state": "PUBLISHED", "publishedPostId": "413"},
             ):
                 result = poll_flarum.run_once(state_file)
             state = json.loads(state_file.read_text(encoding="utf-8"))

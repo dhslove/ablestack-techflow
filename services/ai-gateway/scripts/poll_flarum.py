@@ -387,7 +387,15 @@ def upload_artifacts(
     initial_warning_count = len(warnings)
     raw_urls = event.pop("attachmentUrls", [])
     reference_count = max(int(event.pop("_attachmentReferenceCount", 0) or 0), len(raw_urls))
-    trusted_origins = {_origin_identity(public_url), _origin_identity(base_url)}
+    public_origin = _origin_identity(public_url)
+    base_origin = _origin_identity(base_url)
+    trusted_origins = {public_origin, base_origin}
+    base_parsed = urllib.parse.urlparse(base_url)
+    if base_parsed.hostname and base_parsed.port is None:
+        trusted_origins.update({
+            ("http", base_parsed.hostname.casefold(), 80),
+            ("https", base_parsed.hostname.casefold(), 443),
+        })
     max_bytes, max_archive_bytes, timeout, retries = _attachment_policy()
     temp_root = Path(os.getenv(
         "TECHFLOW_COMMUNITY_ATTACHMENT_TMP_DIR", str(Path(tempfile.gettempdir()) / "techflow-community-poller")
@@ -447,7 +455,9 @@ def upload_artifacts(
     return ids, warnings
 
 
-def confirm_gateway_post(gateway_url: str, discussion_id: str, post_id: str, timeout_seconds: int) -> dict:
+def confirm_gateway_post(
+    gateway_url: str, discussion_id: str, post_id: str, timeout_seconds: int, *, require_publication: bool
+) -> dict:
     endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
     headers = {"X-Correlation-Id": f"community-confirm-{discussion_id}-{post_id}"}
     deadline = time.monotonic() + timeout_seconds
@@ -455,7 +465,12 @@ def confirm_gateway_post(gateway_url: str, discussion_id: str, post_id: str, tim
         try:
             payload = request_json(endpoint, extra_headers=headers)
             case = payload.get("data") or {}
-            if str(case.get("lastSeenPostId") or "") == post_id:
+            post_confirmed = str(case.get("lastSeenPostId") or "") == post_id
+            publication_confirmed = (
+                not require_publication
+                or (case.get("state") == "PUBLISHED" and bool(case.get("publishedPostId")))
+            )
+            if post_confirmed and publication_confirmed:
                 return case
         except urllib.error.HTTPError as exc:
             if exc.code != 404:
@@ -557,7 +572,8 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     event["artifactWarnings"] = artifact_warnings
                     request_json(webhook, data=event)
                     gateway_case = confirm_gateway_post(
-                        gateway_url, discussion_id, post_id, gateway_confirm_timeout
+                        gateway_url, discussion_id, post_id, gateway_confirm_timeout,
+                        require_publication=bool(event.get("responseRequested")) and not event.get("resolutionOnly", False),
                     )
                     seen_posts.add(post_id)
                     _write_state(state_path, seen_posts, snapshots)
