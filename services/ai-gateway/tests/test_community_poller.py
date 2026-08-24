@@ -101,7 +101,7 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual([True, False, True, True], [item["responseRequested"] for item in events])
         self.assertEqual(["100", "101", "102", "103"], [item["postId"] for item in events])
 
-    def test_legacy_followup_includes_prior_human_context_and_attachments(self) -> None:
+    def test_legacy_followup_includes_prior_text_and_prioritizes_current_attachments(self) -> None:
         events = [
             {"postId": "301", "postNumber": 1, "turnRole": "REQUESTER", "question": "최초 구성 오류",
              "attachmentUrls": ["/assets/one.png", "/assets/two.png", "/assets/three.png"],
@@ -119,8 +119,8 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertIn("device를 disk로 변경", result["question"])
         self.assertIn("변경 후에도 실패", result["question"])
         self.assertNotIn("이전 AI 답변", result["question"])
-        self.assertEqual(5, len(result["attachmentUrls"]))
-        self.assertEqual(5, result["_attachmentReferenceCount"])
+        self.assertEqual(["/assets/four.png", "/assets/five.png"], result["attachmentUrls"])
+        self.assertEqual(2, result["_attachmentReferenceCount"])
 
     def test_resolution_event_carries_best_answer_actor(self) -> None:
         event = poll_flarum.resolution_event({

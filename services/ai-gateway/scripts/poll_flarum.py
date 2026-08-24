@@ -327,19 +327,23 @@ def include_legacy_discussion_context(current: dict, events: list[dict]) -> dict
         f"[{role_labels.get(item['turnRole'], '참여자')} Post #{item['postNumber']}]\n{item['question']}"
         for item in history
     ]
-    attachment_urls: list[str] = []
-    reference_count = 0
-    for item in history:
-        reference_count += int(item.get("_attachmentReferenceCount", 0) or 0)
-        for url in item.get("attachmentUrls") or []:
-            if url not in attachment_urls and len(attachment_urls) < 5:
-                attachment_urls.append(url)
+    current_urls = list(dict.fromkeys(current.get("attachmentUrls") or []))[:5]
+    attachment_urls: list[str] = current_urls
+    reference_count = min(int(current.get("_attachmentReferenceCount", 0) or 0), 5)
+    if not attachment_urls:
+        for item in reversed(history[:-1]):
+            reference_count += int(item.get("_attachmentReferenceCount", 0) or 0)
+            for url in item.get("attachmentUrls") or []:
+                if url not in attachment_urls and len(attachment_urls) < 5:
+                    attachment_urls.append(url)
+            if attachment_urls:
+                break
     current["question"] = (
         "기존 토론의 질문과 지원 답변을 포함해 현재 후속 질문을 검토해 주세요.\n\n"
         + "\n\n".join(transcript)
     )[:16000]
     current["attachmentUrls"] = attachment_urls
-    current["_attachmentReferenceCount"] = min(reference_count, 5)
+    current["_attachmentReferenceCount"] = min(reference_count, len(attachment_urls) or 5)
     return current
 
 

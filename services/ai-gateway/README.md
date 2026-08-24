@@ -7,7 +7,7 @@
 - 여러 첨부파일이 같은 경고를 만들 때 순서를 유지하며 고유한 경고로 정규화
 - Activepieces Webhook 수락 후 Gateway의 `lastSeenPostId` 확인 전에는 Poller 체크포인트 금지
 - Gateway 처리 실패·지연 시 Post를 미완료 상태로 유지하고 다음 Poll에서 재시도
-- 기존 Discussion에 Case가 없으면 현재 후속 질문 1건에 앞선 질문·지원 답변·첨부를 합쳐 한 번만 분석
+- 기존 Discussion에 Case가 없으면 앞선 질문·지원 답변은 텍스트 맥락에 포함하고 현재 후속 질문의 첨부를 우선해 한 번만 분석
 - 답변 요청 Event는 Gateway Case가 `PUBLISHED`이고 게시물 ID가 확인된 뒤에만 완료
 - 제한된 Assistant 게시물 승인 해제는 Solution Selector 관리자 Identity로 수행
 
