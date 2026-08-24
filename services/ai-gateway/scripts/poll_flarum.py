@@ -449,10 +449,11 @@ def upload_artifacts(
 
 def confirm_gateway_post(gateway_url: str, discussion_id: str, post_id: str, timeout_seconds: int) -> dict:
     endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
+    headers = {"X-Correlation-Id": f"community-confirm-{discussion_id}-{post_id}"}
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         try:
-            payload = request_json(endpoint)
+            payload = request_json(endpoint, extra_headers=headers)
             case = payload.get("data") or {}
             if str(case.get("lastSeenPostId") or "") == post_id:
                 return case
@@ -466,7 +467,9 @@ def confirm_gateway_post(gateway_url: str, discussion_id: str, post_id: str, tim
 def get_gateway_case_if_exists(gateway_url: str, discussion_id: str) -> dict | None:
     endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
     try:
-        return request_json(endpoint).get("data") or None
+        return request_json(
+            endpoint, extra_headers={"X-Correlation-Id": f"community-case-check-{discussion_id}"}
+        ).get("data") or None
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None

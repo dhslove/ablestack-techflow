@@ -432,9 +432,24 @@ class CommunityPollerTests(unittest.TestCase):
         with patch.object(
             poll_flarum, "request_json",
             side_effect=[missing, {"data": {"discussionId": "137", "lastSeenPostId": "412"}}],
-        ), patch.object(poll_flarum.time, "sleep"):
+        ) as request, patch.object(poll_flarum.time, "sleep"):
             case = poll_flarum.confirm_gateway_post("http://gateway:8090", "137", "412", 5)
         self.assertEqual("412", case["lastSeenPostId"])
+        self.assertEqual(
+            {"X-Correlation-Id": "community-confirm-137-412"},
+            request.call_args.kwargs["extra_headers"],
+        )
+
+    def test_gateway_case_lookup_supplies_correlation_id(self) -> None:
+        with patch.object(
+            poll_flarum, "request_json", return_value={"data": {"discussionId": "137"}}
+        ) as request:
+            case = poll_flarum.get_gateway_case_if_exists("http://gateway:8090", "137")
+        self.assertEqual("137", case["discussionId"])
+        self.assertEqual(
+            {"X-Correlation-Id": "community-case-check-137"},
+            request.call_args.kwargs["extra_headers"],
+        )
 
     def test_unconfirmed_gateway_post_is_not_checkpointed(self) -> None:
         discussion_payload = {
