@@ -10,6 +10,7 @@
 - 기존 Discussion에 Case가 없으면 앞선 질문·지원 답변은 텍스트 맥락에 포함하고 현재 후속 질문의 첨부를 우선해 한 번만 분석
 - 답변 요청 Event는 Gateway Case가 `PUBLISHED`이고 게시물 ID가 확인된 뒤에만 완료
 - 제한된 Assistant 게시물 승인 해제는 Solution Selector 관리자 Identity로 수행
+- 이미지·로그가 있는 종합 분석은 지연과 비용을 제어하기 위해 기본 Responses Profile을 사용하고, 첨부가 없는 복합 소스 검토만 Escalation Profile을 사용
 
 ## v0.15.0 구현 범위
 
