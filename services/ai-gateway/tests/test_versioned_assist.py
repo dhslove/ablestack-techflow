@@ -146,6 +146,26 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             {item["path"] for item in ranked[:3]},
         )
 
+    def test_network_request_failure_keeps_create_api_error_and_background_ui_context(self) -> None:
+        question = '네트워크 생성 중 요청 실패가 발생하고 화면에는 HTTP 432가 보입니다.'
+        current_rows = [
+            {"path": "api/src/CreateNetworkCmd.java", "content": "createNetwork physicalNetworkId"},
+            {"path": "server/src/NetworkServiceImpl.java", "content": "networkOfferingId guestType specifyVlan"},
+            {"path": "api/src/ApiErrorCode.java", "content": "UNSUPPORTED_ACTION_ERROR(432)"},
+            {"path": "server/src/ApiServer.java", "content": "Unknown API command unsupported action"},
+            {"path": "ui/src/SamlDomainSwitcher.vue", "content": "listAndSwitchSamlAccount"},
+            {"path": "ui/src/request.js", "content": "x-description errortext"},
+            {"path": "docs/generic-network.md", "content": "network"},
+        ]
+
+        selected = select_context_results(question, {"CLOUD_DIPLO": current_rows})
+
+        selected_paths = {item["path"] for item in selected}
+        self.assertEqual(6, len(selected))
+        self.assertIn("api/src/CreateNetworkCmd.java", selected_paths)
+        self.assertIn("api/src/ApiErrorCode.java", selected_paths)
+        self.assertIn("ui/src/SamlDomainSwitcher.vue", selected_paths)
+
     def test_live_official_source_has_platform_priority(self) -> None:
         self.assertEqual(
             (3, "OFFICIAL_PLATFORM_DOCUMENTATION"),

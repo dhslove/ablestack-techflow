@@ -335,12 +335,20 @@ def select_context_results(question: str, results_by_profile: dict[str, list[dic
     selected: list[dict[str, Any]] = []
     for profile_id in VERSIONED_SOURCE_PROFILES:
         if _is_specialized_question(question):
-            limit = {
-                "SHARED_DOCS": 3,
-                "CLOUD_DIPLO": 3,
-                CURATED_PLATFORM_PROFILE: 4,
-                "CLOUD_EUROPA": 3,
-            }.get(profile_id, 1)
+            if _is_network_request_failure_question(question):
+                limit = {
+                    "SHARED_DOCS": 3,
+                    "CLOUD_DIPLO": 6,
+                    CURATED_PLATFORM_PROFILE: 2,
+                    "CLOUD_EUROPA": 2,
+                }.get(profile_id, 1)
+            else:
+                limit = {
+                    "SHARED_DOCS": 3,
+                    "CLOUD_DIPLO": 3,
+                    CURATED_PLATFORM_PROFILE: 4,
+                    "CLOUD_EUROPA": 3,
+                }.get(profile_id, 1)
         else:
             limit = 4 if profile_id in {"SHARED_DOCS", "CLOUD_DIPLO", "CLOUD_EUROPA"} else 1
         for item in relevant_results(question, results_by_profile.get(profile_id) or [])[:limit]:
