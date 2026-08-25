@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-25T08:31:00Z",
+  "issue": 100,
+  "pullRequest": 101,
+  "discussion": {
+    "id": 176,
+    "url": "https://community.ablecloud.io/d/176-neteuweokeureul-mandeulryeogo-haneunde-yoceongsilpaerago-mesijiga-naoneun-hyeonsangi-balsaenghabnida",
+    "caseId": "f7c792aa-d834-4315-b576-751db9840748",
+    "postId": 418,
+    "postEditedAt": "2026-08-25T17:30:26+09:00",
+    "caseState": "PUBLISHED",
+    "answerState": "ANSWERED",
+    "conversationState": "WAITING_RESOLUTION",
+    "artifactCount": 2,
+    "duplicateInformationRequestsAfterCorrection": 0
+  },
+  "analysis": {
+    "featureSourceMapping": [
+      "createNetwork",
+      "CreateNetworkCmd",
+      "NetworkServiceImpl",
+      "ApiErrorCode",
+      "SamlDomainSwitcher",
+      "listAndSwitchSamlAccount"
+    ],
+    "artifactObservations": [
+      "네트워크 생성 화면에 요청 실패 알림 2건",
+      "SamlDomainSwitcher.vue GET 요청의 HTTP 432"
+    ],
+    "targetOperationDistinguishedFromBackgroundRequest": true,
+    "baselineAnswerBeforeAdditionalMaterialRequest": true,
+    "priorConversationArtifactsReused": true,
+    "providerProfileId": "OPENAI_RAG_DEFAULT_V1"
+  },
+  "release": {
+    "version": "0.16.1",
+    "image": "techflow/ai-gateway:issue100-0.16.1-1da48eb",
+    "commit": "1da48eb",
+    "backupRoot": "/home/ablecloud/techflow-backups/issue100-20260825T081722Z",
+    "databaseBackupValidated": true
+  },
+  "validation": {
+    "repositoryTestsPassed": 290,
+    "gatewayHealthy": true,
+    "communityHttpStatus": 200,
+    "chatHttpStatus": 200,
+    "activepiecesHttpStatus": 200,
+    "gatewayErrorsAfterFinalStart": 0,
+    "pollerRecoveredAfterGatewayReplacement": true,
+    "publicInternalEvidenceExposed": false
+  },
+  "protectedServices": {
+    "communityPollerChanged": false,
+    "sourceReconcilerChanged": false,
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  }
+}

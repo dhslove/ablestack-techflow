@@ -1,4 +1,17 @@
-# Diplo 현재판·Europa 프리뷰 안전 답변 배포·운영 Runbook
+# 기능·소스 분석 기반 Diplo 현재판·Europa 프리뷰 안전 답변 Runbook
+
+## 답변 절차
+
+모든 사용자 질문은 다음 순서를 지킨다.
+
+1. 질문에서 제품 기능, API 명령, UI 컴포넌트와 Source Symbol을 식별한다.
+2. ABLESTACK 문서, 현재 Diplo와 관련 제품 코드, Europa Preview, 공식 플랫폼 자료 순으로 검토한다.
+3. 첨부 화면·로그·압축파일이 있으면 상태 코드, API 명령, 컴포넌트, 오류 문구를 실제 Artifact에서 읽는다.
+4. 첨부 관찰 내용과 Source 동작을 연결하되, 배경 요청 실패와 사용자가 실행한 작업 실패를 구분한다.
+5. 정확한 원인이 미확정이어도 Source에서 확인한 실패 조건, 가능성이 높은 원인과 안전한 첫 점검을 기초 답변으로 먼저 제공한다.
+6. 추가 자료는 기초 답변 뒤에만 요청한다. 이미 제공된 버전·이미지·시각·로그를 다시 요구하지 않고, 다음 분기를 판정하는 정확한 API 응답·명령 결과·로그만 요청한다.
+7. 후속 질문은 해결 표시 전까지 같은 Case의 최근 Artifact를 최대 5건 재사용한다.
+8. 후속 결과가 다시 `ABSTAINED`이면 같은 정보 요청을 게시하지 않고 한 번 재작성한다. 재작성도 진행되지 않으면 게시를 중단하고 재시도 대상으로 남긴다.
 
 ## 배포 전
 
@@ -10,22 +23,22 @@
 
 ## 배포
 
-시험 서버 작업 루트는 `/home/ablecloud/techflow-ai-gateway`다. Secret 파일과 `.env`는 기존 서버 파일을 그대로 사용하고 배포 묶음에 포함하지 않는다.
+시험 서버 작업 루트는 `/home/ablecloud/techflow-ai-gateway`다. Secret 파일과 `.env`는 기존 서버 파일을 그대로 사용하고 배포 묶음에 포함하지 않는다. 변경된 서비스만 명시적으로 빌드·교체한다. 답변 검색·생성 코드만 바뀐 경우 Gateway만 대상이다.
 
 ```bash
 cd /home/ablecloud/techflow-ai-gateway/deploy/compose/ai-gateway
-export TECHFLOW_RAG_RELEASE=issue-63-troubleshooting
+export TECHFLOW_RAG_RELEASE=<issue>-<version>-<commit>
 docker compose --env-file .env \
   -f compose.yml -f compose.openai.override.yml \
-  build gateway community-poller
+  build gateway
 docker compose --env-file .env \
   -f compose.yml -f compose.openai.override.yml \
-  up -d gateway community-poller
+  up -d --no-deps gateway
 ```
 
 ## 확인
 
-1. `/healthz`에서 Version `0.11.3`, Database·Vector `ready`, Provider `openai`를 확인한다.
+1. `/healthz`에서 배포한 Version, Database·Vector `ready`, Provider `openai`를 확인한다.
 2. 일반 Assist 질문이 Coverage 9개와 현재판·플랫폼 런타임·프리뷰 구조화 판정을 반환하는지 확인한다.
 3. 일반 Chat 사용자의 기술 질문이 Reviewer 권한 없이 응답되며 내부 계보가 없는지 확인한다.
 4. Community 질문이 `DRAFT_PENDING` Case를 생성하고 `ANSWERED` 또는 올바른 보류 판정을 갖는지 확인한다.
@@ -34,12 +47,16 @@ docker compose --env-file .env \
 7. `techflow-activepieces-event-gateway-1`이 재시작 없이 기존 Image로 계속 `healthy`인지 확인한다.
 8. 일반 Chat과 Community Draft에 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전`이 순서대로 모두 나타나는지 확인한다.
 9. 신규 Discussion 생성 후 Poll 10초와 AI 생성 시간 내 Reviewer에게 Chat 알림이 도착하고, 알림·`상세`에는 근거가 없으며 `근거 <Case>`에서만 Ledger가 보이는지 확인한다.
+10. 원 질문의 첨부가 후속 질문 분석에도 전달되고 `artifactEvidence`에 실제 Artifact ID가 유지되는지 확인한다.
+11. 공개 답변에서 기초 진단과 우선 점검이 추가 자료 요청보다 먼저 표시되는지 확인한다.
+12. 이미 제공된 제품 버전·첨부·로그 요청이 반복되지 않는지 확인한다.
+13. 배포 전후 Poller·Source Reconciler·GitHub→Chat Event Gateway·Activepieces App/Worker 컨테이너 ID가 같은지 확인한다.
 
 HTTP 200만으로 성공 판정하지 않는다. 구조화 상태, Coverage, 외부 Projection 검사, Reviewer Ledger, 컨테이너 Health를 모두 확인한다.
 
 ## 운영 판정
 
-- 범용 장애 질문이 특정 환경·로그 없이 입력되면 `INSUFFICIENT_EVIDENCE`로 보류하는 것이 정상이다.
+- 범용 장애 질문의 정확한 원인이 미확정이어도 Source 근거로 안전한 진단 순서를 제공할 수 있으면 `ANSWERED`와 `INSUFFICIENT_EVIDENCE`를 함께 사용한다. 추가 자료 요청만 가능한 경우에만 `ABSTAINED`를 사용한다.
 - 코드 식별자나 재현 정보가 충분하면 관련 Profile 근거만 생성 컨텍스트에 포함한다.
 - Europa에 동일 클래스가 존재하는 것만으로 개선으로 판정하지 않는다. 동일 원인에 대한 변경 근거가 있어야 한다.
 - `PREVIEW_NOT_FOUND`는 향후 보완 검토 가이드이며 출시 계획을 대신하지 않는다.
@@ -47,6 +64,7 @@ HTTP 200만으로 성공 판정하지 않는다. 구조화 상태, Coverage, 외
 - QEMU/libvirt 참조는 승인된 로컬 스냅샷만 사용한다. 30일 주기 변경 확인 후 Source Reviewer 승인으로만 활성화한다.
 - 콘솔 `연결중` 단일 VM 사례는 `CURRENT_RUNTIME_ISSUE`로 분류한다. 읽기 전용 진단은 `virsh domstate`, `virsh domdisplay`, QMP `query-vnc`, `virsh dumpxml`, `journalctl` 순으로 수행한다.
 - 운영 VM 조치는 Mold의 라이브 마이그레이션을 우선하고, 불가능하면 서비스 중단을 고지한 뒤 정지 후 시작한다. 직접 `virsh migrate`는 승인된 예외 절차가 아니면 실행하지 않는다.
+- Mold의 일반 `요청 실패` 문구는 실제 원인을 표시하지 않는다. 브라우저 Network 탭에서 사용자가 실행한 API 명령과 응답 본문을 확인한다. `SamlDomainSwitcher` 같은 배경 호출은 대상 작업과 동일한 실패로 단정하지 않는다.
 
 ## 롤백
 
