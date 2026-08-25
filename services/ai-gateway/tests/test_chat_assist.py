@@ -334,8 +334,10 @@ class ChatEndpointTest(unittest.TestCase):
     def test_general_user_can_submit_technical_question_without_reviewer_rights(self) -> None:
         response = self.post(form("VM 배포 오류의 원인을 알려줘", username="other"))
         self.assertEqual(200, response.status_code)
-        self.assertIn("확인을 도와드리겠습니다", response.json()["text"])
-        self.assertIn("ABLESTACK Diplo 버전", response.json()["text"])
+        self.assertIn("질문을 접수", response.json()["text"])
+        self.assertEqual(["7"], self.bot.sent[-1][0])
+        self.assertIn("확인을 도와드리겠습니다", self.bot.sent[-1][1]["text"])
+        self.assertIn("ABLESTACK Diplo 버전", self.bot.sent[-1][1]["text"])
 
     def test_bad_token_is_denied_without_detail(self) -> None:
         response = self.post(form("대기", token="wrong"))

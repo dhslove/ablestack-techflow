@@ -151,6 +151,16 @@
       "path": "0014_epic4_operations_up.sql",
       "sha256": "5e1e405875deea29208bc0baab897b1ad1e9d332cc8a217f9891862f1122f404",
       "bytes": 2134
+    },
+    {
+      "path": "0015_chat_async_job_down.sql",
+      "sha256": "bf33c2887202e24881e477e1e2bb995f9c93129abfe18ba1b660d25ee0100503",
+      "bytes": 38
+    },
+    {
+      "path": "0015_chat_async_job_up.sql",
+      "sha256": "5a08d29487e130f6ad06ebeab8346ffd70cf2ccf9a984bbb38e44ac44f19eb05",
+      "bytes": 1192
     }
   ]
 }

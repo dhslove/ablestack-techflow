@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import asyncio
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -210,11 +211,23 @@ def create_app(
         runtime_settings.community_reject_webhook_file,
         runtime_settings.chat_bot_enabled,
     )
+    chat_startup_tasks: set[asyncio.Task] = set()
+    chat_user_locks: dict[str, asyncio.Lock] = {}
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        yield
-        runtime_store.close()
+        for job in runtime_store.recover_chat_jobs():
+            task = asyncio.create_task(_run_chat_job(UUID(str(job["jobId"]))))
+            chat_startup_tasks.add(task)
+            task.add_done_callback(chat_startup_tasks.discard)
+        try:
+            yield
+        finally:
+            for task in tuple(chat_startup_tasks):
+                task.cancel()
+            if chat_startup_tasks:
+                await asyncio.gather(*chat_startup_tasks, return_exceptions=True)
+            runtime_store.close()
 
     application = FastAPI(
         title="TechFlow AI Gateway",
@@ -1077,11 +1090,106 @@ def create_app(
             current = runtime_store.get_community_case(case_id)
         return current
 
+    async def _run_chat_job(job_id: UUID) -> None:
+        initial = runtime_store.get_chat_job(job_id)
+        user_id = str(initial["userId"])
+        lock = chat_user_locks.setdefault(user_id, asyncio.Lock())
+        fingerprint = hashlib.sha256(f"chat-async:{job_id}".encode("utf-8")).hexdigest()
+        async with lock:
+            while True:
+                job = runtime_store.get_chat_job(job_id)
+                if job["state"] in {"COMPLETED", "DEAD_LETTER", "CANCELLED"}:
+                    return
+                claimed = runtime_store.claim_chat_job(job_id)
+                if claimed["state"] != "RUNNING":
+                    await asyncio.sleep(0.5)
+                    continue
+                try:
+                    turns = runtime_store.list_chat_turns(user_id, 50)
+                    target_index = next(
+                        index for index, item in enumerate(turns)
+                        if item["role"] == "USER" and item["postId"] == claimed["postId"]
+                    )
+                    target = turns[target_index]
+                    cached = next(
+                        (item for item in turns if item["role"] == "ASSISTANT" and item["postId"] == claimed["postId"]),
+                        None,
+                    )
+                    if cached:
+                        answer = cached["content"]
+                    else:
+                        prior_turns = turns[:target_index]
+                        transcript = "\n".join(
+                            f"{'사용자' if item['role'] == 'USER' else '전문 엔지니어'}: {item['content']}"
+                            for item in prior_turns[-12:]
+                        )
+                        contextual_question = (
+                            "같은 사용자의 기술지원 대화입니다. 이전 맥락을 유지하되 현재 질문을 우선하고, "
+                            "DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드 전체, ABLESTACK Europa 프리뷰를 순서대로 "
+                            "검토해 친절하고 쉬운 말로 답하세요. 정보가 부족하면 다음에 필요한 자료를 구체적으로 요청하세요.\n\n"
+                            + (f"이전 대화:\n{transcript}\n\n" if transcript else "")
+                            + f"현재 질문:\n{target['content']}"
+                        )[:16000]
+                        assist_request = ComprehensiveSynthesisRequest(
+                            queryId=uuid4(), question=contextual_question, actorId=f"chat:{user_id}",
+                            productVersion="diplo", locale="ko-KR", classification="D0",
+                        )
+                        result = await asyncio.to_thread(
+                            _query_comprehensive, assist_request, claimed["correlationId"]
+                        )
+                        answer = format_public_answer(result)
+                        if not answer and result.get("state") == "NEEDS_INFORMATION":
+                            needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
+                            answer = "추가 정보가 필요합니다.\n" + "\n".join(f"• {item}" for item in needed)
+                        if not answer:
+                            if result.get("state") == "FAILED":
+                                raise RuntimeError("AI provider did not complete the Chat answer")
+                            answer = "검토 근거가 충분하지 않아 답변을 보류했습니다. 관련 로그나 화면 정보를 함께 보내 주세요."
+                        answer = (answer + "\n\n추가 질문을 이어서 보내 주세요. 해결되면 `해결`이라고 입력해 주세요.")[:7000]
+                    if runtime_store.get_chat_job(job_id)["state"] == "CANCELLED":
+                        return
+                    if not cached:
+                        runtime_store.record_chat_turn(user_id, claimed["postId"], "ASSISTANT", answer)
+                    await asyncio.to_thread(runtime_chat_bot.send, [user_id], {"text": answer})
+                    runtime_store.complete_chat_job(job_id)
+                    runtime_store.recover_operation_failure(fingerprint, claimed["correlationId"])
+                    _json_log(
+                        "chat_async_answer_sent", correlationId=claimed["correlationId"],
+                        jobId=str(job_id), userIdHash=hashlib.sha256(user_id.encode()).hexdigest()[:12],
+                        attempt=claimed["attemptCount"],
+                    )
+                    return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    failed = runtime_store.fail_chat_job(job_id, type(exc).__name__)
+                    runtime_store.record_operation_failure(
+                        "chat", "async-answer", fingerprint, type(exc).__name__,
+                        claimed["correlationId"], failed["maxAttempts"],
+                    )
+                    if failed["state"] == "RETRYING":
+                        _json_log(
+                            "chat_async_answer_retry", correlationId=claimed["correlationId"],
+                            jobId=str(job_id), attempt=failed["attemptCount"], errorType=type(exc).__name__,
+                        )
+                        continue
+                    try:
+                        await asyncio.to_thread(runtime_chat_bot.send, [user_id], {
+                            "text": "AI 분석을 완료하지 못했습니다. 잠시 후 질문을 다시 보내 주세요."
+                        })
+                    except Exception:
+                        pass
+                    _json_log(
+                        "chat_async_answer_dead_letter", correlationId=claimed["correlationId"],
+                        jobId=str(job_id), attempts=failed["attemptCount"], errorType=type(exc).__name__,
+                    )
+                    return
+
     @application.post(
         "/v1/chat/synology/events", response_class=JSONResponse,
         operation_id="handleSynologyChatEvent",
     )
-    async def handle_synology_chat_event(request: Request) -> JSONResponse:
+    async def handle_synology_chat_event(request: Request, background_tasks: BackgroundTasks) -> JSONResponse:
         try:
             event = parse_chat_event(request.headers.get("content-type", ""), await request.body())
             runtime_chat_bot.validate(event.token)
@@ -1127,44 +1235,26 @@ def create_app(
                     "text": "Community 답변은 이제 승인 없이 자동 게시됩니다. 상세 또는 이력 명령으로 게시 상태를 확인해 주세요."
                 })
             if command == "resolve":
+                cancelled = runtime_store.cancel_chat_jobs(event.user_id)
                 runtime_store.resolve_chat_conversation(event.user_id)
                 return JSONResponse(content={
                     "text": "이 기술지원 대화를 해결된 상태로 마쳤습니다. 다음 질문은 새로운 맥락으로 시작합니다."
+                            + (f" 진행 중이던 분석 {cancelled}건도 취소했습니다." if cancelled else "")
                 })
             if command == "unknown" and event.text:
                 runtime_store.open_chat_conversation(event.user_id, event.username)
-                previous = runtime_store.list_chat_turns(event.user_id, 12)
-                cached = next((item for item in previous if item["postId"] == event.post_id
-                               and item["role"] == "ASSISTANT"), None)
-                if cached:
-                    return JSONResponse(content={"text": cached["content"][:7000]})
-                transcript = "\n".join(
-                    f"{'사용자' if item['role'] == 'USER' else '전문 엔지니어'}: {item['content']}"
-                    for item in previous
+                runtime_store.record_chat_turn(event.user_id, event.post_id, "USER", event.text)
+                job = runtime_store.enqueue_chat_job(
+                    event.user_id, event.post_id, request.state.correlation_id,
                 )
-                current_question = event.text
-                contextual_question = (
-                    "같은 사용자의 기술지원 대화입니다. 이전 맥락을 유지하되 현재 질문을 우선하고, "
-                    "DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드 전체, ABLESTACK Europa 프리뷰를 순서대로 "
-                    "검토해 친절하고 쉬운 말로 답하세요. 정보가 부족하면 다음에 필요한 자료를 구체적으로 요청하세요.\n\n"
-                    + (f"이전 대화:\n{transcript}\n\n" if transcript else "")
-                    + f"현재 질문:\n{current_question}"
-                )[:16000]
-                runtime_store.record_chat_turn(event.user_id, event.post_id, "USER", current_question)
-                assist_request = ComprehensiveSynthesisRequest(
-                    queryId=uuid4(), question=contextual_question, actorId=f"chat:{event.user_id}",
-                    productVersion="diplo", locale="ko-KR", classification="D0",
-                )
-                result = await asyncio.to_thread(_query_comprehensive, assist_request, request.state.correlation_id)
-                answer = format_public_answer(result)
-                if not answer and result.get("state") == "NEEDS_INFORMATION":
-                    needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
-                    answer = "추가 정보가 필요합니다.\n" + "\n".join(f"• {item}" for item in needed)
-                if not answer:
-                    answer = "검토 근거가 충분하지 않아 답변을 보류했습니다. 관련 로그나 화면 정보를 함께 보내 주세요."
-                answer = (answer + "\n\n추가 질문을 이어서 보내 주세요. 해결되면 `해결`이라고 입력해 주세요.")[:7000]
-                runtime_store.record_chat_turn(event.user_id, event.post_id, "ASSISTANT", answer)
-                return JSONResponse(content={"text": answer})
+                if job.pop("created", False):
+                    background_tasks.add_task(_run_chat_job, UUID(str(job["jobId"])))
+                    text = "질문을 접수했습니다. AI 분석이 완료되면 이 대화에 답변을 보내드리겠습니다."
+                elif job["state"] == "COMPLETED":
+                    text = "이미 처리한 질문입니다. 이전 AI 답변을 확인해 주세요."
+                else:
+                    text = "이미 접수된 질문입니다. AI 분석이 완료되면 이 대화에 답변을 보내드리겠습니다."
+                return JSONResponse(content={"text": text})
             return JSONResponse(content={"text": "알 수 없는 명령입니다.\n\n" + help_text()})
         except InvalidBoundaryError:
             return JSONResponse(status_code=403, content={"text": "요청 인증 또는 입력 검증에 실패했습니다."})
