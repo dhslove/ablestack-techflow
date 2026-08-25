@@ -18,6 +18,7 @@ from app.versioned_assist import (
     format_knowledge_base,
     projection_is_safe,
     relevant_results,
+    implementation_identifiers,
     sanitize_public_text,
     simplify_public_text,
     select_context_results,
@@ -124,6 +125,9 @@ class VersionedAssistPolicyTest(unittest.TestCase):
             self.assertIn(expected, terms)
             self.assertIn(expected, expanded)
             self.assertIn(expected, plan["featureSourceTerms"])
+
+        self.assertIn("CreateNetworkCmd", implementation_identifiers(expanded))
+        self.assertIn("SamlDomainSwitcher", implementation_identifiers(expanded))
 
     def test_network_request_failure_prioritizes_api_and_ui_source_over_generic_network_text(self) -> None:
         question = '네트워크 생성 중 요청 실패가 발생하고 화면에는 HTTP 432가 보입니다.'

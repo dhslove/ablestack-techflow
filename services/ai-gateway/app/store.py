@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from .provider import PROVIDER_PROFILES
 from .conversation import conversation_state_for_draft, source_post_id
+from .versioned_assist import implementation_identifiers
 
 
 KB_SOLUTION_CONFIRMED_EVENT = "KB_SOLUTION_CONFIRMED"
@@ -622,11 +623,26 @@ class MemoryStore:
             terms = {term.lower() for term in request["question"].split() if len(term) > 1}
             fts = sorted(candidates, key=lambda c: (-sum(term in c.content.lower() for term in terms), str(c.id)))[:20]
             identifier = sorted(candidates, key=lambda c: (-sum(term in (c.symbol or "").lower() for term in terms), str(c.id)))[:20]
+            implementation_terms = tuple(item.casefold() for item in implementation_identifiers(request["question"]))
+            implementation = sorted(
+                (
+                    chunk for chunk in candidates
+                    if any(term in f"{chunk.path}\n{chunk.symbol or ''}".casefold() for term in implementation_terms)
+                ),
+                key=lambda c: (
+                    -sum(term in f"{c.path}\n{c.symbol or ''}".casefold() for term in implementation_terms), str(c.id),
+                ),
+            )[:20]
             query_vector = embedding_result.vectors[0]
             vector = sorted(candidates, key=lambda c: (-cosine_similarity(query_vector, self._embeddings[c.id]), str(c.id)))[:30]
             kinds = {chunk.id: chunk.source_kind for chunk in candidates}
             ranked = reciprocal_rank_fusion(
-                {"fts": [c.id for c in fts], "identifier": [c.id for c in identifier], "vector": [c.id for c in vector]},
+                {
+                    "fts": [c.id for c in fts],
+                    "identifier": [c.id for c in identifier],
+                    "implementation": [c.id for c in implementation],
+                    "vector": [c.id for c in vector],
+                },
                 kinds,
             )[:10]
             lookup = {chunk.id: chunk for chunk in candidates}

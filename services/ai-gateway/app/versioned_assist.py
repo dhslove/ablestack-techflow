@@ -249,6 +249,12 @@ def feature_source_terms(question: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(anchors))
 
 
+def implementation_identifiers(question: str, *, limit: int = 40) -> tuple[str, ...]:
+    """Extract explicit API, component, file, and symbol terms for a deterministic retrieval channel."""
+    identifiers = re.findall(r"[A-Za-z][A-Za-z0-9_.-]{4,}", question)
+    return tuple(dict.fromkeys(identifiers))[:limit]
+
+
 def _is_specialized_question(question: str) -> bool:
     return bool(feature_source_terms(question))
 

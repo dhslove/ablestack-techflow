@@ -228,13 +228,14 @@ class ApiContractTest(unittest.TestCase):
         )
         response = self.client.post(
             "/v1/rag/retrieve",
-            json={"queryId": str(uuid4()), "question": "print ok", "sourceProfileIds": ["CLOUD_MAIN"]},
+            json={"queryId": str(uuid4()), "question": "src/main.py print ok", "sourceProfileIds": ["CLOUD_MAIN"]},
             headers={"X-Correlation-Id": CORRELATION},
         )
         self.assertEqual(200, response.status_code, response.text)
         result = response.json()["data"]["results"][0]
         self.assertEqual("a" * 40, result["commit"])
         self.assertEqual("src/main.py", result["path"])
+        self.assertIn("implementation", result["channels"])
 
     def test_query_requires_exactly_one_scope(self) -> None:
         response = self.client.post(

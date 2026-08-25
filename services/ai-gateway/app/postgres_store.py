@@ -14,6 +14,7 @@ from .conversation import conversation_state_for_draft, source_post_id
 from .config import Settings
 from .indexing import build_index_bundle, reciprocal_rank_fusion
 from .source_registry import SOURCE_PROFILES, get_profile, list_profiles, validate_candidate_contract
+from .versioned_assist import implementation_identifiers
 from .store import (
     KB_SOLUTION_CONFIRMED_EVENT,
     ConflictError,
@@ -897,15 +898,33 @@ class PostgresStore:
                 base + " WHERE c.active AND v.state='ACTIVE' AND c.source_version_id=ANY(%s) AND c.symbol IS NOT NULL ORDER BY similarity(c.symbol, %s) DESC, c.id LIMIT 20",
                 (version_ids, request["question"]),
             ).fetchall()
+            identifiers = list(implementation_identifiers(request["question"]))
+            implementation = []
+            if identifiers:
+                implementation = connection.execute(
+                    base + """ CROSS JOIN LATERAL (
+                        SELECT count(*) AS hits FROM unnest(%s::text[]) AS term
+                        WHERE position(lower(term) in lower(c.path)) > 0
+                           OR position(lower(term) in lower(coalesce(c.symbol, ''))) > 0
+                      ) lexical
+                      WHERE c.active AND v.state='ACTIVE' AND c.source_version_id=ANY(%s)
+                        AND lexical.hits > 0
+                      ORDER BY lexical.hits DESC, c.id LIMIT 20""",
+                    (identifiers, version_ids),
+                ).fetchall()
             vector = connection.execute(
                 base + " JOIN rag_chunk_embedding e ON e.chunk_id=c.id WHERE c.active AND v.state='ACTIVE' AND c.source_version_id=ANY(%s) ORDER BY e.embedding <=> %s::vector, c.id LIMIT 30",
                 (version_ids, query_vector),
             ).fetchall()
-            lookup = {row["id"]: row for row in [*fts, *identifier, *vector]}
+            lookup = {row["id"]: row for row in [*fts, *identifier, *implementation, *vector]}
             kinds = {key: row["source_kind"] for key, row in lookup.items()}
             ranked = reciprocal_rank_fusion(
-                {"fts": [row["id"] for row in fts], "identifier": [row["id"] for row in identifier],
-                 "vector": [row["id"] for row in vector]}, kinds,
+                {
+                    "fts": [row["id"] for row in fts],
+                    "identifier": [row["id"] for row in identifier],
+                    "implementation": [row["id"] for row in implementation],
+                    "vector": [row["id"] for row in vector],
+                }, kinds,
             )[:10]
             self._record_embedding_call(connection, embedding_result, correlation_id, query_id=query_id)
         results = []
