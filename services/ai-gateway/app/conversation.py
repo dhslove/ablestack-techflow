@@ -15,8 +15,10 @@ ROLE_LABELS = {
 PROGRESSION_RETRY_INSTRUCTION = (
     "[진행성 재작성 필수]\n"
     "직전 답변의 설명과 점검 목록을 반복하지 마십시오. "
-    "사람 참여자의 최신 내용에 대한 해결책을 맨 먼저 쓰고, 근거가 있는 정확한 CLI 명령, 실행 위치, "
-    "정상 판정 기준을 포함하십시오. 해결되지 않을 때만 다음 대안과 필요한 명령 결과를 요청하십시오."
+    "관련 제품 기능과 Source 근거에서 확인한 기초 진단과 해결책을 맨 먼저 쓰십시오. 첨부 화면에서는 상태 코드, "
+    "API 명령, 컴포넌트 이름과 오류 문구를 읽어 Source 동작과 연결하십시오. 근거가 있는 정확한 CLI 명령, "
+    "실행 위치, 정상 판정 기준을 포함하십시오. 원인을 확정하지 못해도 확인된 실패 분기와 안전한 점검 순서를 "
+    "먼저 설명한 뒤, 아직 제공되지 않은 자료 한정으로 구체적인 명령 결과나 응답 본문을 요청하십시오."
 )
 
 
@@ -36,6 +38,25 @@ def _excerpt(value: object, limit: int) -> str:
 def source_post_id(request: dict[str, Any]) -> str:
     """Return a stable identifier for legacy and Post-aware Community events."""
     return str(request.get("postId") or f"discussion-{request['discussionId']}-first")
+
+
+def conversation_artifact_ids(
+    turns: Iterable[dict[str, Any]],
+    incoming: dict[str, Any],
+    *,
+    limit: int = 5,
+) -> list[str]:
+    """Keep the newest unique artifacts available throughout an unresolved conversation."""
+    rows = [*list(turns), incoming]
+    selected: list[str] = []
+    for item in reversed(rows):
+        for artifact_id in item.get("artifactIds") or []:
+            value = str(artifact_id)
+            if value and value not in selected:
+                selected.append(value)
+            if len(selected) == limit:
+                return selected
+    return selected
 
 
 def build_conversation_question(
@@ -83,9 +104,15 @@ def build_conversation_question(
         + "\n".join(transcript)
         + "\n\n[응답 지침]\n"
         "최초 질문부터 현재 댓글까지 하나의 기술지원 맥락으로 종합하되, 최신 질문에 먼저 직접 답하십시오. "
+        "반드시 질문과 관련된 제품 기능, API 명령, UI 컴포넌트와 Source 근거를 분석한 뒤 답하십시오. "
+        "첨부 화면이나 파일이 있으면 보이는 상태 코드, API 명령, 컴포넌트 이름, 오류 문구를 빠짐없이 읽고 Source 동작과 연결하십시오. "
+        "배경에서 실패한 API 호출과 사용자가 실행한 작업의 실패를 구분하고, 둘이 같다고 단정하지 마십시오. "
         "가장 가능성이 높고 안전한 해결 방법을 맨 먼저 제시하십시오. 근거가 있는 경우 실행 위치, 정확한 CLI 명령, "
         "정상 판정 기준을 함께 적으십시오. 그 방법으로 해결되지 않을 때 적용할 대안과 다음 진단 단계를 이어서 제시하십시오. "
-        "추가 자료는 앞선 조치로 해결되지 않은 경우에만, 사용자가 그대로 실행하거나 찾을 수 있는 명령 결과·로그 이름으로 구체적으로 요청하십시오. "
+        "정확한 원인을 아직 확정하지 못해도 Source에서 확인한 실패 조건과 현재 자료로 가능한 기초 진단을 먼저 설명하십시오. "
+        "추가 자료 요청으로 답변을 시작하지 마십시오. 추가 자료는 기초 답변과 우선 점검을 제공한 뒤에만, "
+        "사용자가 아직 제공하지 않은 정확한 API 응답 본문, 명령 결과 또는 로그 이름으로 구체적으로 요청하십시오. "
+        "이미 제공된 제품 버전, 첨부 화면, 시각 또는 로그를 다시 요청하지 마십시오. "
         "설명 문장과 CLI 명령을 섞지 마십시오. CLI는 설명 다음 줄의 독립된 ```bash 코드 블록에 넣고, 블록 안에는 바로 복사해 실행할 명령만 쓰십시오. "
         "직전 TechFlow 답변의 원인 설명이나 점검 목록을 다시 말하지 마십시오. 후속 답변은 반드시 진단을 한 단계 더 진행해야 합니다. "
         "SELinux 전체 비활성화, chmod 777, 근거 없는 audit2allow처럼 위험하거나 과도한 우회 조치는 제안하지 마십시오."
@@ -94,9 +121,10 @@ def build_conversation_question(
         return prompt
     compact_instruction = (
         "[응답 지침]\n"
-        "최신 질문에 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. "
+        "관련 기능과 Source를 분석하고 첨부의 상태 코드·API·오류를 Source 동작과 연결하십시오. "
+        "최신 질문에 기초 진단, 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. "
         "CLI는 설명과 분리한 ```bash 코드 블록으로 작성하십시오. 해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 "
-        "직전 답변을 반복하지 마십시오."
+        "이미 받은 자료를 다시 요청하거나 직전 답변을 반복하지 마십시오."
     )
     compact_prefix = (
         f"[Community 기술지원 제목]\n{title[:200]}\n\n"
@@ -173,6 +201,8 @@ def community_result_advances(result: dict[str, Any], turns: Iterable[dict[str, 
     previous = [str(item.get("content") or "") for item in turns if item.get("role") == "ASSISTANT"]
     if not previous:
         return True
+    if str(result.get("state") or "").upper() == "ABSTAINED":
+        return False
     report = result.get("report") or {}
     candidates = [
         _row_text(item)

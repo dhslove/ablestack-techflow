@@ -13,6 +13,7 @@ from app.versioned_assist import (
     coverage_payload,
     evidence_priority,
     expand_retrieval_question,
+    feature_source_terms,
     format_public_answer,
     format_knowledge_base,
     projection_is_safe,
@@ -108,6 +109,42 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("grafana-server", expand_retrieval_question("Wall 대시보드가 비어 있습니다."))
         self.assertIn("cloudstack api", expand_retrieval_question("Mold 가상머신 배포가 실패합니다."))
         self.assertIn("libvirt", expand_retrieval_question("Mold 가상머신 콘솔이 연결되지 않습니다."))
+
+    def test_network_request_failure_maps_feature_to_current_source_symbols(self) -> None:
+        question = '네트워크를 만들 때 "요청 실패"가 표시됩니다.'
+
+        terms = feature_source_terms(question)
+        expanded = expand_retrieval_question(question)
+        plan = versioned_plan(question)
+
+        for expected in (
+            "createNetwork", "CreateNetworkCmd", "NetworkServiceImpl", "ApiErrorCode",
+            "SamlDomainSwitcher", "listAndSwitchSamlAccount", "HTTP 432",
+        ):
+            self.assertIn(expected, terms)
+            self.assertIn(expected, expanded)
+            self.assertIn(expected, plan["featureSourceTerms"])
+
+    def test_network_request_failure_prioritizes_api_and_ui_source_over_generic_network_text(self) -> None:
+        question = '네트워크 생성 중 요청 실패가 발생하고 화면에는 HTTP 432가 보입니다.'
+        rows = [
+            {"path": "docs/network.md", "content": "일반 네트워크 안내"},
+            {"path": "api/src/ApiErrorCode.java", "content": "UNSUPPORTED_ACTION_ERROR(432)"},
+            {"path": "ui/src/components/header/SamlDomainSwitcher.vue", "content": "listAndSwitchSamlAccount"},
+            {"path": "api/src/CreateNetworkCmd.java", "content": "createNetwork physicalNetworkId networkOfferingId"},
+        ]
+
+        ranked = relevant_results(question, rows)
+
+        self.assertEqual("api/src/CreateNetworkCmd.java", ranked[0]["path"])
+        self.assertEqual(
+            {
+                "api/src/ApiErrorCode.java",
+                "ui/src/components/header/SamlDomainSwitcher.vue",
+                "api/src/CreateNetworkCmd.java",
+            },
+            {item["path"] for item in ranked[:3]},
+        )
 
     def test_live_official_source_has_platform_priority(self) -> None:
         self.assertEqual(

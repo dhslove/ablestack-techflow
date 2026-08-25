@@ -9,8 +9,10 @@ from app.conversation import (
     build_knowledge_base_question,
     build_progression_retry_question,
     community_result_advances,
+    conversation_artifact_ids,
 )
 from app.models import CommunityCaseCreateRequest, ComprehensiveQueryRequest, ComprehensiveSynthesisRequest
+from app.responses import COMPREHENSIVE_SYSTEM_POLICY
 
 
 class ConversationProgressionTest(unittest.TestCase):
@@ -45,6 +47,49 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertIn("QEMU Guest Agent 상태와 마운트 정보", prompt)
         self.assertIn("정확한 CLI 명령", prompt)
         self.assertIn("직전 TechFlow 답변의 원인 설명이나 점검 목록을 다시 말하지 마십시오", prompt)
+
+    def test_prompt_requires_source_grounded_baseline_before_requesting_more_material(self) -> None:
+        turns = [
+            {
+                "sourcePostId": "415", "postNumber": 1, "role": "REQUESTER",
+                "content": "네트워크 생성 중 요청 실패가 나옵니다.",
+                "artifactIds": ["screen-1"],
+            },
+            {
+                "sourcePostId": "416", "postNumber": 2, "role": "ASSISTANT",
+                "content": "제품 버전과 로그를 알려주세요.",
+            },
+        ]
+        incoming = {
+            "discussionId": "176", "postId": "417", "postNumber": 3, "turnRole": "REQUESTER",
+            "question": "최신 Diplo입니다. 어떤 상태에서 발생하는지 알려주세요.",
+        }
+
+        prompt = build_conversation_question("네트워크 요청 실패", turns, incoming)
+
+        self.assertIn("제품 기능, API 명령, UI 컴포넌트와 Source 근거", prompt)
+        self.assertIn("기초 진단을 먼저 설명", prompt)
+        self.assertIn("추가 자료 요청으로 답변을 시작하지 마십시오", prompt)
+        self.assertIn("이미 제공된 제품 버전, 첨부 화면, 시각 또는 로그를 다시 요청하지 마십시오", prompt)
+        self.assertIn("배경에서 실패한 API 호출", prompt)
+
+    def test_follow_up_reuses_prior_conversation_artifacts_for_image_grounding(self) -> None:
+        turns = [
+            {"sourcePostId": "415", "postNumber": 1, "role": "REQUESTER", "artifactIds": ["image-1", "image-2"]},
+            {"sourcePostId": "416", "postNumber": 2, "role": "ASSISTANT", "artifactIds": []},
+        ]
+        incoming = {
+            "discussionId": "176", "postId": "417", "postNumber": 3, "turnRole": "REQUESTER",
+            "artifactIds": [],
+        }
+
+        self.assertEqual(["image-1", "image-2"], conversation_artifact_ids(turns, incoming))
+
+    def test_provider_policy_requires_artifact_to_source_analysis_before_followup_request(self) -> None:
+        self.assertIn("This evidence-backed baseline answer MUST appear before any request", COMPREHENSIVE_SYSTEM_POLICY)
+        self.assertIn("visible status code, API command, component or stack-frame name", COMPREHENSIVE_SYSTEM_POLICY)
+        self.assertIn("failing background request from the user's target operation", COMPREHENSIVE_SYSTEM_POLICY)
+        self.assertIn("only for an exact item that was not already supplied", COMPREHENSIVE_SYSTEM_POLICY)
 
     def test_new_concrete_cli_step_advances_follow_up(self) -> None:
         result = {
@@ -82,6 +127,17 @@ class ConversationProgressionTest(unittest.TestCase):
                 "unknowns": ["SELinux 관련 로그와 운영체제 버전을 알려주세요."],
             }
         }
+        self.assertFalse(community_result_advances(result, self.turns))
+
+    def test_follow_up_abstention_is_never_published_as_another_information_request(self) -> None:
+        result = {
+            "state": "ABSTAINED",
+            "report": {
+                "recommendedActions": [],
+                "unknowns": ["제품 버전과 발생 시각, 관련 로그를 알려주세요."],
+            },
+        }
+
         self.assertFalse(community_result_advances(result, self.turns))
 
     def test_progression_retry_reserves_instruction_space_at_question_limit(self) -> None:

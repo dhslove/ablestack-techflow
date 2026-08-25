@@ -113,6 +113,27 @@ MOLD_MARKERS: tuple[str, ...] = (
     "virtual router", "cloudstack api", "api command", "async job", "libvirt", "qemu", "kvm", "virsh",
 )
 
+NETWORK_REQUEST_FAILURE_MARKERS: tuple[str, ...] = (
+    "createNetwork",
+    "CreateNetworkCmd",
+    "NetworkServiceImpl",
+    "ApiErrorCode",
+    "UNSUPPORTED_ACTION_ERROR",
+    "PARAM_ERROR",
+    "physicalNetworkId",
+    "networkOfferingId",
+    "guestType",
+    "specifyVlan",
+    "specifyIpRanges",
+    "listAndSwitchSamlAccount",
+    "SamlDomainSwitcher",
+    "request.js",
+    "plugins.js",
+    "x-description",
+    "errortext",
+    "HTTP 432",
+)
+
 
 def versioned_plan(question: str) -> dict[str, object]:
     return {
@@ -120,6 +141,7 @@ def versioned_plan(question: str) -> dict[str, object]:
         "domains": ["ABLESTACK_PRODUCT"],
         "sourceProfileIds": list(VERSIONED_SOURCE_PROFILES),
         "subquestions": [
+            "질문의 제품 기능, API 명령, UI 컴포넌트와 Source Symbol을 먼저 식별한다.",
             "1순위: ABLESTACK 문서와 승인된 내부 운영 지식을 확인한다.",
             "2순위: Diplo와 연관 제품 Source Code를 확인하고 Europa는 개선 예정 정보로만 비교한다.",
             "3순위: 공식 게스트 OS, libvirt, QEMU, KVM 자료에서 설치·동작·안전한 확인 방법을 보완한다.",
@@ -128,6 +150,7 @@ def versioned_plan(question: str) -> dict[str, object]:
         ],
         "evidencePriority": list(EVIDENCE_PRIORITY_POLICY),
         "questionsNeeded": [],
+        "featureSourceTerms": list(feature_source_terms(question)),
         "question": question,
     }
 
@@ -195,8 +218,17 @@ def _is_mold_question(question: str) -> bool:
     return any(marker in normalized for marker in ("mold", "cloudstack"))
 
 
-def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
-    """Add implementation vocabulary without changing the user's visible question."""
+def _is_network_request_failure_question(question: str) -> bool:
+    normalized = question.casefold()
+    network = any(marker in normalized for marker in ("네트워크", "network", "createnetwork"))
+    failure = any(marker in normalized for marker in (
+        "요청 실패", "요청실패", "request failed", "실패", "오류", "error", "http 432", " 432",
+    ))
+    return network and failure
+
+
+def feature_source_terms(question: str) -> tuple[str, ...]:
+    """Map a user symptom to implementation terms before source retrieval."""
     anchors: list[str] = []
     if _is_console_connection_question(question):
         anchors.extend(CONSOLE_CONNECTION_MARKERS)
@@ -212,6 +244,18 @@ def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
         anchors.extend(WALL_MARKERS)
     if _is_mold_question(question):
         anchors.extend(MOLD_MARKERS)
+    if _is_network_request_failure_question(question):
+        anchors.extend(NETWORK_REQUEST_FAILURE_MARKERS)
+    return tuple(dict.fromkeys(anchors))
+
+
+def _is_specialized_question(question: str) -> bool:
+    return bool(feature_source_terms(question))
+
+
+def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
+    """Add implementation vocabulary without changing the user's visible question."""
+    anchors = list(feature_source_terms(question))
     if not anchors:
         return question[:limit]
     suffix = f"\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
@@ -247,6 +291,14 @@ def _relevance_score(question: str, item: dict[str, Any]) -> int:
         score += sum(6 for marker in WALL_MARKERS if marker in searchable)
     if _is_mold_question(question):
         score += sum(6 for marker in MOLD_MARKERS if marker in searchable)
+    if _is_network_request_failure_question(question):
+        score += sum(7 for marker in NETWORK_REQUEST_FAILURE_MARKERS if marker.casefold() in searchable)
+        path = str(item.get("path") or "").casefold()
+        if any(marker in path for marker in (
+            "createnetworkcmd.java", "networkserviceimpl.java", "apierrorcode.java", "apiserver.java",
+            "samldomainswitcher.vue", "request.js", "plugins.js",
+        )):
+            score += 30
     return score
 
 
@@ -254,12 +306,7 @@ def relevant_results(question: str, rows: list[dict[str, Any]]) -> list[dict[str
     terms = _query_terms(question)
     if not terms:
         return []
-    if not (
-        _is_console_connection_question(question) or _is_fsfreeze_question(question)
-        or _is_guest_agent_question(question) or _is_glue_question(question) or _is_koral_question(question)
-        or _is_wall_question(question)
-        or _is_mold_question(question)
-    ):
+    if not _is_specialized_question(question):
         relevant = []
         for item in rows:
             searchable = f"{item.get('symbol') or ''}\n{item.get('path') or ''}\n{item.get('content') or ''}".casefold()
@@ -287,12 +334,7 @@ def select_context_results(question: str, results_by_profile: dict[str, list[dic
     """Keep every source reviewed while bounding a provider request to twenty chunks."""
     selected: list[dict[str, Any]] = []
     for profile_id in VERSIONED_SOURCE_PROFILES:
-        if (
-            _is_console_connection_question(question) or _is_fsfreeze_question(question)
-            or _is_guest_agent_question(question) or _is_glue_question(question) or _is_koral_question(question)
-            or _is_wall_question(question)
-            or _is_mold_question(question)
-        ):
+        if _is_specialized_question(question):
             limit = {
                 "SHARED_DOCS": 3,
                 "CLOUD_DIPLO": 3,

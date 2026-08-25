@@ -1,5 +1,12 @@
 # TechFlow AI Gateway
 
+## v0.16.1 구현 범위
+
+- 모든 Community 질문에서 관련 제품 기능·API·UI·Source Symbol을 먼저 식별
+- 첨부 화면의 상태 코드·API 명령·컴포넌트를 현재 Diplo Source 동작과 연결
+- 확인된 기초 진단과 안전한 첫 점검을 추가 자료 요청보다 먼저 제공
+- 이미 제공된 버전·이미지·시각·로그의 반복 요청과 후속 ABSTAINED 게시 차단
+
 ## v0.16.0 구현 범위
 
 - Synology Chat 일반 질문에 즉시 접수 확인을 반환하고 AI 분석은 백그라운드 Job으로 실행

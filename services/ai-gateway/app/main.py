@@ -69,6 +69,7 @@ from .conversation import (
     build_knowledge_base_question,
     build_progression_retry_question,
     community_result_advances,
+    conversation_artifact_ids,
     source_post_id,
 )
 from .versioned_assist import (
@@ -847,9 +848,12 @@ def create_app(
         if retry_failed:
             turns = [item for item in turns if item.get("sourcePostId") != post_id]
         conversation_question = build_conversation_question(request.title, turns, analysis_event)
+        conversation_artifacts = [
+            UUID(value) for value in conversation_artifact_ids(turns, analysis_event)
+        ]
         assist_request = ComprehensiveQueryRequest(
             queryId=uuid4(), question=conversation_question, actorId=f"community:{request.author_id}",
-            productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,
+            productVersion=request.product_version or "diplo", artifactIds=conversation_artifacts,
             locale="ko-KR", classification="D0",
         )
         result = _query_comprehensive(assist_request, correlation_id)
@@ -866,7 +870,7 @@ def create_app(
             rewrite_question = build_progression_retry_question(request.title, turns, analysis_event)
             retry_request = ComprehensiveQueryRequest(
                 queryId=uuid4(), question=rewrite_question, actorId=f"community:{request.author_id}",
-                productVersion=request.product_version or "diplo", artifactIds=request.artifact_ids,
+                productVersion=request.product_version or "diplo", artifactIds=conversation_artifacts,
                 locale="ko-KR", classification="D0",
             )
             result = _query_comprehensive(retry_request, correlation_id)
