@@ -1,5 +1,16 @@
 # TechFlow AI Gateway
 
+## v0.16.0 구현 범위
+
+- Synology Chat 일반 질문에 즉시 접수 확인을 반환하고 AI 분석은 백그라운드 Job으로 실행
+- 완료 답변을 Synology Chatbot API로 질문자에게 능동 전송
+- 사용자·Context Version·Post ID 기반 Job 멱등성
+- PENDING·RUNNING·RETRYING·COMPLETED·DEAD_LETTER·CANCELLED 지속 상태
+- Gateway 재시작 시 RUNNING Job을 RETRYING으로 복구
+- 사용자별 Job 직렬화로 후속 질문 맥락 순서 보장
+- `해결` 입력 시 같은 Context의 진행 중 Job 취소
+- Provider·Chat 전송 실패 지수 재시도와 사용자 실패 안내
+
 ## v0.15.1 수정 범위
 
 - Flarum 답글 멘션과 일반 링크를 첨부파일 후보에서 제외

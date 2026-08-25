@@ -9,11 +9,13 @@ GitHub→Chat Webhook의 `github-chat-v1`, `chat-adapter`, `activepieces-control
 ## 2. Chat 연속 상담
 
 1. 사용자가 Synology Chat의 `TechFlowAssist` Bot에 기술 질문을 입력한다.
-2. Gateway는 사용자 ID별 활성 Conversation을 열고, 같은 Context Version의 최근 12개 Turn을 현재 질문과 함께 검토한다.
-3. DOC, ABLESTACK Diplo, Wall·Cockpit·Genie·Kickstart·QEMU 도구, ABLESTACK Europa Preview 순서로 종합한다.
-4. 정보가 부족하면 필요한 로그·화면·환경 정보를 구체적으로 요청한다.
-5. 사용자가 `해결`을 입력할 때까지 후속 질문을 같은 맥락으로 처리한다.
-6. 해결 후 다음 질문은 새 Context Version으로 시작한다.
+2. Gateway는 사용자 ID별 활성 Conversation을 열고 User Turn과 지속 Chat Job을 기록한다.
+3. Webhook에는 2초 이내 접수 확인을 반환하고 AI 분석은 요청 수명과 분리한다.
+4. Job은 사용자별로 직렬 실행하며 같은 Context Version의 최근 Turn을 현재 질문과 함께 검토한다.
+5. DOC, ABLESTACK Diplo, Wall·Cockpit·Genie·Kickstart·QEMU 도구, ABLESTACK Europa Preview 순서로 종합한다.
+6. 완료 답변은 Synology Chatbot API로 질문자에게 능동 전송한다.
+7. 실패 Job은 지수 재시도하고, 한도 초과 시 사용자 안내와 Dead Letter를 기록한다.
+8. 사용자가 `해결`을 입력하면 같은 Context의 진행 중 Job을 취소하고 다음 질문은 새 Context Version으로 시작한다.
 
 일반 답변에는 Repository·Branch·Commit·Path·Line·Evidence ID를 표시하지 않는다. 권한 있는 담당자의 `근거 <Case>` 명령만 Community Case의 내부 근거를 표시한다.
 

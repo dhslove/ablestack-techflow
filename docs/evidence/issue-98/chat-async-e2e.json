@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-25T07:57:00Z",
+  "issue": 98,
+  "pullRequest": 99,
+  "release": {
+    "version": "0.16.0",
+    "image": "techflow/ai-gateway:issue98-0.16.0-5290e0f",
+    "commit": "5290e0f370d835af8c8369fb06d6a9fbacacf022",
+    "backupRoot": "/home/ablecloud/techflow-backups/issue98-20260825T075015Z"
+  },
+  "acknowledgement": {
+    "httpStatus": 200,
+    "latencyMs": 118.814,
+    "underTwoSeconds": true
+  },
+  "job": {
+    "jobId": "07dfbb88-db1a-4ffa-a694-684c53a3adb8",
+    "state": "COMPLETED",
+    "attemptCount": 1,
+    "totalLatencyMs": 144585,
+    "userTurnCount": 1,
+    "assistantTurnCount": 1,
+    "chatbotDeliverySucceeded": true,
+    "conversationStateAfterTest": "RESOLVED",
+    "rawContentIncluded": false
+  },
+  "provider": {
+    "status": "SUCCEEDED",
+    "profileId": "OPENAI_RAG_ESCALATION_V1",
+    "model": "gpt-5.6-sol",
+    "latencyMs": 111991
+  },
+  "validation": {
+    "repositoryTestsPassed": 283,
+    "openApiOperations": 39,
+    "duplicateDeliveryCount": 0,
+    "internalEvidenceExposed": false
+  },
+  "protectedServices": {
+    "communityPollerChanged": false,
+    "sourceReconcilerChanged": false,
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  }
+}

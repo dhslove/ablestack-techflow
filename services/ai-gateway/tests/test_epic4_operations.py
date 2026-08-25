@@ -23,6 +23,18 @@ class FakeBot:
         self.sent.append((user_ids, payload))
 
 
+class FlakyBot(FakeBot):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    def send(self, user_ids: list[str], payload: dict) -> None:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise RuntimeError("temporary Chat delivery failure")
+        super().send(user_ids, payload)
+
+
 def settings() -> Settings:
     return Settings(
         chat_bot_enabled=True, chat_bot_token_file="/run/secrets/chat_bot_token",
@@ -54,14 +66,17 @@ class Epic4OperationsTest(unittest.TestCase):
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             self.assertEqual(200, response.status_code)
-            self.assertIn("해결", response.json()["text"])
+            self.assertIn("질문을 접수", response.json()["text"])
         self.assertEqual(4, len(self.store.list_chat_turns("7")))
+        self.assertEqual(2, len(self.bot.sent))
         repeated = self.client.post(
             "/v1/chat/synology/events", content=chat_form("중복 이벤트", "2"),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         self.assertEqual(200, repeated.status_code)
+        self.assertIn("이미 처리", repeated.json()["text"])
         self.assertEqual(4, len(self.store.list_chat_turns("7")))
+        self.assertEqual(2, len(self.bot.sent))
         resolved = self.client.post(
             "/v1/chat/synology/events", content=chat_form("해결", "3"),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -70,6 +85,41 @@ class Epic4OperationsTest(unittest.TestCase):
         self.assertEqual([], self.store.list_chat_turns("7"))
         reopened = self.store.open_chat_conversation("7", "engineer")
         self.assertEqual(2, reopened["contextVersion"])
+
+    def test_chat_job_is_durable_idempotent_and_cancellable(self) -> None:
+        conversation = self.store.open_chat_conversation("9", "operator")
+        self.store.record_chat_turn("9", "post-1", "USER", "질문")
+        first = self.store.enqueue_chat_job("9", "post-1", "chat-job-correlation")
+        repeated = self.store.enqueue_chat_job("9", "post-1", "chat-job-correlation-repeat")
+        self.assertTrue(first["created"])
+        self.assertFalse(repeated["created"])
+        self.assertEqual(first["jobId"], repeated["jobId"])
+        running = self.store.claim_chat_job(first["jobId"])
+        self.assertEqual("RUNNING", running["state"])
+        self.assertEqual(1, running["attemptCount"])
+        recovered = self.store.recover_chat_jobs()
+        self.assertEqual("RETRYING", recovered[0]["state"])
+        self.assertEqual(1, self.store.cancel_chat_jobs("9"))
+        self.assertEqual("CANCELLED", self.store.get_chat_job(first["jobId"])["state"])
+        self.assertEqual(conversation["contextVersion"], first["contextVersion"])
+
+    def test_chat_delivery_retry_reuses_generated_answer(self) -> None:
+        store = MemoryStore()
+        bot = FlakyBot()
+        client = TestClient(create_app(settings(), store=store, chat_bot_client=bot))
+        response = client.post(
+            "/v1/chat/synology/events", content=chat_form("스토리지 오류를 확인해 줘", "retry-1"),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertIn("질문을 접수", response.json()["text"])
+        self.assertEqual(2, bot.attempts)
+        self.assertEqual(1, len(bot.sent))
+        turns = store.list_chat_turns("7")
+        self.assertEqual(["USER", "ASSISTANT"], [item["role"] for item in turns])
+        job = next(iter(store._chat_jobs.values()))
+        self.assertEqual("COMPLETED", job["state"])
+        self.assertEqual(2, job["attemptCount"])
 
     def test_failure_notified_once_and_recovery_notified_once(self) -> None:
         self.store.upsert_chat_reviewer("19", "ceo")

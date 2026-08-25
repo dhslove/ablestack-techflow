@@ -108,6 +108,13 @@ class Store(Protocol):
     def list_chat_turns(self, user_id: str, limit: int = 12) -> list[dict[str, Any]]: ...
     def record_chat_turn(self, user_id: str, post_id: str, role: str, content: str) -> dict[str, Any]: ...
     def resolve_chat_conversation(self, user_id: str) -> dict[str, Any]: ...
+    def enqueue_chat_job(self, user_id: str, post_id: str, correlation_id: str, max_attempts: int = 3) -> dict[str, Any]: ...
+    def get_chat_job(self, job_id: UUID) -> dict[str, Any]: ...
+    def claim_chat_job(self, job_id: UUID) -> dict[str, Any]: ...
+    def complete_chat_job(self, job_id: UUID) -> dict[str, Any]: ...
+    def fail_chat_job(self, job_id: UUID, error_type: str) -> dict[str, Any]: ...
+    def cancel_chat_jobs(self, user_id: str) -> int: ...
+    def recover_chat_jobs(self) -> list[dict[str, Any]]: ...
     def record_operation_failure(
         self, subsystem: str, operation: str, fingerprint: str, error_type: str,
         correlation_id: str, max_attempts: int = 3,
@@ -149,6 +156,8 @@ class MemoryStore:
         self._chat_reviewers: dict[str, dict[str, Any]] = {}
         self._chat_conversations: dict[str, dict[str, Any]] = {}
         self._chat_turns: dict[str, list[dict[str, Any]]] = {}
+        self._chat_jobs: dict[UUID, dict[str, Any]] = {}
+        self._chat_job_by_event: dict[tuple[str, int, str], UUID] = {}
         self._operation_failures: dict[UUID, dict[str, Any]] = {}
         self._operation_failure_by_fingerprint: dict[str, UUID] = {}
         self._idempotency: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1314,6 +1323,121 @@ class MemoryStore:
             return deepcopy(value)
 
     @staticmethod
+    def _chat_job_payload(value: dict[str, Any]) -> dict[str, Any]:
+        return deepcopy(value)
+
+    def enqueue_chat_job(
+        self, user_id: str, post_id: str, correlation_id: str, max_attempts: int = 3
+    ) -> dict[str, Any]:
+        with self._lock:
+            conversation = self._chat_conversations.get(user_id)
+            if not conversation or conversation["state"] != "ACTIVE":
+                raise InvalidStateError("active Chat conversation is required")
+            key = (user_id, conversation["contextVersion"], post_id)
+            existing_id = self._chat_job_by_event.get(key)
+            if existing_id:
+                result = self._chat_job_payload(self._chat_jobs[existing_id])
+                result["created"] = False
+                return result
+            now = utc_now()
+            job_id = uuid4()
+            value = {
+                "jobId": job_id, "userId": user_id, "contextVersion": conversation["contextVersion"],
+                "postId": post_id, "state": "PENDING", "attemptCount": 0,
+                "maxAttempts": max(1, min(max_attempts, 10)), "lastErrorType": None,
+                "correlationId": correlation_id, "nextAttemptAt": now, "startedAt": None,
+                "completedAt": None, "createdAt": now, "updatedAt": now,
+            }
+            self._chat_jobs[job_id] = value
+            self._chat_job_by_event[key] = job_id
+            result = self._chat_job_payload(value)
+            result["created"] = True
+            return result
+
+    def get_chat_job(self, job_id: UUID) -> dict[str, Any]:
+        with self._lock:
+            value = self._chat_jobs.get(job_id)
+            if not value:
+                raise NotFoundError("Chat Assist job not found")
+            return self._chat_job_payload(value)
+
+    def claim_chat_job(self, job_id: UUID) -> dict[str, Any]:
+        with self._lock:
+            value = self._chat_jobs.get(job_id)
+            if not value:
+                raise NotFoundError("Chat Assist job not found")
+            if value["state"] not in {"PENDING", "RETRYING"}:
+                return self._chat_job_payload(value)
+            now = utc_now()
+            if value.get("nextAttemptAt") and value["nextAttemptAt"] > now:
+                return self._chat_job_payload(value)
+            value.update(
+                state="RUNNING", attemptCount=value["attemptCount"] + 1,
+                startedAt=now, updatedAt=now, nextAttemptAt=None,
+            )
+            return self._chat_job_payload(value)
+
+    def complete_chat_job(self, job_id: UUID) -> dict[str, Any]:
+        with self._lock:
+            value = self._chat_jobs.get(job_id)
+            if not value:
+                raise NotFoundError("Chat Assist job not found")
+            if value["state"] == "CANCELLED":
+                return self._chat_job_payload(value)
+            if value["state"] != "RUNNING":
+                raise InvalidStateError("only running Chat Assist job can complete")
+            now = utc_now()
+            value.update(state="COMPLETED", completedAt=now, updatedAt=now, lastErrorType=None)
+            return self._chat_job_payload(value)
+
+    def fail_chat_job(self, job_id: UUID, error_type: str) -> dict[str, Any]:
+        with self._lock:
+            value = self._chat_jobs.get(job_id)
+            if not value:
+                raise NotFoundError("Chat Assist job not found")
+            if value["state"] == "CANCELLED":
+                return self._chat_job_payload(value)
+            now = utc_now()
+            exhausted = value["attemptCount"] >= value["maxAttempts"]
+            delay = 2 ** max(0, value["attemptCount"] - 1)
+            value.update(
+                state="DEAD_LETTER" if exhausted else "RETRYING",
+                lastErrorType=error_type[:128],
+                nextAttemptAt=None if exhausted else now + timedelta(seconds=delay),
+                updatedAt=now,
+            )
+            return self._chat_job_payload(value)
+
+    def cancel_chat_jobs(self, user_id: str) -> int:
+        with self._lock:
+            conversation = self._chat_conversations.get(user_id)
+            if not conversation:
+                return 0
+            count = 0
+            now = utc_now()
+            for value in self._chat_jobs.values():
+                if (
+                    value["userId"] == user_id
+                    and value["contextVersion"] == conversation["contextVersion"]
+                    and value["state"] in {"PENDING", "RUNNING", "RETRYING"}
+                ):
+                    value.update(state="CANCELLED", nextAttemptAt=None, completedAt=now, updatedAt=now)
+                    count += 1
+            return count
+
+    def recover_chat_jobs(self) -> list[dict[str, Any]]:
+        with self._lock:
+            now = utc_now()
+            values = []
+            for value in self._chat_jobs.values():
+                if value["state"] == "RUNNING":
+                    value.update(state="RETRYING", nextAttemptAt=now, updatedAt=now)
+                if value["state"] in {"PENDING", "RETRYING"}:
+                    values.append(self._chat_job_payload(value))
+            values.sort(key=lambda item: item["createdAt"])
+            return values
+
+    @staticmethod
     def _failure_payload(value: dict[str, Any]) -> dict[str, Any]:
         return deepcopy(value)
 
@@ -1390,6 +1514,7 @@ class MemoryStore:
             failures = [item for item in self._operation_failures.values() if item["updatedAt"] >= cutoff]
             conversations = [item for item in self._chat_conversations.values() if item["updatedAt"] >= cutoff]
             turns = [item for rows in self._chat_turns.values() for item in rows if item["createdAt"] >= cutoff]
+            chat_jobs = [item for item in self._chat_jobs.values() if item["updatedAt"] >= cutoff]
             ledgers = [item.get("evidenceLedger") or {} for item in community]
             coverage = [entry for ledger in ledgers for entry in ledger.get("coverage", [])]
             found = {entry.get("sourceProfileId") for entry in coverage if entry.get("state") == "EVIDENCE_FOUND"}
@@ -1406,6 +1531,11 @@ class MemoryStore:
                 "chat": {
                     "conversations": len(conversations), "active": sum(item["state"] == "ACTIVE" for item in conversations),
                     "resolved": sum(item["state"] == "RESOLVED" for item in conversations), "turns": len(turns),
+                    "jobs": len(chat_jobs),
+                    "jobsActive": sum(item["state"] in {"PENDING", "RUNNING", "RETRYING"} for item in chat_jobs),
+                    "jobsCompleted": sum(item["state"] == "COMPLETED" for item in chat_jobs),
+                    "jobsDeadLetter": sum(item["state"] == "DEAD_LETTER" for item in chat_jobs),
+                    "jobsCancelled": sum(item["state"] == "CANCELLED" for item in chat_jobs),
                 },
                 "operations": {
                     "failures": len(failures), "open": sum(item["state"] == "OPEN" for item in failures),

@@ -1877,6 +1877,121 @@ class PostgresStore:
             return self._chat_conversation_payload(row)
 
     @staticmethod
+    def _chat_job_payload(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "jobId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
+            "postId": row["post_id"], "state": row["state"], "attemptCount": row["attempt_count"],
+            "maxAttempts": row["max_attempts"], "lastErrorType": row["last_error_type"],
+            "correlationId": row["correlation_id"], "nextAttemptAt": row["next_attempt_at"],
+            "startedAt": row["started_at"], "completedAt": row["completed_at"],
+            "createdAt": row["created_at"], "updatedAt": row["updated_at"],
+        }
+
+    def enqueue_chat_job(
+        self, user_id: str, post_id: str, correlation_id: str, max_attempts: int = 3
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            conversation = connection.execute(
+                "SELECT * FROM chat_assist_conversation WHERE user_id=%s AND state='ACTIVE' FOR UPDATE", (user_id,),
+            ).fetchone()
+            if not conversation:
+                raise InvalidStateError("active Chat conversation is required")
+            created = connection.execute(
+                """INSERT INTO chat_assist_job
+                   (id,user_id,context_version,post_id,state,max_attempts,correlation_id,next_attempt_at)
+                   VALUES (%s,%s,%s,%s,'PENDING',%s,%s,now())
+                   ON CONFLICT (user_id,context_version,post_id) DO NOTHING RETURNING *""",
+                (uuid4(), user_id, conversation["context_version"], post_id,
+                 max(1, min(max_attempts, 10)), correlation_id),
+            ).fetchone()
+            row = created or connection.execute(
+                """SELECT * FROM chat_assist_job
+                   WHERE user_id=%s AND context_version=%s AND post_id=%s""",
+                (user_id, conversation["context_version"], post_id),
+            ).fetchone()
+            result = self._chat_job_payload(row)
+            result["created"] = bool(created)
+            return result
+
+    def get_chat_job(self, job_id: UUID) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute("SELECT * FROM chat_assist_job WHERE id=%s", (job_id,)).fetchone()
+            if not row:
+                raise NotFoundError("Chat Assist job not found")
+            return self._chat_job_payload(row)
+
+    def claim_chat_job(self, job_id: UUID) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute("SELECT * FROM chat_assist_job WHERE id=%s FOR UPDATE", (job_id,)).fetchone()
+            if not row:
+                raise NotFoundError("Chat Assist job not found")
+            if row["state"] not in {"PENDING", "RETRYING"} or (
+                row.get("next_attempt_at") and row["next_attempt_at"] > datetime.now(timezone.utc)
+            ):
+                return self._chat_job_payload(row)
+            row = connection.execute(
+                """UPDATE chat_assist_job SET state='RUNNING',attempt_count=attempt_count+1,
+                   next_attempt_at=NULL,started_at=now(),updated_at=now() WHERE id=%s RETURNING *""",
+                (job_id,),
+            ).fetchone()
+            return self._chat_job_payload(row)
+
+    def complete_chat_job(self, job_id: UUID) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute("SELECT * FROM chat_assist_job WHERE id=%s FOR UPDATE", (job_id,)).fetchone()
+            if not row:
+                raise NotFoundError("Chat Assist job not found")
+            if row["state"] == "CANCELLED":
+                return self._chat_job_payload(row)
+            if row["state"] != "RUNNING":
+                raise InvalidStateError("only running Chat Assist job can complete")
+            row = connection.execute(
+                """UPDATE chat_assist_job SET state='COMPLETED',last_error_type=NULL,
+                   completed_at=now(),updated_at=now() WHERE id=%s RETURNING *""", (job_id,),
+            ).fetchone()
+            return self._chat_job_payload(row)
+
+    def fail_chat_job(self, job_id: UUID, error_type: str) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute("SELECT * FROM chat_assist_job WHERE id=%s FOR UPDATE", (job_id,)).fetchone()
+            if not row:
+                raise NotFoundError("Chat Assist job not found")
+            if row["state"] == "CANCELLED":
+                return self._chat_job_payload(row)
+            exhausted = row["attempt_count"] >= row["max_attempts"]
+            row = connection.execute(
+                """UPDATE chat_assist_job SET state=%s,last_error_type=%s,
+                   next_attempt_at=CASE WHEN %s THEN NULL
+                     ELSE now()+make_interval(secs => power(2,greatest(attempt_count-1,0))::int) END,
+                   updated_at=now() WHERE id=%s RETURNING *""",
+                ("DEAD_LETTER" if exhausted else "RETRYING", error_type[:128], exhausted, job_id),
+            ).fetchone()
+            return self._chat_job_payload(row)
+
+    def cancel_chat_jobs(self, user_id: str) -> int:
+        with self._pool.connection() as connection:
+            result = connection.execute(
+                """UPDATE chat_assist_job j SET state='CANCELLED',next_attempt_at=NULL,
+                   completed_at=now(),updated_at=now() FROM chat_assist_conversation c
+                   WHERE j.user_id=c.user_id AND j.context_version=c.context_version
+                     AND j.user_id=%s AND j.state IN ('PENDING','RUNNING','RETRYING')""",
+                (user_id,),
+            )
+            return result.rowcount
+
+    def recover_chat_jobs(self) -> list[dict[str, Any]]:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """UPDATE chat_assist_job SET state='RETRYING',next_attempt_at=now(),updated_at=now()
+                   WHERE state='RUNNING'"""
+            )
+            rows = connection.execute(
+                """SELECT * FROM chat_assist_job WHERE state IN ('PENDING','RETRYING')
+                   ORDER BY created_at"""
+            ).fetchall()
+            return [self._chat_job_payload(row) for row in rows]
+
+    @staticmethod
     def _operation_failure_payload(row: dict[str, Any]) -> dict[str, Any]:
         return {
             "failureId": row["id"], "subsystem": row["subsystem"], "operation": row["operation"],
@@ -1982,6 +2097,15 @@ class PostgresStore:
                 "SELECT count(*) AS count FROM chat_assist_turn WHERE created_at>=now()-make_interval(hours=>%s)",
                 (hours,),
             ).fetchone()["count"]
+            chat_jobs = connection.execute(
+                """SELECT count(*) AS jobs,
+                   count(*) FILTER (WHERE state IN ('PENDING','RUNNING','RETRYING')) AS active,
+                   count(*) FILTER (WHERE state='COMPLETED') AS completed,
+                   count(*) FILTER (WHERE state='DEAD_LETTER') AS dead_letter,
+                   count(*) FILTER (WHERE state='CANCELLED') AS cancelled
+                   FROM chat_assist_job WHERE updated_at>=now()-make_interval(hours=>%s)""",
+                (hours,),
+            ).fetchone()
             failures = connection.execute(
                 """SELECT count(*) AS failures,count(*) FILTER (WHERE state='OPEN') AS open,
                    count(*) FILTER (WHERE state='DEAD_LETTER') AS dead_letter,
@@ -2011,7 +2135,10 @@ class PostgresStore:
                               "needsInformation": community["needs_information"],
                               "publicationRatePct": round(100.0 * community["published"] / cases, 1) if cases else 100.0},
                 "chat": {"conversations": chat["conversations"], "active": chat["active"],
-                         "resolved": chat["resolved"], "turns": turns},
+                         "resolved": chat["resolved"], "turns": turns,
+                         "jobs": chat_jobs["jobs"], "jobsActive": chat_jobs["active"],
+                         "jobsCompleted": chat_jobs["completed"],
+                         "jobsDeadLetter": chat_jobs["dead_letter"], "jobsCancelled": chat_jobs["cancelled"]},
                 "operations": {"failures": failures["failures"], "open": failures["open"],
                                "deadLetter": failures["dead_letter"], "recovered": failures["recovered"]},
                 "sourceCoverage": {

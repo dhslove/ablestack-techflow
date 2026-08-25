@@ -17,11 +17,13 @@ UP_0011 = (ROOT / "migrations" / "0011_community_conversation_up.sql").read_text
 UP_0012 = (ROOT / "migrations" / "0012_community_auto_publish_kb_up.sql").read_text(encoding="utf-8")
 UP_0013 = (ROOT / "migrations" / "0013_community_kb_solution_up.sql").read_text(encoding="utf-8")
 UP_0014 = (ROOT / "migrations" / "0014_epic4_operations_up.sql").read_text(encoding="utf-8")
+UP_0015 = (ROOT / "migrations" / "0015_chat_async_job_up.sql").read_text(encoding="utf-8")
 DOWN_0001 = (ROOT / "migrations" / "0001_schema_down.sql").read_text(encoding="utf-8")
 DOWN_0002 = (ROOT / "migrations" / "0002_source_registry_down.sql").read_text(encoding="utf-8")
 DOWN_0003 = (ROOT / "migrations" / "0003_source_mirror_down.sql").read_text(encoding="utf-8")
 DOWN_0004 = (ROOT / "migrations" / "0004_source_mirror_policy_down.sql").read_text(encoding="utf-8")
 DOWN_0014 = (ROOT / "migrations" / "0014_epic4_operations_down.sql").read_text(encoding="utf-8")
+DOWN_0015 = (ROOT / "migrations" / "0015_chat_async_job_down.sql").read_text(encoding="utf-8")
 UP = UP_0001 + "\n" + UP_0002 + "\n" + UP_0003 + "\n" + UP_0004 + "\n" + UP_0005 + "\n" + UP_0006 + "\n" + UP_0007
 DOWN = DOWN_0004 + "\n" + DOWN_0003 + "\n" + DOWN_0002 + "\n" + DOWN_0001
 BOOTSTRAP = (ROOT / "migrations" / "0000_extensions_roles_up.sql").read_text(encoding="utf-8")
@@ -130,6 +132,15 @@ class MigrationContractTest(unittest.TestCase):
         self.assertIn("UNIQUE (user_id, context_version, post_id, role)", UP_0014)
         self.assertIn("fingerprint char(64) NOT NULL UNIQUE", UP_0014)
         self.assertIn("DEAD_LETTER", UP_0014)
+
+    def test_chat_async_job_is_durable_without_raw_question_copy(self) -> None:
+        self.assertIn("CREATE TABLE IF NOT EXISTS chat_assist_job", UP_0015)
+        self.assertIn("DROP TABLE IF EXISTS chat_assist_job", DOWN_0015)
+        self.assertIn("UNIQUE (user_id, context_version, post_id)", UP_0015)
+        self.assertIn("DEAD_LETTER", UP_0015)
+        table = UP_0015.split("CREATE TABLE IF NOT EXISTS chat_assist_job", 1)[1].split(");", 1)[0]
+        self.assertNotIn("question", table)
+        self.assertNotIn("answer", table)
 
 
 if __name__ == "__main__":
