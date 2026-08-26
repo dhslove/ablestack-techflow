@@ -1,5 +1,13 @@
 # TechFlow AI Gateway
 
+## v0.16.2 구현 범위
+
+- 일반 Windows·Ubuntu·RHEL 계열 게스트 운영체제 설정·운영 질문을 공식 자료 근거 대상으로 확장
+- 질문의 운영체제와 작업 주제가 모두 일치하는 승인 자료만 로컬 근거로 사용
+- Windows 일반 운영 질문의 Live Web Fallback을 Microsoft Learn으로 제한
+- Windows Server W32Time·NTP 설정, PowerShell 강제 동기화와 확인 절차 추가
+- 게스트 운영체제 절차를 답할 수 있을 때 ABLESTACK 버전·관리 서버·호스트 로그 선요청 금지
+
 ## v0.16.1 구현 범위
 
 - 모든 Community 질문에서 관련 제품 기능·API·UI·Source Symbol을 먼저 식별

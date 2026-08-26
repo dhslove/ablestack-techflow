@@ -10,15 +10,44 @@ from app.official_web import (
     official_web_results,
     official_web_search_required,
     support_family,
+    support_topic,
 )
+from app.platform_references import curated_platform_results
 
 
 class OfficialWebPolicyTest(unittest.TestCase):
     def test_guest_os_uses_fresh_exact_local_reference_without_web(self) -> None:
-        local = [{"sourceKind": "OFFICIAL_EXTERNAL_DOCUMENTATION", "symbol": "Ubuntu 24.04 설치"}]
+        local = [{
+            "sourceKind": "OFFICIAL_EXTERNAL_DOCUMENTATION",
+            "symbol": "Ubuntu 24.04 QEMU Guest Agent 설치",
+            "content": "qemu-guest-agent 공식 패키지 설치 절차",
+        }]
         question = "Ubuntu에서 qemu-guest-agent를 설치하는 방법을 알려주세요."
         self.assertFalse(official_web_search_required(question, local, stale=False))
         self.assertTrue(official_web_search_required(question, local, stale=True))
+
+    def test_windows_time_question_uses_exact_microsoft_evidence_or_live_fallback(self) -> None:
+        question = (
+            "Windows Server 2022 가상머신에서 시간이 잘 안맞아. NTP 설정 방법과 PowerShell 강제 동기화, "
+            "확인 방법을 알려줘."
+        )
+        local = curated_platform_results(question)
+
+        self.assertEqual("WINDOWS", support_family(question))
+        self.assertEqual("TIME_SYNC", support_topic(question))
+        self.assertEqual(("learn.microsoft.com",), allowed_domains_for_question(question))
+        self.assertIn("Microsoft Learn", official_web_query(question))
+        self.assertFalse(official_web_search_required(question, local, stale=False))
+        self.assertTrue(official_web_search_required(question, [], stale=False))
+        self.assertTrue(any("w32tm /resync /rediscover" in item["content"] for item in local))
+        self.assertFalse(any("QEMU Guest Agent" in item["symbol"] for item in local))
+
+    def test_general_guest_os_procedure_requires_domain_restricted_official_search(self) -> None:
+        question = "Windows Server 2022 가상머신에서 DNS 설정을 확인하는 PowerShell 방법을 알려줘."
+
+        self.assertEqual("GENERAL_OS", support_topic(question))
+        self.assertTrue(official_web_search_required(question, [], stale=False))
+        self.assertEqual(("learn.microsoft.com",), allowed_domains_for_question(question))
 
     def test_product_names_expand_only_in_private_query(self) -> None:
         cases = (

@@ -40,6 +40,15 @@ _INSTALL_TERMS = (
     "설치", "install", "could not be found", "not found", "unit qemu-guest-agent.service",
     "서비스", "service",
 )
+_GUEST_OS_ACTION_TERMS = (
+    "방법", "설정", "구성", "확인", "점검", "동기화", "강제", "명령", "powershell", "쉘", "cli",
+    "오류", "실패", "안맞", "맞지", "느림", "접속", "연결", "설치", "서비스", "how", "configure",
+    "check", "verify", "troubleshoot", "sync",
+)
+_TIME_SYNC_TERMS = (
+    "ntp", "시간", "시각", "time sync", "time synchronization", "w32time", "w32tm", "동기화",
+    "clock", "timezone", "time zone", "표준 시간대",
+)
 _OS_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("UBUNTU", ("ubuntu", "우분투")),
     ("RHEL_FAMILY", ("rhel", "red hat", "redhat", "rocky", "almalinux", "centos")),
@@ -70,11 +79,23 @@ def support_family(question: str) -> str | None:
     )
 
 
+def support_topic(question: str) -> str | None:
+    normalized = question.casefold()
+    if any(term in normalized for term in _GUEST_AGENT_TERMS):
+        return "GUEST_AGENT"
+    if any(term in normalized for term in _TIME_SYNC_TERMS):
+        return "TIME_SYNC"
+    if guest_os_family(question) and any(term in normalized for term in _GUEST_OS_ACTION_TERMS):
+        return "GENERAL_OS"
+    return None
+
+
 def is_guest_os_support_question(question: str) -> bool:
     normalized = question.casefold()
-    return any(term in normalized for term in _GUEST_AGENT_TERMS) and any(
+    guest_agent_install = any(term in normalized for term in _GUEST_AGENT_TERMS) and any(
         term in normalized for term in _INSTALL_TERMS
     )
+    return bool(guest_os_family(question) and (guest_agent_install or support_topic(question)))
 
 
 def is_official_platform_support_question(question: str) -> bool:
@@ -93,6 +114,15 @@ def official_web_query(question: str) -> str:
     )
     family = support_family(question)
     upstream_context = {
+        "UBUNTU": "Search only official Ubuntu documentation for this guest operating-system procedure.",
+        "RHEL_FAMILY": (
+            "Search official Red Hat or Rocky Linux documentation for this guest operating-system procedure."
+        ),
+        "WINDOWS": (
+            "This is a Windows guest operating-system administration question. Search Microsoft Learn first. "
+            "For Windows Server time synchronization, use official W32Time and w32tm guidance and distinguish "
+            "domain hierarchy from a manually configured NTP peer."
+        ),
         "GLUE": "ABLESTACK Glue uses Ceph. Search the official Ceph documentation for this question.",
         "KORAL": "ABLESTACK Koral uses Kubernetes. Search the official Kubernetes documentation for this question.",
         "WALL": "ABLESTACK Wall uses Grafana. Search only official Grafana documentation for this question.",
@@ -107,6 +137,14 @@ def official_web_query(question: str) -> str:
 
 def allowed_domains_for_question(question: str) -> tuple[str, ...]:
     """Return the smallest official-domain set for the detected support family."""
+    family = support_family(question)
+    topic = support_topic(question)
+    if family == "WINDOWS" and topic != "GUEST_AGENT":
+        return ("learn.microsoft.com",)
+    if family == "UBUNTU" and topic != "GUEST_AGENT":
+        return ("documentation.ubuntu.com", "packages.ubuntu.com")
+    if family == "RHEL_FAMILY" and topic != "GUEST_AGENT":
+        return ("docs.redhat.com", "access.redhat.com", "docs.rockylinux.org")
     domains = {
         "UBUNTU": ("documentation.ubuntu.com", "packages.ubuntu.com", "www.qemu.org", "qemu.org", "libvirt.org"),
         "RHEL_FAMILY": ("docs.redhat.com", "access.redhat.com", "docs.rockylinux.org", "download.rockylinux.org", "www.qemu.org", "qemu.org", "libvirt.org"),
@@ -116,7 +154,7 @@ def allowed_domains_for_question(question: str) -> tuple[str, ...]:
         "WALL": ("grafana.com",),
         "MOLD": ("docs.cloudstack.apache.org", "cloudstack.apache.org", "libvirt.org", "www.qemu.org", "qemu.org"),
     }
-    return domains.get(support_family(question), OFFICIAL_WEB_ALLOWED_DOMAINS)
+    return domains.get(family, OFFICIAL_WEB_ALLOWED_DOMAINS)
 
 
 def curated_reference_is_stale(*, today: date | None = None) -> bool:
@@ -150,9 +188,20 @@ def official_web_search_required(
         "WALL": ("grafana",),
         "MOLD": ("cloudstack",),
     }[family]
+    topic = support_topic(question)
+    topic_markers = {
+        "GUEST_AGENT": ("guest agent", "qemu-ga", "qemu guest agent", "게스트 에이전트"),
+        "TIME_SYNC": ("ntp", "w32time", "w32tm", "time", "시간", "동기화"),
+    }.get(topic)
+    if topic_markers is None:
+        return True
     return not any(
         str(item.get("sourceKind")) == "OFFICIAL_EXTERNAL_DOCUMENTATION"
         and any(marker in str(item.get("symbol") or "").casefold() for marker in family_markers)
+        and any(
+            marker in f"{item.get('symbol') or ''}\n{item.get('content') or ''}".casefold()
+            for marker in topic_markers
+        )
         for item in local_results
     )
 

@@ -104,6 +104,38 @@ class VersionedAssistPolicyTest(unittest.TestCase):
                 combined = "\n".join(item["content"] for item in curated_platform_results(question))
                 self.assertIn(expected, combined)
 
+    def test_windows_server_time_question_loads_only_matching_official_time_guidance(self) -> None:
+        question = "Windows Server 2022 가상머신 NTP 설정과 PowerShell 강제 시간 동기화 방법"
+        expanded = expand_retrieval_question(question)
+        results = curated_platform_results(question)
+        combined = "\n".join(item["content"] for item in results)
+
+        for expected in (
+            "W32Time", "w32tm /query /source", "syncfromflags:domhier", "manualpeerlist",
+            "w32tm /resync /rediscover", "w32tm /stripchart", "UDP 123",
+        ):
+            self.assertIn(expected, combined)
+        self.assertIn("Get-TimeZone", expanded)
+        self.assertIn("rediscover", expanded)
+        self.assertNotIn("qemu-ga-x86_64.msi", combined)
+
+    def test_windows_time_inline_commands_render_as_powershell(self) -> None:
+        answer = format_public_answer({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "Windows 시간 원본을 확인합니다.",
+                "observedFacts": [], "diagnoses": [],
+                "recommendedActions": [
+                    "관리자 PowerShell에서 `w32tm /query /source`와 `w32tm /resync /rediscover`를 실행합니다."
+                ],
+                "unknowns": [], "currentAssessment": "CURRENT_CONFIG_ERROR",
+                "previewAssessment": "NOT_APPLICABLE", "previewGuidance": None,
+            },
+            "citations": [],
+        }) or ""
+
+        self.assertIn("```powershell\nw32tm /query /source\nw32tm /resync /rediscover\n```", answer)
+
     def test_glue_koral_and_wall_expand_to_upstream_terms(self) -> None:
         self.assertIn("ceph health detail", expand_retrieval_question("Glue 상태가 WARN입니다."))
         self.assertIn("kubernetes", expand_retrieval_question("Koral Pod가 시작되지 않습니다."))

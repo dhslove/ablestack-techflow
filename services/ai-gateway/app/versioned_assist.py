@@ -93,6 +93,23 @@ GUEST_AGENT_MARKERS: tuple[str, ...] = (
     "get-service", "start-service", "org.qemu.guest_agent.0", "could not be found", "service",
 )
 
+WINDOWS_TIME_MARKERS: tuple[str, ...] = (
+    "Windows Server",
+    "W32Time",
+    "w32tm",
+    "NTP",
+    "manualpeerlist",
+    "syncfromflags",
+    "domhier",
+    "resync",
+    "rediscover",
+    "stripchart",
+    "Get-TimeZone",
+    "Get-Date",
+    "Restart-Service",
+    "UDP 123",
+)
+
 GLUE_MARKERS: tuple[str, ...] = (
     "glue", "ceph", "rados", "rbd", "cephfs", "osd", "mon", "mgr", "mds", "pool",
     "ceph status", "ceph health detail",
@@ -198,6 +215,16 @@ def _is_guest_agent_question(question: str) -> bool:
     return agent and procedure
 
 
+def _is_windows_time_question(question: str) -> bool:
+    normalized = question.casefold()
+    windows = any(marker in normalized for marker in ("windows", "윈도우"))
+    time_sync = any(marker in normalized for marker in (
+        "ntp", "시간", "시각", "time sync", "time synchronization", "w32time", "w32tm", "동기화",
+        "clock", "timezone", "time zone", "표준 시간대",
+    ))
+    return windows and time_sync
+
+
 def _is_glue_question(question: str) -> bool:
     normalized = question.casefold()
     return any(marker in normalized for marker in ("glue", "ceph", "rados", "rbd", "cephfs"))
@@ -236,6 +263,8 @@ def feature_source_terms(question: str) -> tuple[str, ...]:
         anchors.extend(FSFREEZE_MARKERS)
     if _is_guest_agent_question(question):
         anchors.extend(GUEST_AGENT_MARKERS)
+    if _is_windows_time_question(question):
+        anchors.extend(WINDOWS_TIME_MARKERS)
     if _is_glue_question(question):
         anchors.extend(GLUE_MARKERS)
     if _is_koral_question(question):
@@ -289,6 +318,12 @@ def _relevance_score(question: str, item: dict[str, Any]) -> int:
             "OFFICIAL_EXTERNAL_DOCUMENTATION", "OFFICIAL_LIVE_WEB_DOCUMENTATION",
         }:
             score += 12
+    if _is_windows_time_question(question):
+        score += sum(7 for marker in WINDOWS_TIME_MARKERS if marker.casefold() in searchable)
+        if str(item.get("sourceKind") or "") in {
+            "OFFICIAL_EXTERNAL_DOCUMENTATION", "OFFICIAL_LIVE_WEB_DOCUMENTATION",
+        }:
+            score += 18
     if _is_glue_question(question):
         score += sum(6 for marker in GLUE_MARKERS if marker in searchable)
     if _is_koral_question(question):
@@ -533,9 +568,13 @@ _CLI_PREFIXES = (
     "getfacl ", "matchpathcon ", "restorecon ", "virsh ", "qemu-ga ", "ls ",
     "grep ", "curl ", "ip ", "ss ", "getenforce", "sestatus", "mount ", "cat ",
     "apt ", "apt-get ", "dnf ", "rpm ", "dpkg ", "msiexec.exe ", "get-service ", "start-service ",
+    "restart-service ", "get-timezone", "get-date", "w32tm ", "tzutil.exe ",
 )
 
-_POWERSHELL_PREFIXES = ("msiexec.exe ", "get-service ", "start-service ", "restart-service ", "stop-service ")
+_POWERSHELL_PREFIXES = (
+    "msiexec.exe ", "get-service ", "start-service ", "restart-service ", "stop-service ",
+    "get-timezone", "get-date", "w32tm ", "tzutil.exe ",
+)
 
 
 def _looks_like_cli(value: str) -> bool:

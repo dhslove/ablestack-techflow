@@ -66,6 +66,7 @@ from .comprehensive import plan_query
 from .community import FlarumClient, conversationalize_answer, format_draft, profiles_for_tags
 from .conversation import (
     build_conversation_question,
+    build_chat_question,
     build_knowledge_base_question,
     build_progression_retry_question,
     community_result_advances,
@@ -1123,17 +1124,7 @@ def create_app(
                         answer = cached["content"]
                     else:
                         prior_turns = turns[:target_index]
-                        transcript = "\n".join(
-                            f"{'사용자' if item['role'] == 'USER' else '전문 엔지니어'}: {item['content']}"
-                            for item in prior_turns[-12:]
-                        )
-                        contextual_question = (
-                            "같은 사용자의 기술지원 대화입니다. 이전 맥락을 유지하되 현재 질문을 우선하고, "
-                            "DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드 전체, ABLESTACK Europa 프리뷰를 순서대로 "
-                            "검토해 친절하고 쉬운 말로 답하세요. 정보가 부족하면 다음에 필요한 자료를 구체적으로 요청하세요.\n\n"
-                            + (f"이전 대화:\n{transcript}\n\n" if transcript else "")
-                            + f"현재 질문:\n{target['content']}"
-                        )[:16000]
+                        contextual_question = build_chat_question(prior_turns, target["content"])
                         assist_request = ComprehensiveSynthesisRequest(
                             queryId=uuid4(), question=contextual_question, actorId=f"chat:{user_id}",
                             productVersion="diplo", locale="ko-KR", classification="D0",

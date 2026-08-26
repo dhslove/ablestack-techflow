@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "setId": "ABLESTACK_VERSIONED_ASSIST_GOLDEN_V1",
   "publicDocumentSections": ["증상", "원인", "해결 방법", "추가 고려사항", "적용 버전"],
-  "caseCount": 15,
+  "caseCount": 16,
   "cases": [
     {
       "caseKey": "CURRENT-DEFECT-PREVIEW-IMPROVED-001",
@@ -101,6 +101,16 @@
       "allowedAnswerState": "ANSWERED",
       "requiredPublicGuidance": ["qemu-ga-x86_64.msi", "Get-Service QEMU-GA", "powershell"],
       "forbiddenPublicClaims": ["임의 다운로드 사이트", "github.com"]
+    },
+    {
+      "caseKey": "WINDOWS-SERVER-2022-NTP-SYNC-001",
+      "question": "Windows Server 2022 가상머신에서 시간이 맞지 않습니다. NTP 설정, PowerShell 강제 동기화와 확인 방법을 알려주세요.",
+      "expectedCurrentAssessment": "CURRENT_CONFIG_ERROR",
+      "expectedPreviewAssessment": "NOT_APPLICABLE",
+      "expectedPublicGuidance": "Windows 가상머신 안에서 도메인 가입 여부에 맞는 W32Time 원본을 설정하고 강제 동기화 후 상태를 확인",
+      "allowedAnswerState": "ANSWERED",
+      "requiredPublicGuidance": ["Get-TimeZone", "w32tm /query /source", "syncfromflags:domhier", "manualpeerlist", "w32tm /resync /rediscover", "w32tm /stripchart", "UDP 123", "powershell"],
+      "forbiddenPublicClaims": ["ABLESTACK Diplo 버전", "관리 서버 로그", "호스트 로그", "TCP 포트만 확인", "github.com"]
     },
     {
       "caseKey": "GLUE-OFFICIAL-FALLBACK-001",

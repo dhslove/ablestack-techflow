@@ -6,6 +6,7 @@ from uuid import uuid4
 from app.conversation import (
     PROGRESSION_RETRY_INSTRUCTION,
     build_conversation_question,
+    build_chat_question,
     build_knowledge_base_question,
     build_progression_retry_question,
     community_result_advances,
@@ -90,6 +91,17 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertIn("visible status code, API command, component or stack-frame name", COMPREHENSIVE_SYSTEM_POLICY)
         self.assertIn("failing background request from the user's target operation", COMPREHENSIVE_SYSTEM_POLICY)
         self.assertIn("only for an exact item that was not already supplied", COMPREHENSIVE_SYSTEM_POLICY)
+
+    def test_chat_guest_os_question_requires_official_procedure_before_product_logs(self) -> None:
+        prompt = build_chat_question(
+            [],
+            "Windows Server 2022 가상머신의 NTP 설정과 PowerShell 강제 동기화 방법을 알려줘.",
+        )
+
+        self.assertIn("승인된 공식 문서나 도메인 제한 공식 검색 결과", prompt)
+        self.assertIn("실행 가능한 명령과 확인 기준을 먼저", prompt)
+        self.assertIn("ABLESTACK 버전이나 관리 서버·호스트 로그를 먼저 요구하지 마세요", prompt)
+        self.assertTrue(prompt.endswith("PowerShell 강제 동기화 방법을 알려줘."))
 
     def test_new_concrete_cli_step_advances_follow_up(self) -> None:
         result = {
