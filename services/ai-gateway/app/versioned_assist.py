@@ -592,6 +592,8 @@ def _format_copyable_cli(value: str) -> str:
         candidate = match.group(1).strip()
         if not _looks_like_cli(candidate):
             return match.group(0)
+        if candidate.casefold() == "w32tm /stripchart":
+            candidate = "w32tm /stripchart /computer:<NTP_SERVER> /dataonly /samples:5"
         commands.append(candidate.removeprefix("$ "))
         return "다음 명령"
 

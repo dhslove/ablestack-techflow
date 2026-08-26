@@ -138,6 +138,23 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("관리자 PowerShell에서 아래 명령을 실행합니다.", answer)
         self.assertNotIn("다음 명령과 다음 명령", answer)
 
+    def test_incomplete_windows_stripchart_is_rendered_as_a_copyable_check(self) -> None:
+        answer = format_public_answer({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "NTP 응답을 확인합니다.", "observedFacts": [], "diagnoses": [],
+                "recommendedActions": ["관리자 PowerShell에서 `w32tm /stripchart`를 실행합니다."],
+                "unknowns": [], "currentAssessment": "CURRENT_CONFIG_ERROR",
+                "previewAssessment": "NOT_APPLICABLE", "previewGuidance": None,
+            },
+            "citations": [],
+        }) or ""
+
+        self.assertIn(
+            "w32tm /stripchart /computer:<NTP_SERVER> /dataonly /samples:5",
+            answer,
+        )
+
     def test_glue_koral_and_wall_expand_to_upstream_terms(self) -> None:
         self.assertIn("ceph health detail", expand_retrieval_question("Glue 상태가 WARN입니다."))
         self.assertIn("kubernetes", expand_retrieval_question("Koral Pod가 시작되지 않습니다."))
