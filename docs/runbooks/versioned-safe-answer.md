@@ -13,6 +13,28 @@
 7. 후속 질문은 해결 표시 전까지 같은 Case의 최근 Artifact를 최대 5건 재사용한다.
 8. 후속 결과가 다시 `ABSTAINED`이면 같은 정보 요청을 게시하지 않고 한 번 재작성한다. 재작성도 진행되지 않으면 게시를 중단하고 재시도 대상으로 남긴다.
 
+## 일반 게스트 운영체제 질문
+
+Windows·Ubuntu·RHEL 계열 가상머신 내부의 설정·운영 질문은 ABLESTACK 제품 장애와 구분한다.
+
+1. 운영체제와 작업 주제를 함께 판정한다. 운영체제 이름만 일치하는 다른 주제의 자료는 사용하지 않는다.
+2. 정확한 승인 Snapshot이 있으면 공식 외부 문서 근거로 사용한다.
+3. 정확한 Snapshot이 없거나 갱신 기한을 넘겼으면 해당 운영체제의 공식 도메인만 Live Web으로 조회한다.
+4. Windows 일반 운영 질문은 Microsoft Learn, Ubuntu는 Ubuntu 공식 문서, RHEL 계열은 Red Hat·Rocky Linux 공식 문서로 제한한다.
+5. 게스트 안에서 완료할 수 있는 절차는 ABLESTACK 버전·관리 서버 로그·호스트 로그를 요구하기 전에 명령과 성공 기준을 답한다.
+6. 제품 계층 확인은 공식 게스트 절차가 실패하고 하이퍼바이저 연동이 의심될 때만 다음 단계로 제시한다.
+
+Windows Server 시간 질문은 다음 순서를 사용한다.
+
+- `Get-TimeZone`, `Get-Date`, `Get-Service W32Time`, `w32tm /query`로 현재 상태 확인
+- 도메인 일반 멤버는 `syncfromflags:domhier`
+- Workgroup·독립 서버는 승인된 `<NTP_SERVER>,0x8`과 `syncfromflags:manual`
+- `Restart-Service W32Time`, `w32tm /resync /rediscover`로 강제 동기화
+- `w32tm /stripchart /computer:<NTP_SERVER> /dataonly /samples:5`로 응답과 오차 확인
+- `Source`와 `Last Successful Sync Time`으로 성공 판정
+- NTP는 UDP 123을 사용하므로 TCP 포트 검사만으로 정상 판정 금지
+- 도메인 컨트롤러는 일반 멤버 서버 절차를 그대로 적용하지 않고 도메인 시간 정책 확인
+
 ## 배포 전
 
 1. `main...upstream/main`이 `0 0`인지 확인한다.
