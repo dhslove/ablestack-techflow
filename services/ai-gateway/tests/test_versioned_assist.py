@@ -135,6 +135,8 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         }) or ""
 
         self.assertIn("```powershell\nw32tm /query /source\nw32tm /resync /rediscover\n```", answer)
+        self.assertIn("관리자 PowerShell에서 아래 명령을 실행합니다.", answer)
+        self.assertNotIn("다음 명령과 다음 명령", answer)
 
     def test_glue_koral_and_wall_expand_to_upstream_terms(self) -> None:
         self.assertIn("ceph health detail", expand_retrieval_question("Glue 상태가 WARN입니다."))

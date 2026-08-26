@@ -596,6 +596,11 @@ def _format_copyable_cli(value: str) -> str:
         return "다음 명령"
 
     explanation = _INLINE_CODE.sub(replace, value).strip().replace("다음 명령를", "다음 명령을")
+    explanation = re.sub(
+        r"다음 명령(?:\s*(?:,|과|와)\s*다음 명령)+",
+        "아래 명령",
+        explanation,
+    ).replace("아래 명령를", "아래 명령을")
     if not commands:
         return value
     unique_commands = list(dict.fromkeys(commands))
