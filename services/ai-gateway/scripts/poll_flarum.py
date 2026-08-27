@@ -17,6 +17,8 @@ import urllib.parse
 import urllib.request
 from uuid import uuid4
 
+from app import __version__ as POLLER_VERSION
+
 
 DEFAULT_ATTACHMENT_MAX_BYTES = 1024 * 1024 * 1024
 DEFAULT_ARCHIVE_MAX_BYTES = 10 * 1024 * 1024 * 1024
@@ -469,18 +471,23 @@ def confirm_gateway_post(
         try:
             payload = request_json(endpoint, extra_headers=headers)
             case = payload.get("data") or {}
-            post_confirmed = str(case.get("lastSeenPostId") or "") == post_id
-            publication_confirmed = (
-                not require_publication
-                or (case.get("state") == "PUBLISHED" and bool(case.get("publishedPostId")))
-            )
-            if post_confirmed and publication_confirmed:
+            if gateway_post_is_confirmed(case, post_id, require_publication=require_publication):
                 return case
         except urllib.error.HTTPError as exc:
             if exc.code != 404:
                 raise
         time.sleep(1)
     raise TimeoutError(f"Gateway did not confirm discussion {discussion_id} post {post_id}")
+
+
+def gateway_post_is_confirmed(case: dict, post_id: str, *, require_publication: bool) -> bool:
+    """Check a Gateway Case without blocking the Poller discovery loop."""
+    post_confirmed = str(case.get("lastSeenPostId") or "") == post_id
+    publication_confirmed = (
+        not require_publication
+        or (case.get("state") == "PUBLISHED" and bool(case.get("publishedPostId")))
+    )
+    return post_confirmed and publication_confirmed
 
 
 def get_gateway_case_if_exists(gateway_url: str, discussion_id: str) -> dict | None:
@@ -502,12 +509,20 @@ def _safe_warning_filename(filename: str) -> str:
     return (sanitized[:80] or "community-artifact")
 
 
-def _write_state(state_path: Path, seen_posts: set[str], snapshots: dict) -> None:
+def _write_state(
+    state_path: Path,
+    seen_posts: set[str],
+    snapshots: dict,
+    pending_posts: dict[str, dict] | None = None,
+) -> None:
     ordered_posts = sorted(seen_posts, key=lambda value: int(value) if value.isdigit() else 0)[-5000:]
-    payload = json.dumps({"seenPosts": ordered_posts, "discussions": snapshots}, separators=(",", ":"))
+    payload: dict[str, object] = {"seenPosts": ordered_posts, "discussions": snapshots}
+    if pending_posts is not None:
+        payload["pendingPosts"] = pending_posts
+    serialized = json.dumps(payload, separators=(",", ":"))
     temporary = state_path.with_suffix(state_path.suffix + ".tmp")
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary.write_text(payload, encoding="utf-8")
+    temporary.write_text(serialized, encoding="utf-8")
     temporary.replace(state_path)
 
 
@@ -524,7 +539,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
             token = f"{token}; userId={assistant_user_id}"
     webhook = read_secret("TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE")
     gateway_confirm_timeout = _bounded_env_int(
-        "TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS", 600, 1, 1800
+        "TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS", 180, 10, 1800
     )
     api_url = base_url + "/api/discussions?sort=-lastPostedAt&include=user,tags,firstPost,bestAnswerPost,bestAnswerUser&page%5Blimit%5D=50"
     discussions = normalize_discussions(request_json(api_url, token=token), public_url)
@@ -532,7 +547,25 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     bootstrap_current = bootstrap_only or ("seen" in state and "seenPosts" not in state)
     seen_posts = set(state.get("seenPosts") or [])
     snapshots = state.get("discussions") or {}
-    delivered = 0
+    pending_posts: dict[str, dict] = dict(state.get("pendingPosts") or {})
+    now = int(time.time())
+    confirmed = 0
+    for pending_post_id, pending in list(pending_posts.items()):
+        try:
+            case = get_gateway_case_if_exists(gateway_url, str(pending.get("discussionId") or ""))
+            if case and gateway_post_is_confirmed(
+                case,
+                pending_post_id,
+                require_publication=bool(pending.get("requirePublication")),
+            ):
+                seen_posts.add(pending_post_id)
+                pending_posts.pop(pending_post_id, None)
+                confirmed += 1
+        except Exception:
+            # A transient Gateway lookup must not stop discovery of other discussions.
+            continue
+    delivered = confirmed
+    submitted = 0
     resolutions = 0
     failed = 0
     for discussion in reversed(discussions):
@@ -551,6 +584,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                 })
             )
             discussion_failed = False
+            discussion_waiting = False
             events = normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id)
             gateway_case = None
             if not bootstrap_current and any(item["postId"] not in seen_posts for item in events):
@@ -561,8 +595,21 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     continue
                 if bootstrap_current:
                     seen_posts.add(post_id)
-                    _write_state(state_path, seen_posts, snapshots)
+                    _write_state(state_path, seen_posts, snapshots, pending_posts)
                     continue
+                pending = pending_posts.get(post_id)
+                if pending and now < int(pending.get("nextRetryAt") or 0):
+                    discussion_waiting = True
+                    continue
+                attempts = int((pending or {}).get("attempts") or 0)
+                if pending:
+                    failed += 1
+                    print(json.dumps({
+                        "event": "community_post_confirmation_overdue",
+                        "discussionId": discussion_id,
+                        "postId": post_id,
+                        "attempt": attempts,
+                    }, separators=(",", ":")), flush=True)
                 correlation = f"community-{discussion_id}-{post_id}-{uuid4().hex[:8]}"
                 if gateway_case is None and event["postNumber"] > 1:
                     include_legacy_discussion_context(event, events)
@@ -575,22 +622,33 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     event["artifactIds"] = artifact_ids
                     event["artifactWarnings"] = artifact_warnings
                     request_json(webhook, data=event)
-                    gateway_case = confirm_gateway_post(
-                        gateway_url, discussion_id, post_id, gateway_confirm_timeout,
-                        require_publication=bool(event.get("responseRequested")) and not event.get("resolutionOnly", False),
-                    )
-                    seen_posts.add(post_id)
-                    _write_state(state_path, seen_posts, snapshots)
-                    delivered += 1
+                    attempts += 1
+                    retry_delay = min(gateway_confirm_timeout * (2 ** min(attempts - 1, 3)), 900)
+                    pending_posts[post_id] = {
+                        "discussionId": discussion_id,
+                        "requirePublication": bool(event.get("responseRequested")) and not event.get("resolutionOnly", False),
+                        "submittedAt": now,
+                        "nextRetryAt": now + retry_delay,
+                        "attempts": attempts,
+                    }
+                    _write_state(state_path, seen_posts, snapshots, pending_posts)
+                    submitted += 1
+                    discussion_waiting = True
                 except Exception as exc:
                     failed += 1
                     discussion_failed = True
+                    if pending:
+                        pending["nextRetryAt"] = now + min(30 * (2 ** min(attempts, 4)), 300)
+                        pending_posts[post_id] = pending
+                        _write_state(state_path, seen_posts, snapshots, pending_posts)
                     print(json.dumps({
                         "event": "community_post_delivery_failed", "discussionId": discussion_id,
                         "postId": post_id, "errorType": type(exc).__name__,
                     }, separators=(",", ":")), flush=True)
                     break
             if discussion_failed:
+                continue
+            if discussion_waiting:
                 continue
             resolution_changed = bool(previous) and (
                 previous.get("bestAnswerPostId") != discussion.get("bestAnswerPostId")
@@ -612,7 +670,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
             "bestAnswerPostId": discussion.get("bestAnswerPostId"),
             "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
         }
-    _write_state(state_path, seen_posts, snapshots)
+    _write_state(state_path, seen_posts, snapshots, pending_posts)
     reconcile_id = uuid4().hex
     reconciliation = request_json(
         gateway_url.rstrip("/") + "/v1/community/reviews/reconcile",
@@ -620,7 +678,9 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         extra_headers={"X-Correlation-Id": f"community-reconcile-{reconcile_id}", "Idempotency-Key": f"community-reconcile-{reconcile_id}"},
     )
     return {
-        "observed": len(discussions), "delivered": delivered, "seenPosts": len(seen_posts),
+        "version": POLLER_VERSION,
+        "observed": len(discussions), "delivered": delivered, "submitted": submitted,
+        "pendingPosts": len(pending_posts), "seenPosts": len(seen_posts),
         "resolutions": resolutions, "failed": failed,
         "reviewsChecked": reconciliation.get("data", {}).get("checked", 0),
         "reviewsApproved": reconciliation.get("data", {}).get("approved", 0),
@@ -639,11 +699,17 @@ def main() -> int:
         try:
             result = run_once(state_path, bootstrap_only=first)
             print(json.dumps({"event": "community_poll_completed", **result}, separators=(",", ":")), flush=True)
-            report_operation_state(
-                os.getenv("TECHFLOW_GATEWAY_URL", "http://gateway:8090"),
-                recovered=not bool(result.get("failed", 0)),
-                error_type="CommunityPostDeliveryFailed",
-            )
+            if result.get("failed", 0):
+                report_operation_state(
+                    os.getenv("TECHFLOW_GATEWAY_URL", "http://gateway:8090"),
+                    recovered=False,
+                    error_type="CommunityPostDeliveryFailed",
+                )
+            elif not result.get("pendingPosts", 0):
+                report_operation_state(
+                    os.getenv("TECHFLOW_GATEWAY_URL", "http://gateway:8090"),
+                    recovered=True,
+                )
             first = False
         except Exception as exc:
             print(json.dumps({"event": "community_poll_failed", "errorType": type(exc).__name__}), flush=True)

@@ -11,6 +11,8 @@ from app.conversation import (
     build_progression_retry_question,
     community_result_advances,
     conversation_artifact_ids,
+    is_resolution_progress_update,
+    resolution_progress_result,
 )
 from app.models import CommunityCaseCreateRequest, ComprehensiveQueryRequest, ComprehensiveSynthesisRequest
 from app.responses import COMPREHENSIVE_SYSTEM_POLICY
@@ -102,6 +104,19 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertIn("실행 가능한 명령과 확인 기준을 먼저", prompt)
         self.assertIn("ABLESTACK 버전이나 관리 서버·호스트 로그를 먼저 요구하지 마세요", prompt)
         self.assertTrue(prompt.endswith("PowerShell 강제 동기화 방법을 알려줘."))
+
+    def test_successful_tag_correction_gets_deterministic_resolution_progress_answer(self) -> None:
+        update = (
+            "물리네트워크의 태그와 네트워크 오퍼링 태그를 맞춘 후 해당 문제가 더 이상 발생하지 않습니다."
+        )
+
+        self.assertTrue(is_resolution_progress_update(update))
+        result = resolution_progress_result(update) or {}
+        self.assertEqual("ANSWERED", result["state"])
+        self.assertFalse(result["generationProviderCalled"])
+        self.assertIn("태그를 일치시킨 뒤", result["report"]["summary"])
+        self.assertIn("태그 불일치", result["report"]["diagnoses"][0]["title"])
+        self.assertTrue(any("해결 답변으로 선택" in item for item in result["report"]["recommendedActions"]))
 
     def test_new_concrete_cli_step_advances_follow_up(self) -> None:
         result = {

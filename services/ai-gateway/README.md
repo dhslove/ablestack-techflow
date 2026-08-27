@@ -1,5 +1,14 @@
 # TechFlow AI Gateway
 
+## v0.16.3 구현 범위
+
+- 성공 결과 댓글을 RAG 근거 부족으로 보류하지 않고 결정적 해결 진행 답변으로 처리
+- Activepieces 비동기 수락 이후 Gateway 확인을 Poller의 단일 실행 루프에서 분리
+- 미확인 Post를 `pendingPosts`에 지속 저장하고 다음 Poll에서 확인·지수 재전송
+- 한 Post의 장시간 AI 처리 또는 실패가 다른 Discussion 탐색을 막지 않도록 비차단 처리
+- Gateway 확인 기본 상한을 600초에서 180초로 축소하고 Poller 상태 파일 Freshness Healthcheck 추가
+- Poller 로그에 실행 버전을 표시해 Gateway·Poller 버전 불일치 확인 가능
+
 ## v0.16.2 구현 범위
 
 - 일반 Windows·Ubuntu·RHEL 계열 게스트 운영체제 설정·운영 질문을 공식 자료 근거 대상으로 확장

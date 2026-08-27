@@ -459,6 +459,43 @@ class CommunityTests(unittest.TestCase):
         self.assertFalse(duplicate["turnCreated"])
         self.assertEqual(2, duplicate["draftVersion"])
 
+    def test_successful_requester_update_bypasses_rag_and_creates_resolution_acknowledgment(self) -> None:
+        store = MemoryStore()
+        first = {
+            **self.payload(), "postId": "415", "postNumber": 1,
+            "postAuthorId": "42", "turnRole": "REQUESTER", "responseRequested": True,
+        }
+        case = store.create_community_case(
+            first,
+            {"draftAnswer": "태그 값을 확인해 주세요.", "answerState": "ANSWERED", "citations": []},
+            "resolution-progress-first", "resolution-progress-first-correlation",
+        )
+        store.mark_community_auto_published(
+            case["caseId"], "태그 값을 확인해 주세요.",
+            {"postId": "418", "postUrl": "https://community.ablecloud.io/d/901/418"},
+            "resolution-progress-first-published",
+        )
+        client = TestClient(create_app(Settings(), store))
+
+        response = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "resolution-progress-followup"},
+            json={
+                **first,
+                "question": (
+                    "물리네트워크의 태그와 네트워크 오퍼링 태그를 맞춘 후 해당 문제가 더 이상 발생하지 않습니다."
+                ),
+                "postId": "419", "postNumber": 5,
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        result = response.json()["data"]
+        self.assertEqual("ANSWERED", result["answerState"])
+        self.assertEqual("419", result["lastSeenPostId"])
+        self.assertIn("태그를 일치시킨 뒤", result["draftAnswer"])
+        self.assertEqual("419", store.list_community_turns("901")[-1]["sourcePostId"])
+
     def test_failed_followup_draft_can_be_retried_without_duplicate_turn(self) -> None:
         store = MemoryStore()
         first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42",

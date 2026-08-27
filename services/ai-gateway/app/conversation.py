@@ -12,6 +12,11 @@ ROLE_LABELS = {
     "ASSISTANT": "TechFlow-Assistant",
 }
 
+_RESOLUTION_UPDATE_MARKERS = (
+    "더 이상 발생하지", "더 이상 문제가", "문제가 해결", "해결되었습니다", "해결됐", "해결되었",
+    "정상 동작", "정상적으로 동작", "조치 후 정상", "문제가 없어", "오류가 없어", "성공했습니다",
+)
+
 PROGRESSION_RETRY_INSTRUCTION = (
     "[진행성 재작성 필수]\n"
     "직전 답변의 설명과 점검 목록을 반복하지 마십시오. "
@@ -81,6 +86,65 @@ def build_chat_question(
         + f"현재 질문:\n{current_question}"
     )
     return prompt[:limit]
+
+
+def is_resolution_progress_update(value: object) -> bool:
+    """Recognize a requester's successful outcome without requiring RAG evidence for an acknowledgment."""
+    normalized = str(value or "").casefold()
+    return any(marker in normalized for marker in _RESOLUTION_UPDATE_MARKERS)
+
+
+def resolution_progress_result(value: object) -> dict[str, Any] | None:
+    """Return a deterministic, source-safe follow-up for a confirmed successful outcome."""
+    if not is_resolution_progress_update(value):
+        return None
+    normalized = str(value or "").casefold()
+    tag_resolution = (
+        "물리네트워크" in normalized
+        and "오퍼링" in normalized
+        and "태그" in normalized
+    )
+    summary = "조치 후 문제가 더 이상 발생하지 않는다는 결과를 확인했습니다."
+    diagnoses = []
+    actions = [
+        "현재 정상 동작하는 설정값을 운영 기록에 남겨 같은 유형의 네트워크를 만들 때 재사용하세요.",
+        "문제 해결에 기여한 답변을 해결 답변으로 선택하면 전체 대화를 Knowledge Base 문서로 정리할 수 있습니다.",
+    ]
+    if tag_resolution:
+        summary = (
+            "물리 네트워크 태그와 네트워크 오퍼링 태그를 일치시킨 뒤 요청 실패가 더 이상 발생하지 않는다는 "
+            "결과를 확인했습니다."
+        )
+        diagnoses.append({
+            "title": "태그 불일치로 대상 물리 네트워크에 사용할 네트워크 오퍼링을 찾지 못한 설정 문제",
+            "likelihood": "HIGH",
+            "evidenceIds": [],
+        })
+        actions.insert(
+            0,
+            "재발을 막으려면 물리 네트워크와 네트워크 오퍼링의 태그를 동일한 값으로 관리하고 생성 전 두 값을 대조하세요.",
+        )
+    return {
+        "state": "ANSWERED",
+        "report": {
+            "state": "ANSWERED",
+            "summary": summary,
+            "observedFacts": ["질문자가 조치 후 동일한 문제가 더 이상 발생하지 않는다고 확인했습니다."],
+            "diagnoses": diagnoses,
+            "recommendedActions": actions,
+            "unknowns": [],
+            "confidence": "HIGH" if tag_resolution else "MEDIUM",
+            "citationsUsed": [],
+            "artifactEvidence": [],
+            "currentAssessment": "CURRENT_CONFIG_ERROR" if tag_resolution else "CURRENT_NORMAL",
+            "previewAssessment": "NOT_APPLICABLE",
+            "previewGuidance": None,
+            "abstainReason": None,
+        },
+        "citations": [],
+        "generationProviderCalled": False,
+        "providerProfileId": None,
+    }
 
 
 def build_conversation_question(
