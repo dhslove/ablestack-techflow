@@ -115,6 +115,8 @@ class ContainerContractTest(unittest.TestCase):
         self.assertIn("healthcheck:", poller)
         self.assertIn("TECHFLOW_COMMUNITY_POLLER_STATE", poller)
         self.assertIn("st_mtime < 120", poller)
+        self.assertIn("gateway:", poller)
+        self.assertIn("condition: service_healthy", poller)
         self.assertNotIn("from app import", POLLER)
         self.assertIn('"app" / "__init__.py"', POLLER)
 

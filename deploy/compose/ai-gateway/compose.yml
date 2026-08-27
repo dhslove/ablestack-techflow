@@ -230,6 +230,8 @@ services:
     depends_on:
       community-poller-init:
         condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
     secrets:
       - flarum_api_key
       - flarum_assistant_user_id
