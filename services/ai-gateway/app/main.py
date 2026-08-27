@@ -60,7 +60,7 @@ from .responses import (
 from .source_fetcher import FetchError, GitSnapshotFetcher, SnapshotFetcher
 from .source_pipeline import SourcePipeline
 from .source_registry import get_profile
-from .store import InvalidBoundaryError, InvalidStateError, MemoryStore, Store, StoreError
+from .store import InvalidBoundaryError, InvalidStateError, MemoryStore, NotFoundError, Store, StoreError
 from .artifacts import ArtifactStore
 from .comprehensive import plan_query
 from .community import FlarumClient, conversationalize_answer, format_draft, profiles_for_tags
@@ -151,6 +151,28 @@ def _envelope(data: Any, correlation_id: str) -> Envelope:
 
 def _model_data(model: Any) -> dict[str, Any]:
     return model.model_dump(by_alias=True, mode="json", exclude_none=False)
+
+
+def _available_conversation_artifact_ids(
+    turns: list[dict[str, Any]], artifact_store: ArtifactStore, *, limit: int = 5,
+) -> tuple[list[UUID], int]:
+    """Reuse retained artifacts for KB synthesis and skip evidence already removed by policy."""
+    available: list[UUID] = []
+    unavailable = 0
+    for turn in reversed(turns):
+        for artifact_id in reversed(turn.get("artifactIds") or []):
+            value = UUID(str(artifact_id))
+            if value in available:
+                continue
+            try:
+                artifact_store.evidence(value)
+            except NotFoundError:
+                unavailable += 1
+                continue
+            available.append(value)
+            if len(available) == limit:
+                return available, unavailable
+    return available, unavailable
 
 
 def _idempotency_key(idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None) -> str:
@@ -692,16 +714,16 @@ def create_app(
                     knowledge_question = build_knowledge_base_question(
                         request.title, turns, str(result["resolvedPostId"]),
                     )
-                    artifact_ids: list[UUID] = []
-                    for turn in reversed(turns):
-                        for artifact_id in reversed(turn.get("artifactIds") or []):
-                            value = UUID(str(artifact_id))
-                            if value not in artifact_ids:
-                                artifact_ids.append(value)
-                            if len(artifact_ids) == 5:
-                                break
-                        if len(artifact_ids) == 5:
-                            break
+                    artifact_ids, unavailable_artifacts = _available_conversation_artifact_ids(
+                        turns, artifact_store,
+                    )
+                    if unavailable_artifacts:
+                        _json_log(
+                            "community_knowledge_expired_artifacts_skipped",
+                            correlationId=correlation_id,
+                            caseId=str(result["caseId"]),
+                            unavailableArtifactCount=unavailable_artifacts,
+                        )
                     knowledge_result = _query_comprehensive(
                         ComprehensiveSynthesisRequest(
                             queryId=uuid4(), question=knowledge_question,

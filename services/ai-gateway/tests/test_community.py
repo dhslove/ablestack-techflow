@@ -5,15 +5,15 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
 from app.community import FlarumClient, FlarumResourceNotFound, conversationalize_answer, format_draft, profiles_for_tags
 from app.versioned_assist import format_knowledge_base
 from app.config import Settings
-from app.main import _resolution_administrator_ids, create_app
-from app.store import KB_SOLUTION_CONFIRMED_EVENT, MemoryStore
+from app.main import _available_conversation_artifact_ids, _resolution_administrator_ids, create_app
+from app.store import KB_SOLUTION_CONFIRMED_EVENT, MemoryStore, NotFoundError
 
 
 HEADERS = {"X-Correlation-Id": "community-test-0001", "Idempotency-Key": "community-test-idempotency-0001"}
@@ -495,6 +495,27 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual("419", result["lastSeenPostId"])
         self.assertIn("태그를 일치시킨 뒤", result["draftAnswer"])
         self.assertEqual("419", store.list_community_turns("901")[-1]["sourcePostId"])
+
+    def test_expired_conversation_artifact_does_not_block_final_kb_synthesis(self) -> None:
+        retained = uuid4()
+        expired = uuid4()
+
+        class EvidenceStore:
+            def evidence(self, artifact_id):
+                if artifact_id == expired:
+                    raise NotFoundError("artifact not found")
+                return object()
+
+        available, unavailable = _available_conversation_artifact_ids(
+            [
+                {"artifactIds": [str(expired), str(retained)]},
+                {"artifactIds": [str(retained)]},
+            ],
+            EvidenceStore(),
+        )
+
+        self.assertEqual([retained], available)
+        self.assertEqual(1, unavailable)
 
     def test_failed_followup_draft_can_be_retried_without_duplicate_turn(self) -> None:
         store = MemoryStore()

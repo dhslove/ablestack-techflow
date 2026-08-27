@@ -490,6 +490,16 @@ def gateway_post_is_confirmed(case: dict, post_id: str, *, require_publication: 
     return post_confirmed and publication_confirmed
 
 
+def gateway_resolution_is_confirmed(case: dict, source_post_id: str) -> bool:
+    """Require final KB publication and solution selection before checkpointing a Flarum resolution."""
+    return bool(
+        case.get("conversationState") == "RESOLVED"
+        and str(case.get("resolvedPostId") or "") == source_post_id
+        and case.get("knowledgeBasePostId")
+        and case.get("knowledgeBaseSolutionSelectedAt")
+    )
+
+
 def get_gateway_case_if_exists(gateway_url: str, discussion_id: str) -> dict | None:
     endpoint = gateway_url.rstrip("/") + f"/v1/community/discussions/{discussion_id}/case"
     try:
@@ -514,11 +524,14 @@ def _write_state(
     seen_posts: set[str],
     snapshots: dict,
     pending_posts: dict[str, dict] | None = None,
+    pending_resolutions: dict[str, dict] | None = None,
 ) -> None:
     ordered_posts = sorted(seen_posts, key=lambda value: int(value) if value.isdigit() else 0)[-5000:]
     payload: dict[str, object] = {"seenPosts": ordered_posts, "discussions": snapshots}
     if pending_posts is not None:
         payload["pendingPosts"] = pending_posts
+    if pending_resolutions is not None:
+        payload["pendingResolutions"] = pending_resolutions
     serialized = json.dumps(payload, separators=(",", ":"))
     temporary = state_path.with_suffix(state_path.suffix + ".tmp")
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -548,6 +561,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     seen_posts = set(state.get("seenPosts") or [])
     snapshots = state.get("discussions") or {}
     pending_posts: dict[str, dict] = dict(state.get("pendingPosts") or {})
+    pending_resolutions: dict[str, dict] = dict(state.get("pendingResolutions") or {})
     now = int(time.time())
     confirmed = 0
     for pending_post_id, pending in list(pending_posts.items()):
@@ -564,9 +578,23 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         except Exception:
             # A transient Gateway lookup must not stop discovery of other discussions.
             continue
-    delivered = confirmed
+    confirmed_resolution_discussions: set[str] = set()
+    confirmed_resolutions = 0
+    for resolution_key, pending in list(pending_resolutions.items()):
+        discussion_id = str(pending.get("discussionId") or "")
+        source_post_id = str(pending.get("sourcePostId") or "")
+        try:
+            case = get_gateway_case_if_exists(gateway_url, discussion_id)
+            if case and gateway_resolution_is_confirmed(case, source_post_id):
+                pending_resolutions.pop(resolution_key, None)
+                confirmed_resolution_discussions.add(discussion_id)
+                confirmed_resolutions += 1
+        except Exception:
+            continue
+    delivered = confirmed + confirmed_resolutions
     submitted = 0
-    resolutions = 0
+    submitted_resolutions = 0
+    resolutions = confirmed_resolutions
     failed = 0
     for discussion in reversed(discussions):
         discussion_id = discussion["discussionId"]
@@ -595,7 +623,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     continue
                 if bootstrap_current:
                     seen_posts.add(post_id)
-                    _write_state(state_path, seen_posts, snapshots, pending_posts)
+                    _write_state(state_path, seen_posts, snapshots, pending_posts, pending_resolutions)
                     continue
                 pending = pending_posts.get(post_id)
                 if pending and now < int(pending.get("nextRetryAt") or 0):
@@ -631,7 +659,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                         "nextRetryAt": now + retry_delay,
                         "attempts": attempts,
                     }
-                    _write_state(state_path, seen_posts, snapshots, pending_posts)
+                    _write_state(state_path, seen_posts, snapshots, pending_posts, pending_resolutions)
                     submitted += 1
                     discussion_waiting = True
                 except Exception as exc:
@@ -640,7 +668,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     if pending:
                         pending["nextRetryAt"] = now + min(30 * (2 ** min(attempts, 4)), 300)
                         pending_posts[post_id] = pending
-                        _write_state(state_path, seen_posts, snapshots, pending_posts)
+                        _write_state(state_path, seen_posts, snapshots, pending_posts, pending_resolutions)
                     print(json.dumps({
                         "event": "community_post_delivery_failed", "discussionId": discussion_id,
                         "postId": post_id, "errorType": type(exc).__name__,
@@ -655,6 +683,23 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                 or previous.get("bestAnswerSetAt") != discussion.get("bestAnswerSetAt")
             )
             if resolution_changed and not bootstrap_current:
+                if discussion_id in confirmed_resolution_discussions:
+                    resolution_changed = False
+                else:
+                    resolution_key = resolution_event_id(discussion)
+                    pending_resolution = pending_resolutions.get(resolution_key)
+                    if pending_resolution and now < int(pending_resolution.get("nextRetryAt") or 0):
+                        continue
+                    attempts = int((pending_resolution or {}).get("attempts") or 0)
+                    if pending_resolution:
+                        failed += 1
+                        print(json.dumps({
+                            "event": "community_resolution_confirmation_overdue",
+                            "discussionId": discussion_id,
+                            "sourcePostId": discussion.get("bestAnswerPostId"),
+                            "attempt": attempts,
+                        }, separators=(",", ":")), flush=True)
+            if resolution_changed and not bootstrap_current:
                 event = resolution_event(discussion)
                 correlation = f"community-resolution-{discussion_id}-{uuid4().hex[:8]}"
                 event.update(
@@ -662,15 +707,34 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     eventId=resolution_event_id(discussion),
                     artifactIds=[],
                 )
-                request_json(webhook, data=event)
-                delivered += 1
-                resolutions += 1
+                try:
+                    request_json(webhook, data=event)
+                    attempts += 1
+                    retry_delay = min(gateway_confirm_timeout * (2 ** min(attempts - 1, 3)), 900)
+                    pending_resolutions[resolution_key] = {
+                        "discussionId": discussion_id,
+                        "sourcePostId": str(discussion.get("bestAnswerPostId") or ""),
+                        "submittedAt": now,
+                        "nextRetryAt": now + retry_delay,
+                        "attempts": attempts,
+                    }
+                    _write_state(state_path, seen_posts, snapshots, pending_posts, pending_resolutions)
+                    submitted_resolutions += 1
+                    continue
+                except Exception as exc:
+                    failed += 1
+                    print(json.dumps({
+                        "event": "community_resolution_delivery_failed",
+                        "discussionId": discussion_id,
+                        "errorType": type(exc).__name__,
+                    }, separators=(",", ":")), flush=True)
+                    continue
         snapshots[discussion_id] = {
             "commentCount": discussion["commentCount"],
             "bestAnswerPostId": discussion.get("bestAnswerPostId"),
             "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
         }
-    _write_state(state_path, seen_posts, snapshots, pending_posts)
+    _write_state(state_path, seen_posts, snapshots, pending_posts, pending_resolutions)
     reconcile_id = uuid4().hex
     reconciliation = request_json(
         gateway_url.rstrip("/") + "/v1/community/reviews/reconcile",
@@ -680,7 +744,8 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     return {
         "version": POLLER_VERSION,
         "observed": len(discussions), "delivered": delivered, "submitted": submitted,
-        "pendingPosts": len(pending_posts), "seenPosts": len(seen_posts),
+        "pendingPosts": len(pending_posts), "submittedResolutions": submitted_resolutions,
+        "pendingResolutions": len(pending_resolutions), "seenPosts": len(seen_posts),
         "resolutions": resolutions, "failed": failed,
         "reviewsChecked": reconciliation.get("data", {}).get("checked", 0),
         "reviewsApproved": reconciliation.get("data", {}).get("approved", 0),
@@ -705,7 +770,7 @@ def main() -> int:
                     recovered=False,
                     error_type="CommunityPostDeliveryFailed",
                 )
-            elif not result.get("pendingPosts", 0):
+            elif not result.get("pendingPosts", 0) and not result.get("pendingResolutions", 0):
                 report_operation_state(
                     os.getenv("TECHFLOW_GATEWAY_URL", "http://gateway:8090"),
                     recovered=True,

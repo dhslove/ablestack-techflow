@@ -140,6 +140,21 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertRegex(event_id, r"^flarum-resolution-10-101-[a-f0-9]{16}$")
         self.assertNotIn(":", event_id)
 
+    def test_resolution_confirmation_requires_kb_publication_and_final_selection(self) -> None:
+        incomplete = {
+            "conversationState": "RESOLVED", "resolvedPostId": "420",
+            "knowledgeBasePostId": None, "knowledgeBaseSolutionSelectedAt": None,
+        }
+        complete = {
+            **incomplete,
+            "knowledgeBasePostId": "421",
+            "knowledgeBaseSolutionSelectedAt": "2026-08-27T08:00:00Z",
+        }
+
+        self.assertFalse(poll_flarum.gateway_resolution_is_confirmed(incomplete, "420"))
+        self.assertFalse(poll_flarum.gateway_resolution_is_confirmed(complete, "419"))
+        self.assertTrue(poll_flarum.gateway_resolution_is_confirmed(complete, "420"))
+
     def test_legacy_discussion_state_bootstraps_posts_without_notification_flood(self) -> None:
         discussion_payload = {
             "data": [{"type": "discussions", "id": "10",
@@ -422,11 +437,15 @@ class CommunityPollerTests(unittest.TestCase):
             poll_flarum._write_state(
                 state_path, {"100", "102"}, {"10": {"commentCount": 2}},
                 {"103": {"discussionId": "10", "nextRetryAt": 1000, "attempts": 1}},
+                {"resolution-10": {
+                    "discussionId": "10", "sourcePostId": "102", "nextRetryAt": 1000, "attempts": 1,
+                }},
             )
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(["100", "102"], state["seenPosts"])
             self.assertEqual(2, state["discussions"]["10"]["commentCount"])
             self.assertEqual(1, state["pendingPosts"]["103"]["attempts"])
+            self.assertEqual("102", state["pendingResolutions"]["resolution-10"]["sourcePostId"])
             self.assertFalse(state_path.with_suffix(".json.tmp").exists())
 
     def test_gateway_confirmation_retries_until_post_is_observed(self) -> None:
