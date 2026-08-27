@@ -586,6 +586,9 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         try:
             case = get_gateway_case_if_exists(gateway_url, discussion_id)
             if case and gateway_resolution_is_confirmed(case, source_post_id):
+                resolution_snapshot = snapshots.setdefault(discussion_id, {})
+                resolution_snapshot["bestAnswerPostId"] = source_post_id
+                resolution_snapshot["bestAnswerSetAt"] = pending.get("bestAnswerSetAt")
                 pending_resolutions.pop(resolution_key, None)
                 confirmed_resolution_discussions.add(discussion_id)
                 confirmed_resolutions += 1
@@ -714,6 +717,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                     pending_resolutions[resolution_key] = {
                         "discussionId": discussion_id,
                         "sourcePostId": str(discussion.get("bestAnswerPostId") or ""),
+                        "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
                         "submittedAt": now,
                         "nextRetryAt": now + retry_delay,
                         "attempts": attempts,
