@@ -35,7 +35,7 @@
   },
   "runtime": {
     "version": "0.16.3",
-    "image": "techflow/ai-gateway:issue103-0.16.3-92920f6",
+    "image": "techflow/ai-gateway:issue103-0.16.3-ae2e92c",
     "gatewayHealthy": true,
     "pollerHealthy": true,
     "gatewayRestartCount": 0,

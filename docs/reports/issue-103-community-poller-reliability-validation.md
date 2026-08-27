@@ -61,7 +61,7 @@ Post #419의 “물리 네트워크 태그와 네트워크 오퍼링 태그를 �
 | 항목 | 결과 |
 |---|---|
 | Repository 테스트 | 301건 통과 |
-| Gateway·Poller Image | `techflow/ai-gateway:issue103-0.16.3-92920f6` |
+| Gateway·Poller Image | `techflow/ai-gateway:issue103-0.16.3-ae2e92c` |
 | Gateway Health | Healthy, Restart 0 |
 | Poller Health | Healthy, Restart 0 |
 | Post #419 | Case·Checkpoint 기록 완료 |
