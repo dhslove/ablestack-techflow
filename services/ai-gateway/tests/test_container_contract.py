@@ -15,6 +15,7 @@ COMPOSE = (REPO / "deploy" / "compose" / "ai-gateway" / "compose.yml").read_text
 MAIN = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 ARTIFACTS = (ROOT / "app" / "artifacts.py").read_text(encoding="utf-8")
 GITATTRIBUTES = (REPO / ".gitattributes").read_text(encoding="utf-8")
+POLLER = (ROOT / "scripts" / "poll_flarum.py").read_text(encoding="utf-8")
 
 
 class ContainerContractTest(unittest.TestCase):
@@ -114,6 +115,8 @@ class ContainerContractTest(unittest.TestCase):
         self.assertIn("healthcheck:", poller)
         self.assertIn("TECHFLOW_COMMUNITY_POLLER_STATE", poller)
         self.assertIn("st_mtime < 120", poller)
+        self.assertNotIn("from app import", POLLER)
+        self.assertIn('"app" / "__init__.py"', POLLER)
 
     def test_tree_sitter_parsers_are_prefetched_in_the_image(self) -> None:
         self.assertIn("scripts/prefetch_parsers.py", DOCKERFILE)

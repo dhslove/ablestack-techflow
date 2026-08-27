@@ -17,9 +17,6 @@ import urllib.parse
 import urllib.request
 from uuid import uuid4
 
-from app import __version__ as POLLER_VERSION
-
-
 DEFAULT_ATTACHMENT_MAX_BYTES = 1024 * 1024 * 1024
 DEFAULT_ARCHIVE_MAX_BYTES = 10 * 1024 * 1024 * 1024
 DEFAULT_ATTACHMENT_TIMEOUT_SECONDS = 7200
@@ -27,6 +24,9 @@ DEFAULT_ATTACHMENT_RETRIES = 2
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 TRANSIENT_HTTP_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 POLLER_FAILURE_FINGERPRINT = hashlib.sha256(b"community-poller:poll").hexdigest()
+_VERSION_SOURCE = Path(__file__).resolve().parents[1] / "app" / "__init__.py"
+_VERSION_MATCH = re.search(r'__version__\s*=\s*"([^"]+)"', _VERSION_SOURCE.read_text(encoding="utf-8"))
+POLLER_VERSION = _VERSION_MATCH.group(1) if _VERSION_MATCH else "unknown"
 
 
 class ContentParser(HTMLParser):
