@@ -54,6 +54,7 @@
     "knowledgeBaseVersion": 1,
     "knowledgeBaseSelectedAsSolution": true,
     "stablePollWindowMinutes": 10,
+    "stablePollCompleted": 58,
     "stablePollFailures": 0,
     "stableDeliveryFailures": 0
   },

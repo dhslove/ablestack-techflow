@@ -71,7 +71,7 @@ Post #419의 “물리 네트워크 태그와 네트워크 오퍼링 태그를 �
 | Discussion Snapshot | 댓글 7건 |
 | KB·최종 솔루션 | Post #421 / Version 1 / 선택 완료 |
 | Case | `PUBLISHED` / `ANSWERED` / `RESOLVED` |
-| 10분 안정 구간 | Poll 실패 0, Delivery 실패 0 |
+| 10분 안정 구간 | Poll 58회 완료, Poll·Delivery·Resolution 실패 0 |
 | Community·Chat·Activepieces | HTTP 200 |
 | 보호 서비스 변경 | 0건 |
 
