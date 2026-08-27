@@ -154,6 +154,7 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertFalse(poll_flarum.gateway_resolution_is_confirmed(incomplete, "420"))
         self.assertFalse(poll_flarum.gateway_resolution_is_confirmed(complete, "419"))
         self.assertTrue(poll_flarum.gateway_resolution_is_confirmed(complete, "420"))
+        self.assertTrue(poll_flarum.gateway_resolution_is_confirmed(complete, "421"))
 
     def test_legacy_discussion_state_bootstraps_posts_without_notification_flood(self) -> None:
         discussion_payload = {

@@ -492,9 +492,13 @@ def gateway_post_is_confirmed(case: dict, post_id: str, *, require_publication: 
 
 def gateway_resolution_is_confirmed(case: dict, source_post_id: str) -> bool:
     """Require final KB publication and solution selection before checkpointing a Flarum resolution."""
+    source_matches = source_post_id in {
+        str(case.get("resolvedPostId") or ""),
+        str(case.get("knowledgeBasePostId") or ""),
+    }
     return bool(
         case.get("conversationState") == "RESOLVED"
-        and str(case.get("resolvedPostId") or "") == source_post_id
+        and source_matches
         and case.get("knowledgeBasePostId")
         and case.get("knowledgeBaseSolutionSelectedAt")
     )
