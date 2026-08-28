@@ -1,5 +1,13 @@
 # TechFlow AI Gateway
 
+## v0.16.4 구현 범위
+
+- 공식 Web Fallback 설정을 Migration이 아니라 실제 Gateway 컨테이너에 전달
+- Rocky Linux 8 계열 SMB/CIFS 마운트 공식 절차와 보안 Credential 방식 추가
+- Debian·SUSE·Fedora·Oracle Linux·FreeBSD 공식 문서 도메인 Catalog 확대
+- 게스트 OS에 필수인 공식 검색이 비활성·실패·무결과이면 일반 보류 답변을 만들지 않고 재시도
+- `/healthz`에서 `officialWebSearch` 활성 상태 확인
+
 ## v0.16.3 구현 범위
 
 - 성공 결과 댓글을 RAG 근거 부족으로 보류하지 않고 결정적 해결 진행 답변으로 처리

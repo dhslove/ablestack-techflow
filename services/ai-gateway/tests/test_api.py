@@ -90,7 +90,27 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         body = response.json()
         self.assertEqual(3, len(body["data"]["providerProfiles"]))
+        self.assertEqual("disabled", body["data"]["officialWebSearch"])
         self.assertNotIn("credential", response.text.lower())
+
+    def test_guest_os_question_fails_closed_when_required_official_search_is_disabled(self) -> None:
+        response = self.client.post(
+            "/v1/assist/query",
+            headers={"X-Correlation-Id": CORRELATION},
+            json={
+                "queryId": str(uuid4()),
+                "question": "Debian 12 가상머신에서 SMB 공유를 마운트하는 명령을 알려주세요.",
+                "actorId": "test-guest-os",
+                "productVersion": "diplo",
+                "artifactIds": [],
+                "locale": "ko-KR",
+                "classification": "D0",
+            },
+        )
+
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("FAILED", response.json()["data"]["state"])
+        self.assertEqual("OFFICIAL_WEB_SEARCH_DISABLED", response.json()["data"]["errorCode"])
 
     def test_missing_correlation_is_rejected(self) -> None:
         response = self.client.get(f"/v1/sources/{uuid4()}")

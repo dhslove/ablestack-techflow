@@ -100,7 +100,11 @@ class ContainerContractTest(unittest.TestCase):
         self.assertIn("TECHFLOW_RAG_PROVIDER_MODE: mock", COMPOSE)
 
     def test_official_web_search_is_operator_controlled_and_disabled_by_default(self) -> None:
-        self.assertIn("TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED: ${TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED:-false}", COMPOSE)
+        migrate = COMPOSE.split("  migrate:", 1)[1].split("  source-mirror-init:", 1)[0]
+        gateway = COMPOSE.split("  gateway:", 1)[1].split("  source-reconciler:", 1)[0]
+        setting = "TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED: ${TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED:-false}"
+        self.assertNotIn(setting, migrate)
+        self.assertIn(setting, gateway)
 
     def test_healthcheck_exists(self) -> None:
         self.assertGreaterEqual(COMPOSE.count("healthcheck:"), 2)

@@ -49,6 +49,21 @@ class OfficialWebPolicyTest(unittest.TestCase):
         self.assertTrue(official_web_search_required(question, [], stale=False))
         self.assertEqual(("learn.microsoft.com",), allowed_domains_for_question(question))
 
+    def test_additional_guest_os_families_use_only_their_official_domains(self) -> None:
+        cases = (
+            ("Debian 12에서 SMB 마운트 방법", "DEBIAN", ("docs.debian.org", "manpages.debian.org")),
+            ("openSUSE에서 NFS 설정 방법", "SUSE", ("documentation.suse.com",)),
+            ("Fedora에서 방화벽 확인 방법", "FEDORA", ("docs.fedoraproject.org",)),
+            ("Oracle Linux에서 디스크 마운트 방법", "ORACLE_LINUX", ("docs.oracle.com",)),
+            ("FreeBSD에서 서비스 확인 방법", "FREEBSD", ("docs.freebsd.org", "man.freebsd.org")),
+        )
+        for question, family, domains in cases:
+            with self.subTest(family=family):
+                self.assertEqual(family, support_family(question))
+                self.assertEqual("GENERAL_OS", support_topic(question))
+                self.assertEqual(domains, allowed_domains_for_question(question))
+                self.assertTrue(official_web_search_required(question, [], stale=False))
+
     def test_product_names_expand_only_in_private_query(self) -> None:
         cases = (
             ("Glue OSD가 down입니다.", "GLUE", "official Ceph"),

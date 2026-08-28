@@ -119,6 +119,22 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("rediscover", expanded)
         self.assertNotIn("qemu-ga-x86_64.msi", combined)
 
+    def test_rocky_linux_smb_question_loads_exact_official_mount_procedure(self) -> None:
+        question = (
+            "Rocky Linux 8.10 가상머신에서 SMB 서버에 연결해서 마운트하고 싶습니다. "
+            "마운트 방법을 명령어로 알려주세요."
+        )
+        results = curated_platform_results(question)
+        combined = "\n".join(item["content"] for item in results)
+
+        for expected in (
+            "sudo dnf install -y cifs-utils", "sudo mkdir -p /mnt/smb", "mount -t cifs",
+            "credentials=/root/smb.cred", "sudo chmod 600", "sudo mount -a", "findmnt -T /mnt/smb",
+        ):
+            self.assertIn(expected, combined)
+        self.assertTrue(any("docs.redhat.com" in item["path"] for item in results))
+        self.assertNotIn("qemu-ga-x86_64.msi", combined)
+
     def test_windows_time_inline_commands_render_as_powershell(self) -> None:
         answer = format_public_answer({
             "state": "ANSWERED",

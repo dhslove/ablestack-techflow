@@ -45,7 +45,7 @@ from .models import (
 from .evaluation import judge_case, load_golden_set
 from .postgres_store import PostgresStore
 from .embedding import EmbeddingsAdapter, build_embedding_adapter
-from .provider import ComprehensiveResponsesRequest, ResponsesRequest, profile_payloads
+from .provider import PROVIDER_PROFILES, ComprehensiveResponsesRequest, ResponsesRequest, profile_payloads
 from .responses import (
     ResponsesAdapter,
     ResponsesProviderError,
@@ -87,7 +87,7 @@ from .versioned_assist import (
     versioned_plan,
 )
 from .platform_references import curated_platform_results
-from .official_web import official_web_search_required
+from .official_web import guest_os_family, official_web_search_required
 from .chat_assist import (
     CASE_REFERENCE,
     CommunityFlowClient,
@@ -324,6 +324,7 @@ def create_app(
     def health() -> Envelope | JSONResponse:
         health_data = runtime_store.health()
         health_data["version"] = __version__
+        health_data["officialWebSearch"] = "enabled" if runtime_settings.official_web_search_enabled else "disabled"
         health_data["providerProfiles"] = profile_payloads()
         if health_data.get("database") != "ready" or health_data.get("vector") not in {"ready", "not-applicable"}:
             return JSONResponse(status_code=503, content=_envelope(health_data, "healthcheck").model_dump(by_alias=True, mode="json"))
@@ -615,11 +616,31 @@ def create_app(
             for profile_id in VERSIONED_SOURCE_PROFILES:
                 if profile_id == CURATED_PLATFORM_PROFILE:
                     curated = curated_platform_results(request.question)
-                    if runtime_settings.official_web_search_enabled and official_web_search_required(
-                        request.question, curated
-                    ):
+                    web_required = official_web_search_required(request.question, curated)
+                    guest_os_question = guest_os_family(request.question) is not None
+                    if web_required and not runtime_settings.official_web_search_enabled and guest_os_question:
+                        _json_log(
+                            "official_web_search_required_but_disabled",
+                            correlationId=correlation_id,
+                            guestOsFamily=guest_os_family(request.question),
+                        )
+                        return {
+                            "queryId": request.query_id, "state": "FAILED", "plan": plan_payload,
+                            "scope": scope, "coverage": coverage, "report": None, "citations": [],
+                            "generationProviderCalled": False, "errorCode": "OFFICIAL_WEB_SEARCH_DISABLED",
+                            "failureClass": "RETRYABLE",
+                        }
+                    if runtime_settings.official_web_search_enabled and web_required:
                         try:
                             live_results = runtime_responses.search_official_references(request.question)
+                            if guest_os_question and not live_results:
+                                official_profile = PROVIDER_PROFILES["OPENAI_RAG_DEFAULT_V1"]
+                                raise ResponsesProviderError(
+                                    "OFFICIAL_WEB_NO_VERIFIED_RESULTS", "RETRYABLE",
+                                    profile_id=official_profile.profile_id,
+                                    requested_model_id=official_profile.model,
+                                    latency_ms=0, provider_called=True,
+                                )
                             curated.extend(live_results)
                             _json_log(
                                 "official_web_search_completed", correlationId=correlation_id,
@@ -631,6 +652,13 @@ def create_app(
                                 "official_web_search_failed", correlationId=correlation_id,
                                 errorCode=exc.code,
                             )
+                            if guest_os_question:
+                                return {
+                                    "queryId": request.query_id, "state": "FAILED", "plan": plan_payload,
+                                    "scope": scope, "coverage": coverage, "report": None, "citations": [],
+                                    "generationProviderCalled": exc.provider_called, "errorCode": exc.code,
+                                    "failureClass": exc.failure_class,
+                                }
                     results_by_profile[profile_id] = curated
                     continue
                 retrieval_request = QueryRequest(

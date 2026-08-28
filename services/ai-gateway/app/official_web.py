@@ -22,6 +22,12 @@ OFFICIAL_WEB_ALLOWED_DOMAINS: tuple[str, ...] = (
     "docs.rockylinux.org",
     "download.rockylinux.org",
     "docs.fedoraproject.org",
+    "docs.debian.org",
+    "manpages.debian.org",
+    "documentation.suse.com",
+    "docs.oracle.com",
+    "docs.freebsd.org",
+    "man.freebsd.org",
     "www.qemu.org",
     "qemu.org",
     "libvirt.org",
@@ -52,6 +58,11 @@ _TIME_SYNC_TERMS = (
 _OS_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("UBUNTU", ("ubuntu", "우분투")),
     ("RHEL_FAMILY", ("rhel", "red hat", "redhat", "rocky", "almalinux", "centos")),
+    ("DEBIAN", ("debian", "데비안")),
+    ("SUSE", ("suse", "opensuse", "수세")),
+    ("FEDORA", ("fedora", "페도라")),
+    ("ORACLE_LINUX", ("oracle linux", "오라클 리눅스")),
+    ("FREEBSD", ("freebsd", "프리비에스디")),
     ("WINDOWS", ("windows", "윈도우", "win10", "win11")),
 )
 
@@ -118,6 +129,11 @@ def official_web_query(question: str) -> str:
         "RHEL_FAMILY": (
             "Search official Red Hat or Rocky Linux documentation for this guest operating-system procedure."
         ),
+        "DEBIAN": "Search only official Debian documentation and Debian manpages for this guest procedure.",
+        "SUSE": "Search only official SUSE or openSUSE documentation for this guest procedure.",
+        "FEDORA": "Search only official Fedora documentation for this guest procedure.",
+        "ORACLE_LINUX": "Search only official Oracle Linux documentation for this guest procedure.",
+        "FREEBSD": "Search only official FreeBSD documentation and manpages for this guest procedure.",
         "WINDOWS": (
             "This is a Windows guest operating-system administration question. Search Microsoft Learn first. "
             "For Windows Server time synchronization, use official W32Time and w32tm guidance and distinguish "
@@ -145,6 +161,16 @@ def allowed_domains_for_question(question: str) -> tuple[str, ...]:
         return ("documentation.ubuntu.com", "packages.ubuntu.com")
     if family == "RHEL_FAMILY" and topic != "GUEST_AGENT":
         return ("docs.redhat.com", "access.redhat.com", "docs.rockylinux.org")
+    if family == "DEBIAN":
+        return ("docs.debian.org", "manpages.debian.org")
+    if family == "SUSE":
+        return ("documentation.suse.com",)
+    if family == "FEDORA":
+        return ("docs.fedoraproject.org",)
+    if family == "ORACLE_LINUX":
+        return ("docs.oracle.com",)
+    if family == "FREEBSD":
+        return ("docs.freebsd.org", "man.freebsd.org")
     domains = {
         "UBUNTU": ("documentation.ubuntu.com", "packages.ubuntu.com", "www.qemu.org", "qemu.org", "libvirt.org"),
         "RHEL_FAMILY": ("docs.redhat.com", "access.redhat.com", "docs.rockylinux.org", "download.rockylinux.org", "www.qemu.org", "qemu.org", "libvirt.org"),
@@ -182,6 +208,11 @@ def official_web_search_required(
     family_markers = {
         "UBUNTU": ("ubuntu",),
         "RHEL_FAMILY": ("rhel", "red hat", "rocky"),
+        "DEBIAN": ("debian",),
+        "SUSE": ("suse", "opensuse"),
+        "FEDORA": ("fedora",),
+        "ORACLE_LINUX": ("oracle linux",),
+        "FREEBSD": ("freebsd",),
         "WINDOWS": ("windows",),
         "GLUE": ("ceph",),
         "KORAL": ("kubernetes",),
