@@ -164,6 +164,7 @@ class ComprehensiveQueryRequest(StrictModel):
     compatibility_set_id: UUID | None = Field(default=None, alias="compatibilitySetId")
     source_profile_ids: list[SafeId] | None = Field(default=None, min_length=1, max_length=9, alias="sourceProfileIds")
     artifact_ids: list[UUID] = Field(default_factory=list, max_length=5, alias="artifactIds")
+    required_artifact_ids: list[UUID] | None = Field(default=None, max_length=5, alias="requiredArtifactIds")
     environment: Annotated[str, StringConstraints(max_length=1000)] | None = None
     locale: Literal["ko-KR", "en-US"] = "ko-KR"
     classification: Literal["D0"] = "D0"
@@ -174,6 +175,11 @@ class ComprehensiveQueryRequest(StrictModel):
             raise ValueError("compatibilitySetId and sourceProfileIds are mutually exclusive")
         if len(self.artifact_ids) != len(set(self.artifact_ids)):
             raise ValueError("artifactIds must be unique")
+        if self.required_artifact_ids is not None:
+            if len(self.required_artifact_ids) != len(set(self.required_artifact_ids)):
+                raise ValueError("requiredArtifactIds must be unique")
+            if not set(self.required_artifact_ids).issubset(self.artifact_ids):
+                raise ValueError("requiredArtifactIds must be a subset of artifactIds")
         return self
 
 

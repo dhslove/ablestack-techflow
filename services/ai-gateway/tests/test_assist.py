@@ -267,6 +267,15 @@ class _RetryResponses:
         return SimpleNamespace(output_text=output, model="gpt-5.6-sol", id="resp", _request_id="req")
 
 
+class _PriorOptionalResponses(_Responses):
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        return SimpleNamespace(
+            output_text='{"state":"ANSWERED","summary":"ok","observedFacts":[],"diagnoses":[],"recommendedActions":[],"unknowns":[],"confidence":"HIGH","citationsUsed":["chunk-1"],"artifactEvidence":[{"artifactId":"current-artifact","finding":"visible","region":"all"}],"currentAssessment":"CURRENT_DEFECT","previewAssessment":"PREVIEW_NOT_FOUND","previewGuidance":null,"abstainReason":null}',
+            model="gpt-5.6-sol", id="resp", _request_id="req",
+        )
+
+
 class ComprehensiveOpenAITest(unittest.TestCase):
     def test_image_is_original_detail_and_storage_tools_are_disabled(self) -> None:
         responses = _Responses()
@@ -311,6 +320,20 @@ class ComprehensiveOpenAITest(unittest.TestCase):
         self.assertEqual(2, len(responses.calls))
         self.assertIn("CONTRACT RETRY", responses.calls[1]["input"][0]["content"])
         self.assertEqual(5000, responses.calls[1]["max_output_tokens"])
+        self.assertEqual("ANSWERED", result.report["state"])
+
+    def test_current_artifact_is_required_and_prior_conversation_artifact_is_optional(self) -> None:
+        responses = _PriorOptionalResponses()
+        adapter = OpenAIResponsesAdapter("unused", "unused", client=SimpleNamespace(responses=responses))
+        context = (ContextChunk("chunk-1", "D0", "ablecloud-team/ablestack-cloud", "ablestack-diplo", "a" * 40, "x.java", "code"),)
+        current = ImageArtifact("current-artifact", "image/png", PNG, "current-digest")
+        prior = LogArtifact("prior-artifact", "text/plain", "prior-digest", "@@ old.log:1-1\n1: ERROR old\n", 1, 16, False, 0)
+        result = adapter.generate_comprehensive(ComprehensiveResponsesRequest(
+            "query", "question", context, (current, prior),
+            required_artifact_ids=("current-artifact",), safety_identifier="tf-" + "a" * 61,
+        ))
+        payload = json.loads(responses.kwargs["input"][1]["content"][0]["text"])
+        self.assertEqual(["CURRENT", "CONVERSATION"], [item["scope"] for item in payload["artifacts"]])
         self.assertEqual("ANSWERED", result.report["state"])
 
 

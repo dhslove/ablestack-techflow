@@ -121,6 +121,7 @@ class ComprehensiveResponsesRequest:
     question: str
     context: tuple[ContextChunk, ...]
     artifacts: tuple[EvidenceArtifact, ...] = ()
+    required_artifact_ids: tuple[str, ...] | None = None
     locale: str = "ko-KR"
     safety_identifier: str = "techflow-anonymous"
     source_roles: tuple[tuple[str, str], ...] = ()
@@ -196,7 +197,8 @@ class MockResponsesAdapter:
             "artifactId": item.artifact_id,
             "finding": "첨부 증거가 검증된 분석 입력으로 전달됨",
             "region": "전체" if isinstance(item, ImageArtifact) else "오류 주변 로그 구간",
-        } for item in request.artifacts]
+        } for item in request.artifacts if request.required_artifact_ids is None
+                                  or item.artifact_id in request.required_artifact_ids]
         report: dict[str, object] = {
             "state": "ANSWERED",
             "summary": "문서·소스코드·첨부 이미지를 종합한 계약 검증 응답입니다.",

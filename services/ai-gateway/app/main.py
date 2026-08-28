@@ -721,6 +721,10 @@ def create_app(
         artifacts = tuple(artifact_store.evidence(artifact_id) for artifact_id in request.artifact_ids)
         provider_request = ComprehensiveResponsesRequest(
             query_id=str(request.query_id), question=request.question, context=context, artifacts=artifacts,
+            required_artifact_ids=(
+                None if request.required_artifact_ids is None
+                else tuple(str(item) for item in request.required_artifact_ids)
+            ),
             locale=request.locale, safety_identifier=stable_safety_identifier(request.actor_id, safety_identifier_salt),
             source_roles=tuple(SOURCE_ROLES.items()) if versioned_review else (),
         )
@@ -1260,6 +1264,7 @@ def create_app(
                             assist_request = ComprehensiveSynthesisRequest(
                                 queryId=uuid4(), question=contextual_question, actorId=f"chat:{user_id}",
                                 productVersion="diplo", artifactIds=conversation_artifacts,
+                                requiredArtifactIds=[UUID(value) for value in current_artifacts],
                                 locale="ko-KR", classification="D0",
                             )
                             result = await asyncio.to_thread(

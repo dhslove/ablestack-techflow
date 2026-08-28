@@ -2280,6 +2280,22 @@
             "maxItems": 5,
             "title": "Artifactids"
           },
+          "requiredArtifactIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredartifactids"
+          },
           "environment": {
             "anyOf": [
               {

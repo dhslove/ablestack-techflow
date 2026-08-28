@@ -135,7 +135,9 @@ define applicable versions. Write concise Korean for a general product user. Pre
 words. If a technical term is essential, explain it at first use, such as "콘솔 연결(VNC)". Do not repeat the same
 fact in multiple sections. Cite every material diagnosis.
 Before drafting an answer, identify the product feature, API command, UI component, and source symbols related to the
-user's operation, then analyze the supplied current Diplo source evidence. If artifacts are present, read every
+user's operation, then analyze the supplied current Diplo source evidence. Artifacts marked CURRENT belong to the
+latest question and each one must have an artifactEvidence result. Artifacts marked CONVERSATION are retained from
+earlier turns; use and cite only the ones relevant to the latest question. For every artifact you use, read every
 visible status code, API command, component or stack-frame name, and error message and connect those observations to
 the source behavior. Distinguish a failing background request from the user's target operation; do not treat them as
 the same request without evidence. If the exact runtime cause remains uncertain, explain the source-confirmed failure
@@ -694,6 +696,10 @@ class OpenAIResponsesAdapter:
              "artifacts": [{
                  "artifactId": item.artifact_id, "mediaType": item.media_type, "sha256": item.sha256,
                  "kind": "IMAGE" if isinstance(item, ImageArtifact) else "LOG",
+                 "scope": (
+                     "CURRENT" if request.required_artifact_ids is None
+                     or item.artifact_id in request.required_artifact_ids else "CONVERSATION"
+                 ),
                  **({} if isinstance(item, ImageArtifact) else {
                      "entryCount": item.entry_count, "extractedBytes": item.extracted_bytes,
                      "evidenceTruncated": item.truncated, "redactionCount": item.redaction_count,
@@ -718,8 +724,9 @@ class OpenAIResponsesAdapter:
             citations: tuple[str, ...] = ()
             for attempt in range(2):
                 retry_policy = "" if attempt == 0 else (
-                    "\nCONTRACT RETRY: Copy identifiers only from allowedEvidenceIds. Every supplied Artifact must "
-                    "have one artifactEvidence item with its exact artifactId. Put member path and line range in region."
+                    "\nCONTRACT RETRY: Copy identifiers only from allowedEvidenceIds. Every CURRENT Artifact must "
+                    "have one artifactEvidence item with its exact artifactId. CONVERSATION Artifacts are optional. "
+                    "Put member path and line range in region."
                 )
                 response = self._client.responses.create(
                     model=profile.model,
@@ -736,6 +743,10 @@ class OpenAIResponsesAdapter:
                         raise ValueError("invalid structured response")
                     citations = tuple(str(item) for item in parsed.get("citationsUsed", ()))
                     artifact_ids = {item.artifact_id for item in request.artifacts}
+                    required_artifact_ids = (
+                        artifact_ids if request.required_artifact_ids is None
+                        else set(request.required_artifact_ids)
+                    )
                     allowed = {item.chunk_id for item in request.context} | artifact_ids
                     diagnosis_ids = tuple(
                         str(evidence_id) for diagnosis in parsed.get("diagnoses", ())
@@ -747,7 +758,7 @@ class OpenAIResponsesAdapter:
                     if (
                         any(item not in allowed for item in citations + diagnosis_ids)
                         or any(item not in artifact_ids for item in evidence_artifact_ids)
-                        or (artifact_ids and evidence_artifact_ids != artifact_ids)
+                        or not required_artifact_ids.issubset(evidence_artifact_ids)
                     ):
                         raise ValueError("invalid evidence identifier")
                     break
