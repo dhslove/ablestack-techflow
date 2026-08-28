@@ -1859,7 +1859,9 @@ class PostgresStore:
             return [{
                 "turnId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
                 "postId": row["post_id"], "role": row["role"], "content": row["content"],
-                "contentSha256": row["content_sha256"], "createdAt": row["created_at"],
+                "contentSha256": row["content_sha256"], "artifactIds": row["artifact_ids"] or [],
+                "artifactWarnings": row["artifact_warnings"] or [], "artifactChecked": row["artifact_checked"],
+                "createdAt": row["created_at"],
             } for row in reversed(rows)]
 
     def record_chat_turn(self, user_id: str, post_id: str, role: str, content: str) -> dict[str, Any]:
@@ -1872,17 +1874,41 @@ class PostgresStore:
                 raise InvalidStateError("active Chat conversation is required")
             row = connection.execute(
                 """INSERT INTO chat_assist_turn
-                   (id,user_id,context_version,post_id,role,content,content_sha256)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   (id,user_id,context_version,post_id,role,content,content_sha256,artifact_checked)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (user_id,context_version,post_id,role) DO UPDATE SET post_id=EXCLUDED.post_id
                    RETURNING *""",
                 (uuid4(), user_id, conversation["context_version"], post_id, role, content[:16000],
-                 hashlib.sha256(content.encode("utf-8")).hexdigest()),
+                 hashlib.sha256(content.encode("utf-8")).hexdigest(), role == "ASSISTANT"),
             ).fetchone()
             return {
                 "turnId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
                 "postId": row["post_id"], "role": row["role"], "content": row["content"],
-                "contentSha256": row["content_sha256"], "createdAt": row["created_at"],
+                "contentSha256": row["content_sha256"], "artifactIds": row["artifact_ids"] or [],
+                "artifactWarnings": row["artifact_warnings"] or [], "artifactChecked": row["artifact_checked"],
+                "createdAt": row["created_at"],
+            }
+
+    def update_chat_turn_artifacts(
+        self, user_id: str, post_id: str, artifact_ids: list[str], artifact_warnings: list[str]
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE chat_assist_turn t SET artifact_ids=%s::jsonb,artifact_warnings=%s::jsonb,
+                   artifact_checked=true FROM chat_assist_conversation c
+                   WHERE t.user_id=c.user_id AND t.context_version=c.context_version AND c.state='ACTIVE'
+                     AND t.user_id=%s AND t.post_id=%s AND t.role='USER' RETURNING t.*""",
+                (json.dumps(list(dict.fromkeys(artifact_ids))[:5]),
+                 json.dumps(list(dict.fromkeys(artifact_warnings))[:5]), user_id, post_id),
+            ).fetchone()
+            if not row:
+                raise NotFoundError("Chat turn not found")
+            return {
+                "turnId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
+                "postId": row["post_id"], "role": row["role"], "content": row["content"],
+                "contentSha256": row["content_sha256"], "artifactIds": row["artifact_ids"] or [],
+                "artifactWarnings": row["artifact_warnings"] or [], "artifactChecked": row["artifact_checked"],
+                "createdAt": row["created_at"],
             }
 
     def resolve_chat_conversation(self, user_id: str) -> dict[str, Any]:

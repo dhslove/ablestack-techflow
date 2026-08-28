@@ -105,6 +105,7 @@ from .chat_assist import (
 CORRELATION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{15,127}$")
 logger = logging.getLogger("techflow.ai_gateway")
+CHAT_ATTACHMENT_ONLY_QUESTION = "첨부파일을 분석해 주세요."
 
 
 def _json_log(event: str, **fields: object) -> None:
@@ -238,6 +239,39 @@ def create_app(
     )
     chat_startup_tasks: set[asyncio.Task] = set()
     chat_user_locks: dict[str, asyncio.Lock] = {}
+
+    def _chat_artifact_warning(error: InvalidBoundaryError) -> str:
+        detail = str(error).casefold()
+        if "size" in detail or "boundary" in detail:
+            return "첨부파일의 크기 또는 안전 경계가 허용 범위를 벗어나 분석하지 못했습니다."
+        if "media type" in detail or "unsupported" in detail:
+            return "현재 지원하지 않는 첨부파일 형식입니다. PNG·JPEG·WebP 이미지 또는 텍스트·ZIP·GZIP·TAR.GZ 로그를 보내 주세요."
+        if "bytes do not match" in detail:
+            return "첨부파일의 확장자·형식과 실제 내용이 일치하지 않아 분석하지 못했습니다. 원본 파일을 다시 보내 주세요."
+        if "archive" in detail or "zip" in detail or "gzip" in detail:
+            return "압축파일이 손상됐거나 암호화·중첩 압축·경로 또는 압축률 안전 기준을 통과하지 못했습니다."
+        if "image" in detail or "dimensions" in detail:
+            return "이미지 형식이나 해상도를 확인할 수 없어 분석하지 못했습니다. PNG·JPEG·WebP 원본을 다시 보내 주세요."
+        if "incomplete" in detail:
+            return "Chat에서 첨부파일을 끝까지 내려받지 못했습니다. 잠시 후 파일을 다시 보내 주세요."
+        return "첨부파일의 형식과 내용을 안전하게 확인할 수 없어 분석에서 제외했습니다."
+
+    def _ingest_chat_post_artifact(post_id: str) -> tuple[list[str], list[str], bool]:
+        temporary = artifact_store.root / f".chat-{uuid4().hex}.part"
+        try:
+            downloaded = runtime_chat_bot.download_post_file(
+                post_id, temporary,
+                max_bytes=runtime_settings.artifact_max_bytes,
+                max_archive_bytes=runtime_settings.artifact_max_archive_bytes,
+            )
+            if downloaded is None:
+                return [], [], False
+            record = artifact_store.put_path(downloaded.filename, downloaded.media_type, temporary)
+            return [str(record.artifact_id)], [], True
+        except InvalidBoundaryError as exc:
+            return [], [_chat_artifact_warning(exc)], True
+        finally:
+            temporary.unlink(missing_ok=True)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -1174,6 +1208,23 @@ def create_app(
                         if item["role"] == "USER" and item["postId"] == claimed["postId"]
                     )
                     target = turns[target_index]
+                    if not target.get("artifactChecked", False):
+                        artifact_ids, artifact_warnings, file_found = await asyncio.to_thread(
+                            _ingest_chat_post_artifact, str(claimed["postId"])
+                        )
+                        if not file_found and target["content"] == CHAT_ATTACHMENT_ONLY_QUESTION:
+                            artifact_warnings = [
+                                "Chat 게시물에서 다운로드할 첨부파일을 찾지 못했습니다. 파일을 다시 올린 뒤 질문을 보내 주세요."
+                            ]
+                        runtime_store.update_chat_turn_artifacts(
+                            user_id, str(claimed["postId"]), artifact_ids, artifact_warnings,
+                        )
+                        turns = runtime_store.list_chat_turns(user_id, 50)
+                        target_index = next(
+                            index for index, item in enumerate(turns)
+                            if item["role"] == "USER" and item["postId"] == claimed["postId"]
+                        )
+                        target = turns[target_index]
                     cached = next(
                         (item for item in turns if item["role"] == "ASSISTANT" and item["postId"] == claimed["postId"]),
                         None,
@@ -1182,22 +1233,50 @@ def create_app(
                         answer = cached["content"]
                     else:
                         prior_turns = turns[:target_index]
-                        contextual_question = build_chat_question(prior_turns, target["content"])
-                        assist_request = ComprehensiveSynthesisRequest(
-                            queryId=uuid4(), question=contextual_question, actorId=f"chat:{user_id}",
-                            productVersion="diplo", locale="ko-KR", classification="D0",
-                        )
-                        result = await asyncio.to_thread(
-                            _query_comprehensive, assist_request, claimed["correlationId"]
-                        )
-                        answer = format_public_answer(result)
-                        if not answer and result.get("state") == "NEEDS_INFORMATION":
-                            needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
-                            answer = "추가 정보가 필요합니다.\n" + "\n".join(f"• {item}" for item in needed)
-                        if not answer:
-                            if result.get("state") == "FAILED":
-                                raise RuntimeError("AI provider did not complete the Chat answer")
-                            answer = "검토 근거가 충분하지 않아 답변을 보류했습니다. 관련 로그나 화면 정보를 함께 보내 주세요."
+                        current_warnings = list(target.get("artifactWarnings") or [])
+                        current_artifacts = list(target.get("artifactIds") or [])
+                        if target["content"] == CHAT_ATTACHMENT_ONLY_QUESTION and not current_artifacts:
+                            answer = "\n".join(f"• {item}" for item in current_warnings)
+                        else:
+                            conversation_artifacts, unavailable = _available_conversation_artifact_ids(
+                                turns[:target_index + 1], artifact_store,
+                            )
+                            attachment_context = []
+                            if current_artifacts:
+                                attachment_context.append(
+                                    f"현재 질문에 검증된 첨부자료 {len(current_artifacts)}개가 있습니다. 모두 실제로 분석해 답하세요."
+                                )
+                            attachment_context.extend(current_warnings)
+                            if unavailable:
+                                attachment_context.append(
+                                    f"이전 대화의 첨부자료 {unavailable}개는 보존 기간이 지나 재사용할 수 없습니다."
+                                )
+                            question = target["content"]
+                            if attachment_context:
+                                question += "\n\n[첨부 처리 정보]\n" + "\n".join(
+                                    f"• {item}" for item in attachment_context
+                                )
+                            contextual_question = build_chat_question(prior_turns, question)
+                            assist_request = ComprehensiveSynthesisRequest(
+                                queryId=uuid4(), question=contextual_question, actorId=f"chat:{user_id}",
+                                productVersion="diplo", artifactIds=conversation_artifacts,
+                                locale="ko-KR", classification="D0",
+                            )
+                            result = await asyncio.to_thread(
+                                _query_comprehensive, assist_request, claimed["correlationId"]
+                            )
+                            answer = format_public_answer(result)
+                            if not answer and result.get("state") == "NEEDS_INFORMATION":
+                                needed = result.get("questionsNeeded") or (result.get("plan") or {}).get("questionsNeeded") or []
+                                answer = "추가 정보가 필요합니다.\n" + "\n".join(f"• {item}" for item in needed)
+                            if not answer:
+                                if result.get("state") == "FAILED":
+                                    raise RuntimeError("AI provider did not complete the Chat answer")
+                                answer = "검토 근거가 충분하지 않아 답변을 보류했습니다. 관련 로그나 화면 정보를 함께 보내 주세요."
+                            if current_warnings:
+                                answer = "첨부자료 처리 안내\n" + "\n".join(
+                                    f"• {item}" for item in current_warnings
+                                ) + "\n\n" + answer
                         answer = (answer + "\n\n추가 질문을 이어서 보내 주세요. 해결되면 `해결`이라고 입력해 주세요.")[:7000]
                     if runtime_store.get_chat_job(job_id)["state"] == "CANCELLED":
                         return
@@ -1248,6 +1327,8 @@ def create_app(
             runtime_chat_bot.validate(event.token)
             allowed = {item.casefold() for item in runtime_settings.chat_reviewer_usernames}
             command, args = parse_command(event)
+            if not event.text and not event.action_value and not event.callback_id:
+                command, args = "attachment", []
             reviewer_commands = {"connect", "pending", "detail", "evidence", "history"}
             if command in reviewer_commands and event.username.casefold() not in allowed:
                 return JSONResponse(status_code=403, content={"text": "승인 권한이 없는 Chat 사용자입니다."})
@@ -1294,9 +1375,11 @@ def create_app(
                     "text": "이 기술지원 대화를 해결된 상태로 마쳤습니다. 다음 질문은 새로운 맥락으로 시작합니다."
                             + (f" 진행 중이던 분석 {cancelled}건도 취소했습니다." if cancelled else "")
                 })
-            if command == "unknown" and event.text:
+            if command in {"unknown", "attachment"}:
                 runtime_store.open_chat_conversation(event.user_id, event.username)
-                runtime_store.record_chat_turn(event.user_id, event.post_id, "USER", event.text)
+                runtime_store.record_chat_turn(
+                    event.user_id, event.post_id, "USER", event.text or CHAT_ATTACHMENT_ONLY_QUESTION,
+                )
                 job = runtime_store.enqueue_chat_job(
                     event.user_id, event.post_id, request.state.correlation_id,
                 )

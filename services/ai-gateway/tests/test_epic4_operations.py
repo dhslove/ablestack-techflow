@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 import unittest
 from urllib.parse import urlencode
 
@@ -21,6 +22,12 @@ class FakeBot:
 
     def send(self, user_ids: list[str], payload: dict) -> None:
         self.sent.append((user_ids, payload))
+
+    def download_post_file(
+        self, post_id: str, destination: Path, *, max_bytes: int, max_archive_bytes: int,
+    ):
+        del post_id, destination, max_bytes, max_archive_bytes
+        return None
 
 
 class FlakyBot(FakeBot):

@@ -18,12 +18,14 @@ UP_0012 = (ROOT / "migrations" / "0012_community_auto_publish_kb_up.sql").read_t
 UP_0013 = (ROOT / "migrations" / "0013_community_kb_solution_up.sql").read_text(encoding="utf-8")
 UP_0014 = (ROOT / "migrations" / "0014_epic4_operations_up.sql").read_text(encoding="utf-8")
 UP_0015 = (ROOT / "migrations" / "0015_chat_async_job_up.sql").read_text(encoding="utf-8")
+UP_0016 = (ROOT / "migrations" / "0016_chat_artifacts_up.sql").read_text(encoding="utf-8")
 DOWN_0001 = (ROOT / "migrations" / "0001_schema_down.sql").read_text(encoding="utf-8")
 DOWN_0002 = (ROOT / "migrations" / "0002_source_registry_down.sql").read_text(encoding="utf-8")
 DOWN_0003 = (ROOT / "migrations" / "0003_source_mirror_down.sql").read_text(encoding="utf-8")
 DOWN_0004 = (ROOT / "migrations" / "0004_source_mirror_policy_down.sql").read_text(encoding="utf-8")
 DOWN_0014 = (ROOT / "migrations" / "0014_epic4_operations_down.sql").read_text(encoding="utf-8")
 DOWN_0015 = (ROOT / "migrations" / "0015_chat_async_job_down.sql").read_text(encoding="utf-8")
+DOWN_0016 = (ROOT / "migrations" / "0016_chat_artifacts_down.sql").read_text(encoding="utf-8")
 UP = UP_0001 + "\n" + UP_0002 + "\n" + UP_0003 + "\n" + UP_0004 + "\n" + UP_0005 + "\n" + UP_0006 + "\n" + UP_0007
 DOWN = DOWN_0004 + "\n" + DOWN_0003 + "\n" + DOWN_0002 + "\n" + DOWN_0001
 BOOTSTRAP = (ROOT / "migrations" / "0000_extensions_roles_up.sql").read_text(encoding="utf-8")
@@ -141,6 +143,14 @@ class MigrationContractTest(unittest.TestCase):
         table = UP_0015.split("CREATE TABLE IF NOT EXISTS chat_assist_job", 1)[1].split(");", 1)[0]
         self.assertNotIn("question", table)
         self.assertNotIn("answer", table)
+
+    def test_chat_turn_persists_attachment_state_without_binary_content(self) -> None:
+        for column in ("artifact_ids", "artifact_warnings", "artifact_checked"):
+            self.assertIn(f"ADD COLUMN IF NOT EXISTS {column}", UP_0016)
+            self.assertIn(f"DROP COLUMN IF EXISTS {column}", DOWN_0016)
+        self.assertIn("jsonb_typeof(artifact_ids)='array'", UP_0016)
+        self.assertIn("jsonb_typeof(artifact_warnings)='array'", UP_0016)
+        self.assertNotIn("bytea", UP_0016.casefold())
 
 
 if __name__ == "__main__":

@@ -28,6 +28,12 @@ def _normalized_media_type(filename: str, media_type: str, header: bytes) -> str
     if media_type == "application/x-zip-compressed":
         return "application/zip"
     if media_type == "application/octet-stream":
+        if header[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if header[:2] == b"\xff\xd8":
+            return "image/jpeg"
+        if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+            return "image/webp"
         if header[:4] in {b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"} and filename.casefold().endswith(".zip"):
             return "application/zip"
         if header[:2] == b"\x1f\x8b" and filename.casefold().endswith((".gz", ".tgz")):
@@ -212,6 +218,15 @@ class ArtifactStore:
 
     def put(self, filename: str, media_type: str, data: bytes) -> ArtifactRecord:
         return self._put_chunks(filename, media_type, (data,))
+
+    def put_path(self, filename: str, media_type: str, path: Path) -> ArtifactRecord:
+        """Consume a previously streamed private file without loading it into memory."""
+        safe_name = self._safe_name(filename)
+        hinted_max = self._hint_limit(safe_name, media_type)
+        size_bytes = path.stat().st_size
+        if size_bytes < 1 or size_bytes > hinted_max:
+            raise InvalidBoundaryError("artifact size is outside the permitted boundary")
+        return self._finalize(path, safe_name, media_type, size_bytes, self._hash_path(path))
 
     async def put_stream(
         self, filename: str, media_type: str, chunks: AsyncIterable[bytes], *, content_length: int | None = None,

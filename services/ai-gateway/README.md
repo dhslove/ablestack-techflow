@@ -1,5 +1,15 @@
 # TechFlow AI Gateway
 
+## v0.16.5 구현 범위
+
+- Synology Chat `post_id`를 `post_file_get`으로 조회해 Bot 대화의 이미지·로그·압축로그 수집
+- 파일을 메모리에 전체 적재하지 않고 Artifact 저장소의 비공개 임시 경로로 Streaming
+- Chat Turn에 `artifactIds`·`artifactWarnings`·다운로드 확인 상태를 저장해 재시도 멱등성 보장
+- 파일만 보낸 메시지도 질문으로 접수하고 같은 미해결 대화의 최신 Artifact 최대 5개 재사용
+- PNG·JPEG·WebP, 텍스트 로그, JSON·CSV 계열, ZIP·GZIP·TAR.GZ 분석
+- 손상·지원 제외·초과 파일을 한국어 경고로 안내하고 안전한 텍스트 질문은 계속 처리
+- Bot Token 기반 `post_file_get`만 허용하고 임의 외부 파일 URL은 수신 근거로 사용하지 않음
+
 ## v0.16.4 구현 범위
 
 - 공식 Web Fallback 설정을 Migration이 아니라 실제 Gateway 컨테이너에 전달

@@ -144,23 +144,33 @@
     },
     {
       "path": "0014_epic4_operations_down.sql",
-      "sha256": "47f0c3b610de8cfbaa9659eadeaf2fc6b62ef09ed88ce6cb3a8ede4f5eceafa8",
-      "bytes": 126
+      "sha256": "27cc34b0d1b4c4b81fdd001e9b3cd1868cc286cf7dac8182e7f6a44c6a95ffab",
+      "bytes": 129
     },
     {
       "path": "0014_epic4_operations_up.sql",
-      "sha256": "5e1e405875deea29208bc0baab897b1ad1e9d332cc8a217f9891862f1122f404",
-      "bytes": 2134
+      "sha256": "7fca85e310468cde765bb41fcd1136454cf8b56caa587c40a9dc675ea5f80abf",
+      "bytes": 2181
     },
     {
       "path": "0015_chat_async_job_down.sql",
-      "sha256": "bf33c2887202e24881e477e1e2bb995f9c93129abfe18ba1b660d25ee0100503",
-      "bytes": 38
+      "sha256": "fea75110ffb94d691e1fa182d39518fd06084fbf1bac7d8247bc58101f922cf5",
+      "bytes": 39
     },
     {
       "path": "0015_chat_async_job_up.sql",
-      "sha256": "5a08d29487e130f6ad06ebeab8346ffd70cf2ccf9a984bbb38e44ac44f19eb05",
-      "bytes": 1192
+      "sha256": "efb12c2e729566a1a3928cad0766a5bb98bb3d46e1431a1459c484c4fadd1e78",
+      "bytes": 1218
+    },
+    {
+      "path": "0016_chat_artifacts_down.sql",
+      "sha256": "6d84fc80c9616c29082ff190b9477d18101ff49413d09440b5fa89546023ba73",
+      "bytes": 297
+    },
+    {
+      "path": "0016_chat_artifacts_up.sql",
+      "sha256": "95a25609711020540f5ac8c6cca9eeb0e33ce9041b09cc1a985507e038404d6e",
+      "bytes": 749
     }
   ]
 }
