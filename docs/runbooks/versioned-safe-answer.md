@@ -15,14 +15,17 @@
 
 ## 일반 게스트 운영체제 질문
 
-Windows·Ubuntu·RHEL 계열 가상머신 내부의 설정·운영 질문은 ABLESTACK 제품 장애와 구분한다.
+Windows·Ubuntu·RHEL·Debian·SUSE·Fedora·Oracle Linux·FreeBSD·Alpine·Arch·Amazon Linux·Kali·Solaris·AIX·macOS 가상머신 내부의 설정·운영 질문은 ABLESTACK 제품 장애와 구분한다. 목록에 없는 Linux 배포판도 `GENERIC_LINUX`로 처리한다.
 
 1. 운영체제와 작업 주제를 함께 판정한다. 운영체제 이름만 일치하는 다른 주제의 자료는 사용하지 않는다.
 2. 정확한 승인 Snapshot이 있으면 공식 외부 문서 근거로 사용한다.
 3. 정확한 Snapshot이 없거나 갱신 기한을 넘겼으면 해당 운영체제의 공식 도메인만 Live Web으로 조회한다.
 4. Windows 일반 운영 질문은 Microsoft Learn, Ubuntu는 Ubuntu 공식 문서, RHEL 계열은 Red Hat·Rocky Linux 공식 문서로 제한한다.
+   Debian은 Debian 공식 문서·Manpage, SUSE는 SUSE 공식 문서, Fedora는 Fedora 공식 문서, Oracle Linux는 Oracle 공식 문서, FreeBSD는 FreeBSD 공식 문서·Manpage만 허용한다.
 5. 게스트 안에서 완료할 수 있는 절차는 ABLESTACK 버전·관리 서버 로그·호스트 로그를 요구하기 전에 명령과 성공 기준을 답한다.
 6. 제품 계층 확인은 공식 게스트 절차가 실패하고 하이퍼바이저 연동이 의심될 때만 다음 단계로 제시한다.
+7. 정확한 공식 자료가 필요한데 Gateway의 공식 검색이 비활성·실패·무결과이면 일반 환경 정보 요청으로 대체하지 않는다. 요청을 실패 상태로 유지해 재시도하고 운영자가 `/healthz`의 `officialWebSearch=enabled`를 확인한다.
+8. 등록되지 않은 Linux 배포판은 전체 인터넷이 아니라 승인된 공식 OS 도메인 Catalog 안에서만 검색한다. 질문에서 정확한 OS와 버전을 식별할 수 없으면 제품 로그를 요구하거나 절차를 추측하지 않고 OS·버전만 구체적으로 요청한다.
 
 Windows Server 시간 질문은 다음 순서를 사용한다.
 
