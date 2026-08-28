@@ -28,6 +28,12 @@ OFFICIAL_WEB_ALLOWED_DOMAINS: tuple[str, ...] = (
     "docs.oracle.com",
     "docs.freebsd.org",
     "man.freebsd.org",
+    "wiki.archlinux.org",
+    "docs.alpinelinux.org",
+    "docs.aws.amazon.com",
+    "docs.kali.org",
+    "support.apple.com",
+    "www.ibm.com",
     "www.qemu.org",
     "qemu.org",
     "libvirt.org",
@@ -64,6 +70,13 @@ _OS_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("FEDORA", ("fedora", "페도라")),
     ("ORACLE_LINUX", ("oracle linux", "오라클 리눅스")),
     ("FREEBSD", ("freebsd", "프리비에스디")),
+    ("ALPINE", ("alpine linux", "알파인 리눅스")),
+    ("ARCH", ("arch linux", "아치 리눅스")),
+    ("AMAZON_LINUX", ("amazon linux", "아마존 리눅스")),
+    ("KALI", ("kali linux", "칼리 리눅스")),
+    ("SOLARIS", ("solaris", "솔라리스")),
+    ("AIX", ("aix",)),
+    ("MACOS", ("macos", "mac os", "맥os", "맥 os")),
     ("WINDOWS", ("windows", "윈도우", "win10", "win11")),
 )
 
@@ -77,7 +90,14 @@ _PRODUCT_PLATFORM_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 def guest_os_family(question: str) -> str | None:
     normalized = question.casefold()
-    return next((family for family, terms in _OS_FAMILIES if any(term in normalized for term in terms)), None)
+    family = next((family for family, terms in _OS_FAMILIES if any(term in normalized for term in terms)), None)
+    if family:
+        return family
+    if "linux" in normalized or "리눅스" in normalized:
+        return "GENERIC_LINUX"
+    if any(term in normalized for term in ("guest os", "guest operating system", "게스트 운영체제", "가상머신 운영체제")):
+        return "GENERIC_GUEST_OS"
+    return None
 
 
 def support_family(question: str) -> str | None:
@@ -139,6 +159,21 @@ def official_web_query(question: str) -> str:
         "FEDORA": "Search only official Fedora documentation for this guest procedure.",
         "ORACLE_LINUX": "Search only official Oracle Linux documentation for this guest procedure.",
         "FREEBSD": "Search only official FreeBSD documentation and manpages for this guest procedure.",
+        "ALPINE": "Search only official Alpine Linux documentation for this guest procedure.",
+        "ARCH": "Search only the official Arch Linux Wiki for this guest procedure.",
+        "AMAZON_LINUX": "Search only official AWS Amazon Linux documentation for this guest procedure.",
+        "KALI": "Search only official Kali Linux documentation for this guest procedure.",
+        "SOLARIS": "Search only official Oracle Solaris documentation for this guest procedure.",
+        "AIX": "Search only official IBM AIX documentation for this guest procedure.",
+        "MACOS": "Search only official Apple support documentation for this guest procedure.",
+        "GENERIC_LINUX": (
+            "Identify the Linux distribution named in the question and search only the matching official Linux "
+            "vendor documentation from the allowed domain catalog."
+        ),
+        "GENERIC_GUEST_OS": (
+            "Use only official operating-system vendor documentation. If the exact guest OS and version cannot be "
+            "identified from the question, return no facts rather than guessing."
+        ),
         "WINDOWS": (
             "This is a Windows guest operating-system administration question. Search Microsoft Learn first. "
             "For Windows Server time synchronization, use official W32Time and w32tm guidance and distinguish "
@@ -183,6 +218,22 @@ def allowed_domains_for_question(question: str) -> tuple[str, ...]:
         return ("docs.oracle.com",)
     if family == "FREEBSD":
         return ("docs.freebsd.org", "man.freebsd.org")
+    if family == "ALPINE":
+        return ("docs.alpinelinux.org",)
+    if family == "ARCH":
+        return ("wiki.archlinux.org",)
+    if family == "AMAZON_LINUX":
+        return ("docs.aws.amazon.com",)
+    if family == "KALI":
+        return ("docs.kali.org",)
+    if family == "SOLARIS":
+        return ("docs.oracle.com",)
+    if family == "AIX":
+        return ("www.ibm.com",)
+    if family == "MACOS":
+        return ("support.apple.com",)
+    if family in {"GENERIC_LINUX", "GENERIC_GUEST_OS"}:
+        return OFFICIAL_WEB_ALLOWED_DOMAINS
     domains = {
         "UBUNTU": ("documentation.ubuntu.com", "packages.ubuntu.com", "www.qemu.org", "qemu.org", "libvirt.org"),
         "RHEL_FAMILY": ("docs.redhat.com", "access.redhat.com", "docs.rockylinux.org", "download.rockylinux.org", "www.qemu.org", "qemu.org", "libvirt.org"),
@@ -225,6 +276,15 @@ def official_web_search_required(
         "FEDORA": ("fedora",),
         "ORACLE_LINUX": ("oracle linux",),
         "FREEBSD": ("freebsd",),
+        "ALPINE": ("alpine",),
+        "ARCH": ("arch linux",),
+        "AMAZON_LINUX": ("amazon linux",),
+        "KALI": ("kali",),
+        "SOLARIS": ("solaris",),
+        "AIX": ("aix",),
+        "MACOS": ("macos", "mac os"),
+        "GENERIC_LINUX": ("linux",),
+        "GENERIC_GUEST_OS": ("guest os", "operating system", "운영체제"),
         "WINDOWS": ("windows",),
         "GLUE": ("ceph",),
         "KORAL": ("kubernetes",),

@@ -56,6 +56,13 @@ class OfficialWebPolicyTest(unittest.TestCase):
             ("Fedora에서 방화벽 확인 방법", "FEDORA", ("docs.fedoraproject.org",)),
             ("Oracle Linux에서 디스크 마운트 방법", "ORACLE_LINUX", ("docs.oracle.com",)),
             ("FreeBSD에서 서비스 확인 방법", "FREEBSD", ("docs.freebsd.org", "man.freebsd.org")),
+            ("Alpine Linux에서 패키지 설치 방법", "ALPINE", ("docs.alpinelinux.org",)),
+            ("Arch Linux에서 SMB 설정 방법", "ARCH", ("wiki.archlinux.org",)),
+            ("Amazon Linux에서 디스크 확인 방법", "AMAZON_LINUX", ("docs.aws.amazon.com",)),
+            ("Kali Linux에서 네트워크 확인 방법", "KALI", ("docs.kali.org",)),
+            ("Solaris에서 NFS 마운트 방법", "SOLARIS", ("docs.oracle.com",)),
+            ("AIX에서 파일시스템 확인 방법", "AIX", ("www.ibm.com",)),
+            ("macOS 가상머신에서 DNS 확인 방법", "MACOS", ("support.apple.com",)),
         )
         for question, family, domains in cases:
             with self.subTest(family=family):
@@ -63,6 +70,17 @@ class OfficialWebPolicyTest(unittest.TestCase):
                 self.assertEqual("GENERAL_OS", support_topic(question))
                 self.assertEqual(domains, allowed_domains_for_question(question))
                 self.assertTrue(official_web_search_required(question, [], stale=False))
+
+    def test_unknown_linux_distribution_uses_bounded_official_catalog_without_guessing_product_logs(self) -> None:
+        question = "ExampleOS Linux 가상머신에서 SMB 마운트 방법을 알려주세요."
+
+        self.assertEqual("GENERIC_LINUX", support_family(question))
+        self.assertEqual("SMB_MOUNT", support_topic(question))
+        domains = allowed_domains_for_question(question)
+        self.assertIn("docs.redhat.com", domains)
+        self.assertIn("docs.debian.org", domains)
+        self.assertNotIn("example.com", domains)
+        self.assertTrue(official_web_search_required(question, [], stale=False))
 
     def test_smb_mount_search_requires_topic_specific_official_evidence(self) -> None:
         question = "Debian 12에서 SMB 공유 폴더를 마운트하는 명령을 알려주세요."

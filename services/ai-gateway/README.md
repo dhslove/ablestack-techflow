@@ -5,6 +5,7 @@
 - 공식 Web Fallback 설정을 Migration이 아니라 실제 Gateway 컨테이너에 전달
 - Rocky Linux 8 계열 SMB/CIFS 마운트 공식 절차와 보안 Credential 방식 추가
 - Debian·SUSE·Fedora·Oracle Linux·FreeBSD 공식 문서 도메인 Catalog 확대
+- Alpine·Arch·Amazon Linux·Kali·Solaris·AIX·macOS 및 미등록 Linux의 제한 공식 검색 지원
 - 게스트 OS에 필수인 공식 검색이 비활성·실패·무결과이면 일반 보류 답변을 만들지 않고 재시도
 - `/healthz`에서 `officialWebSearch` 활성 상태 확인
 
