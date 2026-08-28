@@ -612,34 +612,47 @@ class OpenAIResponsesAdapter:
         started = time.perf_counter()
         try:
             allowed_domains = allowed_domains_for_question(question)
-            response = self._client.responses.create(
-                model=profile.model,
-                input=[
-                    {"role": "system", "content": OFFICIAL_WEB_POLICY},
-                    {"role": "user", "content": official_web_query(question)},
-                ],
-                reasoning={"effort": profile.reasoning_effort},
-                tools=[{
-                    "type": "web_search",
-                    "filters": {"allowed_domains": list(allowed_domains)},
-                    "external_web_access": True,
-                }],
-                tool_choice="required",
-                include=["web_search_call.action.sources"],
-                text={"format": {
-                    "type": "json_schema", "name": "techflow_official_web_evidence",
-                    "strict": True, "schema": OFFICIAL_WEB_SCHEMA,
-                }},
-                store=False,
-                background=False,
-                stream=False,
-                max_output_tokens=1800,
-                safety_identifier="techflow-official-web",
-            )
-            parsed = json.loads(str(getattr(response, "output_text", "") or ""))
-            results = official_web_results(
-                parsed.get("facts") or [], _web_source_urls(response), allowed_domains=allowed_domains,
-            )
+            results: list[dict[str, Any]] = []
+            for attempt in range(2):
+                retry_policy = "" if attempt == 0 else (
+                    "\nRETRY: Return facts only from pages that directly document the requested operation. "
+                    "Use the exact source URL reported by web search and satisfy the JSON schema."
+                )
+                response = self._client.responses.create(
+                    model=profile.model,
+                    input=[
+                        {"role": "system", "content": OFFICIAL_WEB_POLICY + retry_policy},
+                        {"role": "user", "content": official_web_query(question)},
+                    ],
+                    reasoning={"effort": profile.reasoning_effort},
+                    tools=[{
+                        "type": "web_search",
+                        "filters": {"allowed_domains": list(allowed_domains)},
+                        "external_web_access": True,
+                    }],
+                    tool_choice="required",
+                    include=["web_search_call.action.sources"],
+                    text={"format": {
+                        "type": "json_schema", "name": "techflow_official_web_evidence",
+                        "strict": True, "schema": OFFICIAL_WEB_SCHEMA,
+                    }},
+                    store=False,
+                    background=False,
+                    stream=False,
+                    max_output_tokens=1800,
+                    safety_identifier="techflow-official-web",
+                )
+                try:
+                    parsed = json.loads(str(getattr(response, "output_text", "") or ""))
+                    results = official_web_results(
+                        parsed.get("facts") or [], _web_source_urls(response), allowed_domains=allowed_domains,
+                    )
+                    if not results:
+                        raise ValueError("official web search returned no verified facts")
+                    break
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    if attempt == 1:
+                        raise
             self._breaker.record(True)
             return results
         except Exception as exc:

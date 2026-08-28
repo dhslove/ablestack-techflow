@@ -68,6 +68,26 @@ class _FakeClient:
         self.responses = _FakeResponses(output_text, payload)
 
 
+class _SequenceResponses:
+    def __init__(self, rows: list[tuple[str, dict[str, object]]]) -> None:
+        self.rows = list(rows)
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        output_text, payload = self.rows.pop(0)
+        return _FakeResponse(
+            output_text=output_text, model="gpt-5.6-terra-2026-07-01", id="resp-sequence",
+            _request_id="req-sequence", usage=SimpleNamespace(input_tokens=100, output_tokens=20),
+            payload=payload,
+        )
+
+
+class _SequenceClient:
+    def __init__(self, rows: list[tuple[str, dict[str, object]]]) -> None:
+        self.responses = _SequenceResponses(rows)
+
+
 class ResponsesPolicyTest(unittest.TestCase):
     def test_routing_default_and_escalation(self) -> None:
         default = decide_generation([result()], compatibility_set_id=None, source_profile_ids=["GENIE_MASTER"])
@@ -175,6 +195,26 @@ class ResponsesPolicyTest(unittest.TestCase):
         self.assertIn("official Kubernetes", kwargs["input"][1]["content"])
         self.assertFalse(kwargs["store"])
         self.assertFalse(kwargs["background"])
+
+    def test_official_web_search_retries_invalid_contract_once(self) -> None:
+        url = "https://manpages.debian.org/bookworm/cifs-utils/mount.cifs.8.en.html"
+        client = _SequenceClient([
+            ("not-json", {}),
+            (
+                '{"facts":[{"statement":"mount.cifs mounts an SMB share.","title":"mount.cifs(8)","url":"'
+                + url + '"}]}',
+                {"output": [{"type": "web_search_call", "action": {"sources": [{"url": url}]}}]},
+            ),
+        ])
+        adapter = OpenAIResponsesAdapter("unused", "unused", client=client)
+
+        results = adapter.search_official_references(
+            "Debian 12 가상머신에서 SMB 공유를 마운트하는 명령을 알려주세요."
+        )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(2, len(client.responses.calls))
+        self.assertIn("RETRY:", client.responses.calls[1]["input"][0]["content"])
 
     def test_circuit_breaker_opens_after_failure_threshold(self) -> None:
         breaker = CircuitBreaker(minimum_calls=10, failure_rate=0.5)
