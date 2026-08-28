@@ -25,7 +25,7 @@ from .provider import (
     ResponsesResult,
     validate_responses_request,
 )
-from .official_web import allowed_domains_for_question, official_web_query, official_web_results
+from .official_web import allowed_domains_for_question, official_web_query, official_web_results, support_topic
 from .versioned_assist import evidence_priority
 import base64
 
@@ -647,6 +647,11 @@ class OpenAIResponsesAdapter:
                     results = official_web_results(
                         parsed.get("facts") or [], _web_source_urls(response), allowed_domains=allowed_domains,
                     )
+                    if support_topic(question) == "SMB_MOUNT":
+                        results = [
+                            item for item in results
+                            if any(marker in str(item.get("path") or "").casefold() for marker in ("cifs", "smb"))
+                        ]
                     if not results:
                         raise ValueError("official web search returned no verified facts")
                     break

@@ -199,7 +199,13 @@ class ResponsesPolicyTest(unittest.TestCase):
     def test_official_web_search_retries_invalid_contract_once(self) -> None:
         url = "https://manpages.debian.org/bookworm/cifs-utils/mount.cifs.8.en.html"
         client = _SequenceClient([
-            ("not-json", {}),
+            (
+                '{"facts":[{"statement":"Install packages.","title":"apt-get(8)","url":"'
+                'https://manpages.debian.org/bookworm/apt/apt-get.8.en.html"}]}',
+                {"output": [{"type": "web_search_call", "action": {"sources": [{
+                    "url": "https://manpages.debian.org/bookworm/apt/apt-get.8.en.html"
+                }]}}]},
+            ),
             (
                 '{"facts":[{"statement":"mount.cifs mounts an SMB share.","title":"mount.cifs(8)","url":"'
                 + url + '"}]}',
