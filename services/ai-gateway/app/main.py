@@ -244,10 +244,10 @@ def create_app(
         detail = str(error).casefold()
         if "size" in detail or "boundary" in detail:
             return "첨부파일의 크기 또는 안전 경계가 허용 범위를 벗어나 분석하지 못했습니다."
-        if "media type" in detail or "unsupported" in detail:
-            return "현재 지원하지 않는 첨부파일 형식입니다. PNG·JPEG·WebP 이미지 또는 텍스트·ZIP·GZIP·TAR.GZ 로그를 보내 주세요."
         if "bytes do not match" in detail:
             return "첨부파일의 확장자·형식과 실제 내용이 일치하지 않아 분석하지 못했습니다. 원본 파일을 다시 보내 주세요."
+        if "media type" in detail or "unsupported" in detail:
+            return "현재 지원하지 않는 첨부파일 형식입니다. PNG·JPEG·WebP 이미지 또는 텍스트·ZIP·GZIP·TAR.GZ 로그를 보내 주세요."
         if "archive" in detail or "zip" in detail or "gzip" in detail:
             return "압축파일이 손상됐거나 암호화·중첩 압축·경로 또는 압축률 안전 기준을 통과하지 못했습니다."
         if "image" in detail or "dimensions" in detail:
@@ -1239,7 +1239,7 @@ def create_app(
                         prior_turns = turns[:target_index]
                         current_warnings = list(target.get("artifactWarnings") or [])
                         current_artifacts = list(target.get("artifactIds") or [])
-                        if target["content"] == CHAT_ATTACHMENT_ONLY_QUESTION and not current_artifacts:
+                        if not current_artifacts and current_warnings:
                             answer = "\n".join(f"• {item}" for item in current_warnings)
                         else:
                             conversation_artifacts, unavailable = _available_conversation_artifact_ids(

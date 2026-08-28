@@ -508,7 +508,7 @@ class ChatEndpointTest(unittest.TestCase):
             turn = store.list_chat_turns("7")[0]
             self.assertEqual([], turn["artifactIds"])
             self.assertEqual(1, len(turn["artifactWarnings"]))
-            self.assertIn("첨부자료 처리 안내", bot.sent[-1][1]["text"])
+            self.assertIn("원본 파일을 다시", bot.sent[-1][1]["text"])
             unsupported = client.post(
                 "/v1/chat/synology/events", content=form("문서를 확인해 줘", post_id="pdf-1"),
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -516,6 +516,7 @@ class ChatEndpointTest(unittest.TestCase):
             self.assertEqual(200, unsupported.status_code)
             user_turns = [item for item in store.list_chat_turns("7") if item["role"] == "USER"]
             self.assertIn("지원하지 않는", user_turns[-1]["artifactWarnings"][0])
+            self.assertIn("지원하지 않는", bot.sent[-1][1]["text"])
 
     def test_plain_and_tar_gzip_logs_follow_the_chat_artifact_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

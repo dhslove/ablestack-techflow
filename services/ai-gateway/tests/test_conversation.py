@@ -19,6 +19,16 @@ from app.responses import COMPREHENSIVE_SYSTEM_POLICY
 
 
 class ConversationProgressionTest(unittest.TestCase):
+    def test_chat_prompt_preserves_latest_question_when_history_is_long(self) -> None:
+        turns = [
+            {"role": "USER" if index % 2 == 0 else "ASSISTANT", "content": f"이전 {index} " + "긴 내용 " * 1500}
+            for index in range(12)
+        ]
+        prompt = build_chat_question(turns, "현재 첨부파일 형식 지원 여부를 확인해 줘.")
+        self.assertLessEqual(len(prompt), 16000)
+        self.assertTrue(prompt.endswith("현재 첨부파일 형식 지원 여부를 확인해 줘."))
+        self.assertIn("현재 질문:", prompt)
+
     def setUp(self) -> None:
         self.turns = [
             {

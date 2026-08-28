@@ -71,21 +71,26 @@ def build_chat_question(
     limit: int = 16000,
 ) -> str:
     """Build the Chat support prompt with a guest-OS official-evidence boundary."""
-    transcript = "\n".join(
-        f"{'사용자' if item.get('role') == 'USER' else '전문 엔지니어'}: {item.get('content') or ''}"
-        for item in list(prior_turns)[-12:]
-    )
-    prompt = (
+    instruction = (
         "같은 사용자의 기술지원 대화입니다. 이전 맥락을 유지하되 현재 질문을 우선하고, "
         "DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드 전체, ABLESTACK Europa 프리뷰를 순서대로 "
         "검토해 친절하고 쉬운 말로 답하세요. 일반 가상머신 운영체제의 설정·운영 질문은 해당 운영체제의 "
         "승인된 공식 문서나 도메인 제한 공식 검색 결과를 사용해 실행 가능한 명령과 확인 기준을 먼저 답하세요. "
         "게스트 운영체제 절차를 답할 수 있는데 ABLESTACK 버전이나 관리 서버·호스트 로그를 먼저 요구하지 마세요. "
-        "정보가 부족하면 기초 답변 뒤에 다음 분기를 판단하는 자료만 구체적으로 요청하세요.\n\n"
-        + (f"이전 대화:\n{transcript}\n\n" if transcript else "")
-        + f"현재 질문:\n{current_question}"
+        "정보가 부족하면 기초 답변 뒤에 다음 분기를 판단하는 자료만 구체적으로 요청하세요."
     )
-    return prompt[:limit]
+    current = f"\n\n현재 질문:\n{_excerpt(current_question, min(8000, limit // 2))}"
+    remaining = max(0, limit - len(instruction) - len(current) - len("\n\n이전 대화:\n"))
+    rows = [
+        f"{'사용자' if item.get('role') == 'USER' else '전문 엔지니어'}: "
+        f"{_excerpt(item.get('content'), 2000)}"
+        for item in list(prior_turns)[-12:]
+    ]
+    while rows and len("\n".join(rows)) > remaining:
+        rows.pop(0)
+    joined = "\n".join(rows)
+    transcript = f"\n\n이전 대화:\n{joined}" if rows else ""
+    return instruction + transcript + current
 
 
 def is_resolution_progress_update(value: object) -> bool:
