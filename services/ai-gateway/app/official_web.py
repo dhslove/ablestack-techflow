@@ -55,6 +55,7 @@ _TIME_SYNC_TERMS = (
     "ntp", "시간", "시각", "time sync", "time synchronization", "w32time", "w32tm", "동기화",
     "clock", "timezone", "time zone", "표준 시간대",
 )
+_SMB_MOUNT_TERMS = ("smb", "cifs", "mount.cifs", "smb3", "공유 폴더", "파일 공유")
 _OS_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("UBUNTU", ("ubuntu", "우분투")),
     ("RHEL_FAMILY", ("rhel", "red hat", "redhat", "rocky", "almalinux", "centos")),
@@ -94,6 +95,10 @@ def support_topic(question: str) -> str | None:
     normalized = question.casefold()
     if any(term in normalized for term in _GUEST_AGENT_TERMS):
         return "GUEST_AGENT"
+    if any(term in normalized for term in _SMB_MOUNT_TERMS) and any(
+        term in normalized for term in ("mount", "마운트", "연결", "fstab")
+    ):
+        return "SMB_MOUNT"
     if any(term in normalized for term in _TIME_SYNC_TERMS):
         return "TIME_SYNC"
     if guest_os_family(question) and any(term in normalized for term in _GUEST_OS_ACTION_TERMS):
@@ -148,7 +153,14 @@ def official_web_query(question: str) -> str:
             "when the question concerns a VM runtime, hypervisor, console, migration, storage attachment, or guest agent."
         ),
     }.get(family)
-    return f"{upstream_context}\n\nUser question:\n{sanitized}" if upstream_context else sanitized
+    topic_context = {
+        "SMB_MOUNT": (
+            "The task is mounting an SMB/CIFS share. Find the official package or mount.cifs documentation and "
+            "return exact installation, temporary mount, credential-file, persistent fstab, and verification steps."
+        ),
+    }.get(support_topic(question))
+    context = "\n".join(item for item in (upstream_context, topic_context) if item)
+    return f"{context}\n\nUser question:\n{sanitized}" if context else sanitized
 
 
 def allowed_domains_for_question(question: str) -> tuple[str, ...]:
@@ -223,6 +235,7 @@ def official_web_search_required(
     topic_markers = {
         "GUEST_AGENT": ("guest agent", "qemu-ga", "qemu guest agent", "게스트 에이전트"),
         "TIME_SYNC": ("ntp", "w32time", "w32tm", "time", "시간", "동기화"),
+        "SMB_MOUNT": ("smb", "cifs", "mount.cifs", "smb3", "fstab"),
     }.get(topic)
     if topic_markers is None:
         return True

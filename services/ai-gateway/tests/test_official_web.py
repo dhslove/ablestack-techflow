@@ -51,7 +51,7 @@ class OfficialWebPolicyTest(unittest.TestCase):
 
     def test_additional_guest_os_families_use_only_their_official_domains(self) -> None:
         cases = (
-            ("Debian 12에서 SMB 마운트 방법", "DEBIAN", ("docs.debian.org", "manpages.debian.org")),
+            ("Debian 12에서 디스크 마운트 방법", "DEBIAN", ("docs.debian.org", "manpages.debian.org")),
             ("openSUSE에서 NFS 설정 방법", "SUSE", ("documentation.suse.com",)),
             ("Fedora에서 방화벽 확인 방법", "FEDORA", ("docs.fedoraproject.org",)),
             ("Oracle Linux에서 디스크 마운트 방법", "ORACLE_LINUX", ("docs.oracle.com",)),
@@ -63,6 +63,18 @@ class OfficialWebPolicyTest(unittest.TestCase):
                 self.assertEqual("GENERAL_OS", support_topic(question))
                 self.assertEqual(domains, allowed_domains_for_question(question))
                 self.assertTrue(official_web_search_required(question, [], stale=False))
+
+    def test_smb_mount_search_requires_topic_specific_official_evidence(self) -> None:
+        question = "Debian 12에서 SMB 공유 폴더를 마운트하는 명령을 알려주세요."
+
+        self.assertEqual("SMB_MOUNT", support_topic(question))
+        self.assertIn("mount.cifs", official_web_query(question))
+        irrelevant = [{
+            "sourceKind": "OFFICIAL_EXTERNAL_DOCUMENTATION",
+            "symbol": "Debian apt-get",
+            "content": "apt-get package manager",
+        }]
+        self.assertTrue(official_web_search_required(question, irrelevant, stale=False))
 
     def test_product_names_expand_only_in_private_query(self) -> None:
         cases = (
