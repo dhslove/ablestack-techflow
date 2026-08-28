@@ -88,8 +88,18 @@ _PRODUCT_PLATFORM_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _current_question_text(question: str) -> str:
+    """Exclude TechFlow wrapper instructions from guest-OS routing decisions."""
+    for marker in ("현재 질문:\n", "[참여자의 최신 추가 정보 또는 질문]\n"):
+        if marker not in question:
+            continue
+        current = question.rsplit(marker, 1)[1]
+        return current.split("\n\n[", 1)[0].strip()
+    return question
+
+
 def guest_os_family(question: str) -> str | None:
-    normalized = question.casefold()
+    normalized = _current_question_text(question).casefold()
     family = next((family for family, terms in _OS_FAMILIES if any(term in normalized for term in terms)), None)
     if family:
         return family
@@ -112,7 +122,7 @@ def support_family(question: str) -> str | None:
 
 
 def support_topic(question: str) -> str | None:
-    normalized = question.casefold()
+    normalized = _current_question_text(question).casefold()
     if any(term in normalized for term in _GUEST_AGENT_TERMS):
         return "GUEST_AGENT"
     if any(term in normalized for term in _SMB_MOUNT_TERMS) and any(
@@ -127,7 +137,7 @@ def support_topic(question: str) -> str | None:
 
 
 def is_guest_os_support_question(question: str) -> bool:
-    normalized = question.casefold()
+    normalized = _current_question_text(question).casefold()
     guest_agent_install = any(term in normalized for term in _GUEST_AGENT_TERMS) and any(
         term in normalized for term in _INSTALL_TERMS
     )

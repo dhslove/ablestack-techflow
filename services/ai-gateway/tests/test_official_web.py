@@ -13,6 +13,7 @@ from app.official_web import (
     support_topic,
 )
 from app.platform_references import curated_platform_results
+from app.conversation import build_chat_question
 
 
 class OfficialWebPolicyTest(unittest.TestCase):
@@ -81,6 +82,13 @@ class OfficialWebPolicyTest(unittest.TestCase):
         self.assertIn("docs.debian.org", domains)
         self.assertNotIn("example.com", domains)
         self.assertTrue(official_web_search_required(question, [], stale=False))
+
+    def test_chat_wrapper_does_not_turn_product_question_into_generic_guest_os_question(self) -> None:
+        wrapped = build_chat_question([], "VM 배포 오류의 원인을 알려줘")
+
+        self.assertIsNone(support_family(wrapped))
+        self.assertIsNone(support_topic(wrapped))
+        self.assertFalse(official_web_search_required(wrapped, [], stale=False))
 
     def test_smb_mount_search_requires_topic_specific_official_evidence(self) -> None:
         question = "Debian 12에서 SMB 공유 폴더를 마운트하는 명령을 알려주세요."
