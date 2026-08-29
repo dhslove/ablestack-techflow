@@ -6,6 +6,8 @@ Community 상세 Page Shell과 Post Stream은 전체 폭으로 확장돼 있었�
 
 작성기 저장 문제도 함께 확인했다. 일반 질문 원문의 DOM에는 작성기가 추가한 `<br>`·`<wbr>`가 없었으며, 잘림처럼 보인 원인은 저장 데이터가 아니라 CSS 폭 제한이었다. Composer에는 저장 개행 변경 없이 화면상 긴 문자열 줄바꿈만 적용했다.
 
+추가 UI 검토에서 최종 해결 가이드만 녹색 카드·배지·강조선을 사용해 ABLESTACK의 블루 중심 테마와 이질적인 점을 확인했다. 해결 상태의 배경·테두리·강조선·상태 칩을 Primary Blue의 명도 단계로 통일했다. 온라인 상태점처럼 해결 상태와 의미가 다른 녹색 표시는 유지한다.
+
 ## 구현
 
 - `.Post-body p`, `li`, `blockquote`의 `82ch` 최대 폭 제거
@@ -16,6 +18,8 @@ Community 상세 Page Shell과 Post Stream은 전체 폭으로 확장돼 있었�
 - 넓은 Table은 Post Body 내부 가로 Scroll
 - Composer Editor `white-space:pre-wrap`, `overflow-wrap:anywhere`
 - 원본 게시물·DB·Formatter·Markdown 변환 로직 변경 없음
+- 최종 해결 카드 Surface `#edf4ff`, Border `#8fb5ef`, Accent `#155eef`, Ink `#0b3b91`
+- 상세 Hero·목록·카드·해결 상태 칩·선택 미리보기의 해결 상태 팔레트 통일
 
 ## 검증
 
@@ -29,18 +33,21 @@ Community 상세 Page Shell과 Post Stream은 전체 폭으로 확장돼 있었�
 | 390px 문서 Scroll Width | 375px | 375px |
 | 모바일 가로 넘침 | 없음 | 없음 |
 
-- Theme 계약 시험 16건 PASS
+- Theme 계약 시험 17건 PASS
 - WSL Cycle `issue107-detail-content-width-20260829` PASS
+- WSL 해결 팔레트 Cycle `issue107-solution-blue-20260829` PASS
 - 활성화→비활성화 롤백→재활성화 완료
 - 이미지 `max-width:100%`와 Code Block 자체 Scroll 회귀 없음
+- 운영 토론 #176에서 최종 해결 카드·Hero 배지·상태 칩 렌더링 확인
+- 운영 계산 색상: 강조선 `rgb(21, 94, 239)`, 테두리 `rgb(143, 181, 239)`, 칩 배경 `rgb(220, 233, 255)`, 칩 글자 `rgb(11, 59, 145)`
 
 ## 운영 배포
 
 - 운영 Server: `172.16.0.234`
 - Nginx·PHP-FPM·MariaDB Active
 - Local HTTP 200, 외부 Browser HTTPS 정상
-- Source·Vendor LESS SHA-256: `4316ad01c19ae9dcd3a821ddb5762c4dc2ef9ecd07729a94a154acbfab8e0ea0`
-- 백업: `/var/backups/techflow-flarum/theme-content-width-20260829T1035KST`
+- Source·Vendor LESS SHA-256: `45a98c73513043957e4d40cc052be5c16cb9e2b9320e5a865bee5608455ac1d1`
+- 최신 백업: `/var/backups/techflow-flarum/theme-issue107-solution-blue-20260829`
 
 Flarum Core·DB Schema·게시물·첨부·AI Gateway·GitHub→Chat Webhook은 변경하지 않았다.
 

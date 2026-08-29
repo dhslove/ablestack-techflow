@@ -20,6 +20,19 @@
     "wideTableScrollsInsidePost": true,
     "composerVisualWrapOnly": true
   },
+  "solutionTheme": {
+    "palette": "ABLESTACK Primary Blue",
+    "surface": "#edf4ff",
+    "border": "#8fb5ef",
+    "accent": "#155eef",
+    "ink": "#0b3b91",
+    "legacyGreenPalettePresent": false,
+    "productionDiscussion": 176,
+    "cardBorderLeftRgb": "rgb(21, 94, 239)",
+    "cardBorderTopRgb": "rgb(143, 181, 239)",
+    "chipBackgroundRgb": "rgb(220, 233, 255)",
+    "chipInkRgb": "rgb(11, 59, 145)"
+  },
   "browserValidation": {
     "desktopViewportWidth": 1920,
     "postBodyWidthPx": 1383,
@@ -31,8 +44,9 @@
     "mobileHorizontalOverflow": false
   },
   "validation": {
-    "themeContractTestsPassed": 16,
+    "themeContractTestsPassed": 17,
     "wslCycle": "issue107-detail-content-width-20260829",
+    "wslSolutionThemeCycle": "issue107-solution-blue-20260829",
     "wslEnable": "PASS",
     "wslRollback": "PASS",
     "wslReEnable": "PASS",
@@ -42,8 +56,8 @@
     "mariaDb": "active"
   },
   "production": {
-    "lessSha256": "4316ad01c19ae9dcd3a821ddb5762c4dc2ef9ecd07729a94a154acbfab8e0ea0",
-    "backupRoot": "/var/backups/techflow-flarum/theme-content-width-20260829T1035KST",
+    "lessSha256": "45a98c73513043957e4d40cc052be5c16cb9e2b9320e5a865bee5608455ac1d1",
+    "backupRoot": "/var/backups/techflow-flarum/theme-issue107-solution-blue-20260829",
     "coreChanged": false,
     "databaseChanged": false,
     "contentChanged": false,
