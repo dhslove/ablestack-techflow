@@ -6,14 +6,29 @@ from uuid import uuid4
 from app.conversation import (
     PROGRESSION_RETRY_INSTRUCTION,
     build_conversation_question,
+    build_chat_question,
     build_knowledge_base_question,
     build_progression_retry_question,
     community_result_advances,
+    conversation_artifact_ids,
+    is_resolution_progress_update,
+    resolution_progress_result,
 )
 from app.models import CommunityCaseCreateRequest, ComprehensiveQueryRequest, ComprehensiveSynthesisRequest
+from app.responses import COMPREHENSIVE_SYSTEM_POLICY
 
 
 class ConversationProgressionTest(unittest.TestCase):
+    def test_chat_prompt_preserves_latest_question_when_history_is_long(self) -> None:
+        turns = [
+            {"role": "USER" if index % 2 == 0 else "ASSISTANT", "content": f"이전 {index} " + "긴 내용 " * 1500}
+            for index in range(12)
+        ]
+        prompt = build_chat_question(turns, "현재 첨부파일 형식 지원 여부를 확인해 줘.")
+        self.assertLessEqual(len(prompt), 16000)
+        self.assertTrue(prompt.endswith("현재 첨부파일 형식 지원 여부를 확인해 줘."))
+        self.assertIn("현재 질문:", prompt)
+
     def setUp(self) -> None:
         self.turns = [
             {
@@ -45,6 +60,73 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertIn("QEMU Guest Agent 상태와 마운트 정보", prompt)
         self.assertIn("정확한 CLI 명령", prompt)
         self.assertIn("직전 TechFlow 답변의 원인 설명이나 점검 목록을 다시 말하지 마십시오", prompt)
+
+    def test_prompt_requires_source_grounded_baseline_before_requesting_more_material(self) -> None:
+        turns = [
+            {
+                "sourcePostId": "415", "postNumber": 1, "role": "REQUESTER",
+                "content": "네트워크 생성 중 요청 실패가 나옵니다.",
+                "artifactIds": ["screen-1"],
+            },
+            {
+                "sourcePostId": "416", "postNumber": 2, "role": "ASSISTANT",
+                "content": "제품 버전과 로그를 알려주세요.",
+            },
+        ]
+        incoming = {
+            "discussionId": "176", "postId": "417", "postNumber": 3, "turnRole": "REQUESTER",
+            "question": "최신 Diplo입니다. 어떤 상태에서 발생하는지 알려주세요.",
+        }
+
+        prompt = build_conversation_question("네트워크 요청 실패", turns, incoming)
+
+        self.assertIn("제품 기능, API 명령, UI 컴포넌트와 Source 근거", prompt)
+        self.assertIn("기초 진단을 먼저 설명", prompt)
+        self.assertIn("추가 자료 요청으로 답변을 시작하지 마십시오", prompt)
+        self.assertIn("이미 제공된 제품 버전, 첨부 화면, 시각 또는 로그를 다시 요청하지 마십시오", prompt)
+        self.assertIn("배경에서 실패한 API 호출", prompt)
+
+    def test_follow_up_reuses_prior_conversation_artifacts_for_image_grounding(self) -> None:
+        turns = [
+            {"sourcePostId": "415", "postNumber": 1, "role": "REQUESTER", "artifactIds": ["image-1", "image-2"]},
+            {"sourcePostId": "416", "postNumber": 2, "role": "ASSISTANT", "artifactIds": []},
+        ]
+        incoming = {
+            "discussionId": "176", "postId": "417", "postNumber": 3, "turnRole": "REQUESTER",
+            "artifactIds": [],
+        }
+
+        self.assertEqual(["image-1", "image-2"], conversation_artifact_ids(turns, incoming))
+
+    def test_provider_policy_requires_artifact_to_source_analysis_before_followup_request(self) -> None:
+        self.assertIn("This evidence-backed baseline answer MUST appear before any request", COMPREHENSIVE_SYSTEM_POLICY)
+        self.assertIn("visible status code, API command, component or stack-frame name", COMPREHENSIVE_SYSTEM_POLICY)
+        self.assertIn("failing background request from the user's target operation", COMPREHENSIVE_SYSTEM_POLICY)
+        self.assertIn("only for an exact item that was not already supplied", COMPREHENSIVE_SYSTEM_POLICY)
+
+    def test_chat_guest_os_question_requires_official_procedure_before_product_logs(self) -> None:
+        prompt = build_chat_question(
+            [],
+            "Windows Server 2022 가상머신의 NTP 설정과 PowerShell 강제 동기화 방법을 알려줘.",
+        )
+
+        self.assertIn("승인된 공식 문서나 도메인 제한 공식 검색 결과", prompt)
+        self.assertIn("실행 가능한 명령과 확인 기준을 먼저", prompt)
+        self.assertIn("ABLESTACK 버전이나 관리 서버·호스트 로그를 먼저 요구하지 마세요", prompt)
+        self.assertTrue(prompt.endswith("PowerShell 강제 동기화 방법을 알려줘."))
+
+    def test_successful_tag_correction_gets_deterministic_resolution_progress_answer(self) -> None:
+        update = (
+            "물리네트워크의 태그와 네트워크 오퍼링 태그를 맞춘 후 해당 문제가 더 이상 발생하지 않습니다."
+        )
+
+        self.assertTrue(is_resolution_progress_update(update))
+        result = resolution_progress_result(update) or {}
+        self.assertEqual("ANSWERED", result["state"])
+        self.assertFalse(result["generationProviderCalled"])
+        self.assertIn("태그를 일치시킨 뒤", result["report"]["summary"])
+        self.assertIn("태그 불일치", result["report"]["diagnoses"][0]["title"])
+        self.assertTrue(any("해결 답변으로 선택" in item for item in result["report"]["recommendedActions"]))
 
     def test_new_concrete_cli_step_advances_follow_up(self) -> None:
         result = {
@@ -82,6 +164,17 @@ class ConversationProgressionTest(unittest.TestCase):
                 "unknowns": ["SELinux 관련 로그와 운영체제 버전을 알려주세요."],
             }
         }
+        self.assertFalse(community_result_advances(result, self.turns))
+
+    def test_follow_up_abstention_is_never_published_as_another_information_request(self) -> None:
+        result = {
+            "state": "ABSTAINED",
+            "report": {
+                "recommendedActions": [],
+                "unknowns": ["제품 버전과 발생 시각, 관련 로그를 알려주세요."],
+            },
+        }
+
         self.assertFalse(community_result_advances(result, self.turns))
 
     def test_progression_retry_reserves_instruction_space_at_question_limit(self) -> None:

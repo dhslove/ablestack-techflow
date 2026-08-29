@@ -2,7 +2,7 @@
 
 ## 1. 운영 원칙
 
-TechFlow AI Gateway 0.15.0은 Chat 직접 상담과 Community 자동 답변을 함께 운영한다. 정상 상태를 주기적으로 Chat에 알리지 않는다. 같은 장애의 최초 발생과 실제 복구 전환만 알린다. 질문·답변·로그 원문은 장애 큐와 KPI에 복제하지 않는다.
+TechFlow AI Gateway 0.16.3은 Chat 직접 상담과 Community 자동 답변을 함께 운영한다. 정상 상태를 주기적으로 Chat에 알리지 않는다. 같은 장애의 최초 발생과 실제 복구 전환만 알린다. 질문·답변·로그 원문은 장애 큐와 KPI에 복제하지 않는다.
 
 GitHub→Chat Webhook의 `github-chat-v1`, `chat-adapter`, `activepieces-control`은 보호 서비스다. 이 Runbook의 배포·재기동·장애 주입 대상이 아니다.
 
@@ -21,9 +21,11 @@ GitHub→Chat Webhook의 `github-chat-v1`, `chat-adapter`, `activepieces-control
 
 ## 3. Community 연속성
 
-Poller는 Activepieces Webhook 수락만으로 게시물을 완료하지 않는다. Gateway Case의 `lastSeenPostId`가 현재 Flarum Post ID와 일치하는 것을 확인한 뒤에만 Post ID를 원자적으로 체크포인트한다. 다운로드·Artifact·Webhook·AI 처리·Gateway 확인 중 하나라도 실패하면 해당 Post ID를 완료 처리하지 않으므로 다음 주기에 다시 시도한다. Gateway는 Flarum Post ID 기반 Event ID와 Idempotency Key로 같은 답변이 중복 게시되는 것을 막는다.
+Poller는 Activepieces Webhook 수락만으로 게시물을 완료하지 않는다. 수락된 Post는 상태 파일의 지속 `pendingPosts`에 기록하고 Poller는 즉시 다음 Discussion 탐색을 계속한다. 다음 Poll에서 Gateway Case의 `lastSeenPostId`와 공개 게시 상태를 확인한 뒤에만 Post ID를 원자적으로 체크포인트한다. 다운로드·Artifact·Webhook·AI 처리·Gateway 확인 중 하나라도 실패하면 해당 Post ID를 완료 처리하지 않고 지수 간격으로 다시 제출한다. Gateway는 Flarum Post ID 기반 Event ID와 Idempotency Key로 같은 답변이 중복 게시되는 것을 막는다.
 
-Gateway 확인 제한시간은 기본 600초이며 `TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS`로 조정한다. 제한시간이 지나면 `community_post_delivery_failed`를 기록하고 장애 상태를 Chat에 한 번 알린다. 같은 Post가 이후 성공하면 복구 상태로 전환한다.
+Gateway 확인 상한은 기본 180초이며 `TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS`로 조정한다. 확인 중에는 Poller 실행 루프를 점유하지 않는다. 상한을 넘긴 Pending은 `community_post_confirmation_overdue`를 기록하고 지수 간격으로 다시 제출한다. 같은 Post가 이후 성공하면 `RECOVERED`로 전환한다.
+
+질문자가 “조치 후 더 이상 발생하지 않는다”와 같이 성공 결과를 남기면 새 RAG 근거를 요구하지 않는다. Gateway는 성공 결과를 Case Turn으로 기록하고, 확인된 해결 조건·재발 방지·해결 답변 선택 안내를 결정적으로 게시한다. 실제 해결 답변이 선택되기 전까지 Conversation은 `WAITING_RESOLUTION`을 유지한다.
 
 운영 Poller의 Flarum API 주소는 내부 경로 `http://172.16.0.234`이고 사용자에게 제공하는 링크는 `https://community.ablecloud.io`다. 외부 공개 주소를 운영 서버의 수집 경로로 바꾸지 않는다.
 
@@ -38,7 +40,7 @@ Gateway 확인 제한시간은 기본 600초이며 `TECHFLOW_COMMUNITY_GATEWAY_C
 - `DEAD_LETTER`: 기본 3회 실패하여 자동 재시도 한도를 초과함
 - `RECOVERED`: 동일 Fingerprint 작업이 다시 성공함
 
-재시도 간격은 1, 2, 4초 기준의 지수 백오프로 늘어난다. Community Poller의 정상 주기는 별도 설정값을 따른다. 수동 재처리는 다음 API로 큐 상태를 `RETRYING`으로 전환한 뒤 Poller가 같은 미완료 Event를 다시 가져가게 한다.
+Chat Job 재시도 간격은 1, 2, 4초 기준의 지수 백오프로 늘어난다. Community Post는 Pending 확인 상한을 기준으로 최대 15분까지 지수 간격을 늘리되 다른 토론 탐색을 중단하지 않는다. 수동 재처리는 다음 API로 큐 상태를 `RETRYING`으로 전환한 뒤 Poller가 같은 미완료 Event를 다시 가져가게 한다.
 
 ```bash
 curl -sS -X POST "http://gateway:8090/v1/operations/failures/<Failure-ID>/retry" \
@@ -68,13 +70,16 @@ python tools/package_ai_gateway.py \
   --output tmp/ai-gateway-release.tar.gz
 ```
 
-배포 전 DB와 AI Gateway 설정을 백업한다. `0014_epic4_operations_up.sql`을 적용한 뒤 Gateway와 Community Poller만 새 이미지로 교체한다. `github-chat-v1`을 포함한 보호 서비스의 Container ID·Image ID·StartedAt을 전후 비교한다.
+배포 전 DB와 AI Gateway 설정, Poller 상태 파일을 백업한다. Gateway와 Community Poller는 같은 Image Version으로 교체한다. Poller는 Gateway Health가 정상인 뒤 시작하며 상태 파일 수정 시간이 120초 이내인지 Healthcheck로 확인한다. `github-chat-v1`을 포함한 보호 서비스의 Container ID·Image ID·StartedAt을 전후 비교한다.
 
 ## 7. 완료 점검
 
 - Chat 질문 2회가 같은 Context Version에 기록되고 `해결` 뒤 새 Context가 열림
 - Community 미답변 글이 자동 게시되고 후속 Turn과 해결 상태가 이어짐
 - 실패 Post가 seen 처리되지 않고 같은 Event ID로 재처리됨
+- Pending Post 처리 중 다른 Discussion이 계속 제출됨
+- Poller 상태 파일의 `pendingPosts`가 처리 후 0건으로 복귀함
+- Gateway·Poller의 Image Version이 일치하고 Poller Health가 `healthy`임
 - 같은 장애 알림 1회, 복구 알림 1회, 정상 주기 알림 0회
 - Dead Letter와 수동 재처리가 동작함
 - KPI에 원문 또는 내부 Source 상세가 없음

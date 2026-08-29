@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from .provider import PROVIDER_PROFILES
 from .conversation import conversation_state_for_draft, source_post_id
+from .versioned_assist import implementation_identifiers
 
 
 KB_SOLUTION_CONFIRMED_EVENT = "KB_SOLUTION_CONFIRMED"
@@ -107,6 +108,9 @@ class Store(Protocol):
     def open_chat_conversation(self, user_id: str, username: str) -> dict[str, Any]: ...
     def list_chat_turns(self, user_id: str, limit: int = 12) -> list[dict[str, Any]]: ...
     def record_chat_turn(self, user_id: str, post_id: str, role: str, content: str) -> dict[str, Any]: ...
+    def update_chat_turn_artifacts(
+        self, user_id: str, post_id: str, artifact_ids: list[str], artifact_warnings: list[str]
+    ) -> dict[str, Any]: ...
     def resolve_chat_conversation(self, user_id: str) -> dict[str, Any]: ...
     def enqueue_chat_job(self, user_id: str, post_id: str, correlation_id: str, max_attempts: int = 3) -> dict[str, Any]: ...
     def get_chat_job(self, job_id: UUID) -> dict[str, Any]: ...
@@ -622,11 +626,26 @@ class MemoryStore:
             terms = {term.lower() for term in request["question"].split() if len(term) > 1}
             fts = sorted(candidates, key=lambda c: (-sum(term in c.content.lower() for term in terms), str(c.id)))[:20]
             identifier = sorted(candidates, key=lambda c: (-sum(term in (c.symbol or "").lower() for term in terms), str(c.id)))[:20]
+            implementation_terms = tuple(item.casefold() for item in implementation_identifiers(request["question"]))
+            implementation = sorted(
+                (
+                    chunk for chunk in candidates
+                    if any(term in f"{chunk.path}\n{chunk.symbol or ''}".casefold() for term in implementation_terms)
+                ),
+                key=lambda c: (
+                    -sum(term in f"{c.path}\n{c.symbol or ''}".casefold() for term in implementation_terms), str(c.id),
+                ),
+            )[:20]
             query_vector = embedding_result.vectors[0]
             vector = sorted(candidates, key=lambda c: (-cosine_similarity(query_vector, self._embeddings[c.id]), str(c.id)))[:30]
             kinds = {chunk.id: chunk.source_kind for chunk in candidates}
             ranked = reciprocal_rank_fusion(
-                {"fts": [c.id for c in fts], "identifier": [c.id for c in identifier], "vector": [c.id for c in vector]},
+                {
+                    "fts": [c.id for c in fts],
+                    "identifier": [c.id for c in identifier],
+                    "implementation": [c.id for c in implementation],
+                    "vector": [c.id for c in vector],
+                },
                 kinds,
             )[:10]
             lookup = {chunk.id: chunk for chunk in candidates}
@@ -1306,11 +1325,32 @@ class MemoryStore:
             value = {
                 "turnId": uuid4(), "userId": user_id, "contextVersion": version, "postId": post_id,
                 "role": role, "content": content[:16000],
-                "contentSha256": hashlib.sha256(content.encode("utf-8")).hexdigest(), "createdAt": now,
+                "contentSha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                "artifactIds": [], "artifactWarnings": [], "artifactChecked": role == "ASSISTANT",
+                "createdAt": now,
             }
             rows.append(value)
             conversation["updatedAt"] = now
             return deepcopy(value)
+
+    def update_chat_turn_artifacts(
+        self, user_id: str, post_id: str, artifact_ids: list[str], artifact_warnings: list[str]
+    ) -> dict[str, Any]:
+        with self._lock:
+            conversation = self._chat_conversations.get(user_id)
+            if not conversation or conversation["state"] != "ACTIVE":
+                raise InvalidStateError("active Chat conversation is required")
+            row = next((item for item in self._chat_turns.get(user_id, [])
+                        if item["contextVersion"] == conversation["contextVersion"]
+                        and item["postId"] == post_id and item["role"] == "USER"), None)
+            if row is None:
+                raise NotFoundError("Chat turn not found")
+            row.update(
+                artifactIds=list(dict.fromkeys(artifact_ids))[:5],
+                artifactWarnings=list(dict.fromkeys(artifact_warnings))[:5],
+                artifactChecked=True,
+            )
+            return deepcopy(row)
 
     def resolve_chat_conversation(self, user_id: str) -> dict[str, Any]:
         with self._lock:

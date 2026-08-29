@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-26T03:06:00Z",
+  "issue": 102,
+  "pullRequest": 101,
+  "question": {
+    "surface": "Synology Chat",
+    "userId": "19",
+    "contextVersion": 3,
+    "postId": "1945620185232",
+    "guestOsFamily": "WINDOWS",
+    "supportTopic": "TIME_SYNC"
+  },
+  "rootCause": {
+    "officialSearchWasLimitedToGuestAgentInstall": true,
+    "familyOnlyLocalReferenceMatchCouldHideTopicMismatch": true,
+    "previousAnswerRequestedProductVersionBeforeGuestProcedure": true
+  },
+  "officialEvidence": {
+    "authority": "Microsoft Learn",
+    "url": "https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings",
+    "sourceKind": "OFFICIAL_EXTERNAL_DOCUMENTATION",
+    "allowedLiveDomains": ["learn.microsoft.com"],
+    "reviewedAt": "2026-08-26"
+  },
+  "answerContract": {
+    "state": "ANSWERED",
+    "providerProfileId": "OPENAI_RAG_ESCALATION_V1",
+    "providerLatencyMs": 51006,
+    "containsTimeZoneCheck": true,
+    "containsDomainHierarchyProcedure": true,
+    "containsManualNtpProcedure": true,
+    "containsForceResync": true,
+    "containsStripchartVerification": true,
+    "containsUdp123Caution": true,
+    "requestsAbleStackVersionFirst": false,
+    "requestsManagementOrHostLogsFirst": false
+  },
+  "chatCorrection": {
+    "sent": true,
+    "existingAssistantTurnUpdated": true,
+    "messageCharacters": 1971,
+    "conversationRemainsActive": true
+  },
+  "release": {
+    "version": "0.16.2",
+    "image": "techflow/ai-gateway:issue102-0.16.2-9280572",
+    "commit": "9280572",
+    "backupRoot": "/home/ablecloud/techflow-backups/issue102-20260826T025056Z",
+    "databaseBackupBytes": 1450488082,
+    "databaseBackupRestoreListEntries": 223
+  },
+  "validation": {
+    "repositoryTestsPassed": 296,
+    "gatewayHealthy": true,
+    "gatewayErrors": 0,
+    "communityHttpStatus": 200,
+    "chatHttpStatus": 200,
+    "activepiecesHttpStatus": 200
+  },
+  "protectedServices": {
+    "communityPollerChanged": false,
+    "sourceReconcilerChanged": false,
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  }
+}

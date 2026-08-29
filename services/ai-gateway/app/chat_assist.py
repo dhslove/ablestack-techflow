@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from email.message import Message
 import hashlib
 import hmac
 import json
 from pathlib import Path
 import re
 import urllib.parse
+import urllib.error
 import urllib.request
 from typing import Any
 
@@ -34,6 +36,13 @@ class ChatEvent:
     def event_key(self) -> str:
         raw = f"{self.post_id}:{self.action_name or 'message'}:{self.action_value or self.text}"
         return "chat-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
+@dataclass(frozen=True)
+class ChatPostFile:
+    filename: str
+    media_type: str
+    size_bytes: int
 
 
 def parse_chat_event(content_type: str, body: bytes) -> ChatEvent:
@@ -222,6 +231,70 @@ class SynologyBotClient:
             result = json.loads(response.read().decode("utf-8"))
         if result.get("success") is not True:
             raise RuntimeError("Synology Chat Bot post failed")
+
+    @staticmethod
+    def _filename(disposition: str | None) -> str:
+        if not disposition:
+            raise InvalidBoundaryError("Chat file response has no filename")
+        message = Message()
+        message["Content-Disposition"] = disposition
+        filename = str(message.get_filename() or "").strip()
+        if not filename or Path(filename).name != filename or "/" in filename or "\\" in filename:
+            raise InvalidBoundaryError("Chat file response has an unsafe filename")
+        return filename
+
+    def download_post_file(
+        self, post_id: str, destination: Path, *, max_bytes: int, max_archive_bytes: int,
+    ) -> ChatPostFile | None:
+        """Stream one Bot-visible Chat post file to a private temporary path."""
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", post_id):
+            raise InvalidBoundaryError("invalid Chat post id")
+        token = self._token()
+        query = urllib.parse.urlencode({
+            "api": "SYNO.Chat.External", "method": "post_file_get", "version": "2",
+            "post_id": post_id, "token": json.dumps(token),
+        })
+        request = urllib.request.Request(
+            f"{self.base_url}/webapi/entry.cgi?{query}", method="GET",
+            headers={"Accept": "image/*,text/plain,application/json,application/zip,application/gzip"},
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=120)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise RuntimeError(f"Synology Chat file download failed with HTTP {exc.code}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError("Synology Chat file download failed") from exc
+        with response:
+            filename = self._filename(response.headers.get("Content-Disposition"))
+            media_type = str(response.headers.get("Content-Type") or "application/octet-stream").split(";", 1)[0].strip().lower()
+            archive = media_type in {"application/zip", "application/gzip", "application/x-gzip", "application/x-zip-compressed"}
+            archive = archive or filename.casefold().endswith((".zip", ".gz", ".tgz", ".tar.gz"))
+            permitted_bytes = max_archive_bytes if archive else max_bytes
+            length_header = response.headers.get("Content-Length")
+            try:
+                expected = int(length_header) if length_header is not None else None
+            except ValueError as exc:
+                raise InvalidBoundaryError("Chat file Content-Length is invalid") from exc
+            if expected is not None and (expected < 1 or expected > permitted_bytes):
+                raise InvalidBoundaryError("Chat file size is outside the permitted boundary")
+            destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            total = 0
+            try:
+                with destination.open("xb") as target:
+                    while chunk := response.read(1024 * 1024):
+                        total += len(chunk)
+                        if total > permitted_bytes:
+                            raise InvalidBoundaryError("Chat file size is outside the permitted boundary")
+                        target.write(chunk)
+            except Exception:
+                destination.unlink(missing_ok=True)
+                raise
+            if total < 1 or (expected is not None and total != expected):
+                destination.unlink(missing_ok=True)
+                raise InvalidBoundaryError("Chat file download is incomplete")
+            return ChatPostFile(filename, media_type, total)
 
 
 class CommunityFlowClient:

@@ -93,6 +93,23 @@ GUEST_AGENT_MARKERS: tuple[str, ...] = (
     "get-service", "start-service", "org.qemu.guest_agent.0", "could not be found", "service",
 )
 
+WINDOWS_TIME_MARKERS: tuple[str, ...] = (
+    "Windows Server",
+    "W32Time",
+    "w32tm",
+    "NTP",
+    "manualpeerlist",
+    "syncfromflags",
+    "domhier",
+    "resync",
+    "rediscover",
+    "stripchart",
+    "Get-TimeZone",
+    "Get-Date",
+    "Restart-Service",
+    "UDP 123",
+)
+
 GLUE_MARKERS: tuple[str, ...] = (
     "glue", "ceph", "rados", "rbd", "cephfs", "osd", "mon", "mgr", "mds", "pool",
     "ceph status", "ceph health detail",
@@ -113,6 +130,27 @@ MOLD_MARKERS: tuple[str, ...] = (
     "virtual router", "cloudstack api", "api command", "async job", "libvirt", "qemu", "kvm", "virsh",
 )
 
+NETWORK_REQUEST_FAILURE_MARKERS: tuple[str, ...] = (
+    "createNetwork",
+    "CreateNetworkCmd",
+    "NetworkServiceImpl",
+    "ApiErrorCode",
+    "UNSUPPORTED_ACTION_ERROR",
+    "PARAM_ERROR",
+    "physicalNetworkId",
+    "networkOfferingId",
+    "guestType",
+    "specifyVlan",
+    "specifyIpRanges",
+    "listAndSwitchSamlAccount",
+    "SamlDomainSwitcher",
+    "request.js",
+    "plugins.js",
+    "x-description",
+    "errortext",
+    "HTTP 432",
+)
+
 
 def versioned_plan(question: str) -> dict[str, object]:
     return {
@@ -120,6 +158,7 @@ def versioned_plan(question: str) -> dict[str, object]:
         "domains": ["ABLESTACK_PRODUCT"],
         "sourceProfileIds": list(VERSIONED_SOURCE_PROFILES),
         "subquestions": [
+            "질문의 제품 기능, API 명령, UI 컴포넌트와 Source Symbol을 먼저 식별한다.",
             "1순위: ABLESTACK 문서와 승인된 내부 운영 지식을 확인한다.",
             "2순위: Diplo와 연관 제품 Source Code를 확인하고 Europa는 개선 예정 정보로만 비교한다.",
             "3순위: 공식 게스트 OS, libvirt, QEMU, KVM 자료에서 설치·동작·안전한 확인 방법을 보완한다.",
@@ -128,6 +167,7 @@ def versioned_plan(question: str) -> dict[str, object]:
         ],
         "evidencePriority": list(EVIDENCE_PRIORITY_POLICY),
         "questionsNeeded": [],
+        "featureSourceTerms": list(feature_source_terms(question)),
         "question": question,
     }
 
@@ -175,6 +215,16 @@ def _is_guest_agent_question(question: str) -> bool:
     return agent and procedure
 
 
+def _is_windows_time_question(question: str) -> bool:
+    normalized = question.casefold()
+    windows = any(marker in normalized for marker in ("windows", "윈도우"))
+    time_sync = any(marker in normalized for marker in (
+        "ntp", "시간", "시각", "time sync", "time synchronization", "w32time", "w32tm", "동기화",
+        "clock", "timezone", "time zone", "표준 시간대",
+    ))
+    return windows and time_sync
+
+
 def _is_glue_question(question: str) -> bool:
     normalized = question.casefold()
     return any(marker in normalized for marker in ("glue", "ceph", "rados", "rbd", "cephfs"))
@@ -195,8 +245,17 @@ def _is_mold_question(question: str) -> bool:
     return any(marker in normalized for marker in ("mold", "cloudstack"))
 
 
-def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
-    """Add implementation vocabulary without changing the user's visible question."""
+def _is_network_request_failure_question(question: str) -> bool:
+    normalized = question.casefold()
+    network = any(marker in normalized for marker in ("네트워크", "network", "createnetwork"))
+    failure = any(marker in normalized for marker in (
+        "요청 실패", "요청실패", "request failed", "실패", "오류", "error", "http 432", " 432",
+    ))
+    return network and failure
+
+
+def feature_source_terms(question: str) -> tuple[str, ...]:
+    """Map a user symptom to implementation terms before source retrieval."""
     anchors: list[str] = []
     if _is_console_connection_question(question):
         anchors.extend(CONSOLE_CONNECTION_MARKERS)
@@ -204,6 +263,8 @@ def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
         anchors.extend(FSFREEZE_MARKERS)
     if _is_guest_agent_question(question):
         anchors.extend(GUEST_AGENT_MARKERS)
+    if _is_windows_time_question(question):
+        anchors.extend(WINDOWS_TIME_MARKERS)
     if _is_glue_question(question):
         anchors.extend(GLUE_MARKERS)
     if _is_koral_question(question):
@@ -212,6 +273,24 @@ def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
         anchors.extend(WALL_MARKERS)
     if _is_mold_question(question):
         anchors.extend(MOLD_MARKERS)
+    if _is_network_request_failure_question(question):
+        anchors.extend(NETWORK_REQUEST_FAILURE_MARKERS)
+    return tuple(dict.fromkeys(anchors))
+
+
+def implementation_identifiers(question: str, *, limit: int = 40) -> tuple[str, ...]:
+    """Extract explicit API, component, file, and symbol terms for a deterministic retrieval channel."""
+    identifiers = re.findall(r"[A-Za-z][A-Za-z0-9_.-]{4,}", question)
+    return tuple(dict.fromkeys(identifiers))[:limit]
+
+
+def _is_specialized_question(question: str) -> bool:
+    return bool(feature_source_terms(question))
+
+
+def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
+    """Add implementation vocabulary without changing the user's visible question."""
+    anchors = list(feature_source_terms(question))
     if not anchors:
         return question[:limit]
     suffix = f"\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
@@ -239,6 +318,12 @@ def _relevance_score(question: str, item: dict[str, Any]) -> int:
             "OFFICIAL_EXTERNAL_DOCUMENTATION", "OFFICIAL_LIVE_WEB_DOCUMENTATION",
         }:
             score += 12
+    if _is_windows_time_question(question):
+        score += sum(7 for marker in WINDOWS_TIME_MARKERS if marker.casefold() in searchable)
+        if str(item.get("sourceKind") or "") in {
+            "OFFICIAL_EXTERNAL_DOCUMENTATION", "OFFICIAL_LIVE_WEB_DOCUMENTATION",
+        }:
+            score += 18
     if _is_glue_question(question):
         score += sum(6 for marker in GLUE_MARKERS if marker in searchable)
     if _is_koral_question(question):
@@ -247,6 +332,14 @@ def _relevance_score(question: str, item: dict[str, Any]) -> int:
         score += sum(6 for marker in WALL_MARKERS if marker in searchable)
     if _is_mold_question(question):
         score += sum(6 for marker in MOLD_MARKERS if marker in searchable)
+    if _is_network_request_failure_question(question):
+        score += sum(7 for marker in NETWORK_REQUEST_FAILURE_MARKERS if marker.casefold() in searchable)
+        path = str(item.get("path") or "").casefold()
+        if any(marker in path for marker in (
+            "createnetworkcmd.java", "networkserviceimpl.java", "apierrorcode.java", "apiserver.java",
+            "samldomainswitcher.vue", "request.js", "plugins.js",
+        )):
+            score += 30
     return score
 
 
@@ -254,12 +347,7 @@ def relevant_results(question: str, rows: list[dict[str, Any]]) -> list[dict[str
     terms = _query_terms(question)
     if not terms:
         return []
-    if not (
-        _is_console_connection_question(question) or _is_fsfreeze_question(question)
-        or _is_guest_agent_question(question) or _is_glue_question(question) or _is_koral_question(question)
-        or _is_wall_question(question)
-        or _is_mold_question(question)
-    ):
+    if not _is_specialized_question(question):
         relevant = []
         for item in rows:
             searchable = f"{item.get('symbol') or ''}\n{item.get('path') or ''}\n{item.get('content') or ''}".casefold()
@@ -287,18 +375,21 @@ def select_context_results(question: str, results_by_profile: dict[str, list[dic
     """Keep every source reviewed while bounding a provider request to twenty chunks."""
     selected: list[dict[str, Any]] = []
     for profile_id in VERSIONED_SOURCE_PROFILES:
-        if (
-            _is_console_connection_question(question) or _is_fsfreeze_question(question)
-            or _is_guest_agent_question(question) or _is_glue_question(question) or _is_koral_question(question)
-            or _is_wall_question(question)
-            or _is_mold_question(question)
-        ):
-            limit = {
-                "SHARED_DOCS": 3,
-                "CLOUD_DIPLO": 3,
-                CURATED_PLATFORM_PROFILE: 4,
-                "CLOUD_EUROPA": 3,
-            }.get(profile_id, 1)
+        if _is_specialized_question(question):
+            if _is_network_request_failure_question(question):
+                limit = {
+                    "SHARED_DOCS": 3,
+                    "CLOUD_DIPLO": 6,
+                    CURATED_PLATFORM_PROFILE: 2,
+                    "CLOUD_EUROPA": 2,
+                }.get(profile_id, 1)
+            else:
+                limit = {
+                    "SHARED_DOCS": 3,
+                    "CLOUD_DIPLO": 3,
+                    CURATED_PLATFORM_PROFILE: 4,
+                    "CLOUD_EUROPA": 3,
+                }.get(profile_id, 1)
         else:
             limit = 4 if profile_id in {"SHARED_DOCS", "CLOUD_DIPLO", "CLOUD_EUROPA"} else 1
         for item in relevant_results(question, results_by_profile.get(profile_id) or [])[:limit]:
@@ -477,9 +568,13 @@ _CLI_PREFIXES = (
     "getfacl ", "matchpathcon ", "restorecon ", "virsh ", "qemu-ga ", "ls ",
     "grep ", "curl ", "ip ", "ss ", "getenforce", "sestatus", "mount ", "cat ",
     "apt ", "apt-get ", "dnf ", "rpm ", "dpkg ", "msiexec.exe ", "get-service ", "start-service ",
+    "restart-service ", "get-timezone", "get-date", "w32tm ", "tzutil.exe ",
 )
 
-_POWERSHELL_PREFIXES = ("msiexec.exe ", "get-service ", "start-service ", "restart-service ", "stop-service ")
+_POWERSHELL_PREFIXES = (
+    "msiexec.exe ", "get-service ", "start-service ", "restart-service ", "stop-service ",
+    "get-timezone", "get-date", "w32tm ", "tzutil.exe ",
+)
 
 
 def _looks_like_cli(value: str) -> bool:
@@ -497,10 +592,17 @@ def _format_copyable_cli(value: str) -> str:
         candidate = match.group(1).strip()
         if not _looks_like_cli(candidate):
             return match.group(0)
+        if candidate.casefold() == "w32tm /stripchart":
+            candidate = "w32tm /stripchart /computer:<NTP_SERVER> /dataonly /samples:5"
         commands.append(candidate.removeprefix("$ "))
         return "다음 명령"
 
     explanation = _INLINE_CODE.sub(replace, value).strip().replace("다음 명령를", "다음 명령을")
+    explanation = re.sub(
+        r"다음 명령(?:\s*(?:,|과|와)\s*다음 명령)+",
+        "아래 명령",
+        explanation,
+    ).replace("아래 명령를", "아래 명령을")
     if not commands:
         return value
     unique_commands = list(dict.fromkeys(commands))

@@ -103,6 +103,12 @@ def verify(connection: psycopg.Connection) -> None:
     ).fetchone()[0]
     if chat_async_tables != 1:
         raise SystemExit(f"Issue 98 schema mismatch expectedTables=1 actual={chat_async_tables}")
+    chat_artifact_columns = connection.execute(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND "
+        "table_name='chat_assist_turn' AND column_name IN ('artifact_ids','artifact_warnings','artifact_checked')"
+    ).fetchone()[0]
+    if chat_artifact_columns != 3:
+        raise SystemExit(f"Issue 105 schema mismatch expectedColumns=3 actual={chat_artifact_columns}")
     issue64_columns = connection.execute(
         "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND "
         "table_name='community_case' AND column_name IN ('review_post_id','review_post_url')"
@@ -128,7 +134,8 @@ def verify(connection: psycopg.Connection) -> None:
         raise SystemExit(f"Community Knowledge Base schema mismatch expectedColumns=8 actual={knowledge_columns}")
     print(f"schema=valid tables={len(EXPECTED_TABLES)} extensions=2 sourceProfiles=9 "
           "issue43Columns=8 issue45Columns=2 issue46Indexes=2 communityTables=4 issue22Tables=1 "
-          "issue64Columns=2 conversationColumns=8 knowledgeColumns=8 epic4Tables=3 issue98Tables=1")
+          "issue64Columns=2 conversationColumns=8 knowledgeColumns=8 epic4Tables=3 issue98Tables=1 "
+          "issue105Columns=3")
 
 
 def main() -> int:
@@ -141,6 +148,12 @@ def main() -> int:
         if args.direction == "down":
             if not args.allow_destructive_rollback:
                 raise SystemExit("--allow-destructive-rollback is required")
+            issue105_present = connection.execute(
+                "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+                "AND table_name='chat_assist_turn' AND column_name='artifact_ids'"
+            ).fetchone()
+            if issue105_present:
+                connection.execute((MIGRATIONS / "0016_chat_artifacts_down.sql").read_text(encoding="utf-8"))
             issue98_present = connection.execute(
                 "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='chat_assist_job'"
             ).fetchone()
@@ -235,6 +248,7 @@ def main() -> int:
         connection.execute((MIGRATIONS / "0013_community_kb_solution_up.sql").read_text(encoding="utf-8"))
         connection.execute((MIGRATIONS / "0014_epic4_operations_up.sql").read_text(encoding="utf-8"))
         connection.execute((MIGRATIONS / "0015_chat_async_job_up.sql").read_text(encoding="utf-8"))
+        connection.execute((MIGRATIONS / "0016_chat_artifacts_up.sql").read_text(encoding="utf-8"))
         verify(connection)
     return 0
 

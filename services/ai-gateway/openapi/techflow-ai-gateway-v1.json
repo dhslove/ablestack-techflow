@@ -3,7 +3,7 @@
   "info": {
     "title": "TechFlow AI Gateway",
     "description": "TechFlow AI Gateway with grounded Responses generation and deterministic retrieval.",
-    "version": "0.16.0"
+    "version": "0.16.5"
   },
   "paths": {
     "/healthz": {
@@ -2279,6 +2279,22 @@
             "type": "array",
             "maxItems": 5,
             "title": "Artifactids"
+          },
+          "requiredArtifactIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredartifactids"
           },
           "environment": {
             "anyOf": [

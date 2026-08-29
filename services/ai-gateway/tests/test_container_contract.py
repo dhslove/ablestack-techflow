@@ -15,6 +15,7 @@ COMPOSE = (REPO / "deploy" / "compose" / "ai-gateway" / "compose.yml").read_text
 MAIN = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 ARTIFACTS = (ROOT / "app" / "artifacts.py").read_text(encoding="utf-8")
 GITATTRIBUTES = (REPO / ".gitattributes").read_text(encoding="utf-8")
+POLLER = (ROOT / "scripts" / "poll_flarum.py").read_text(encoding="utf-8")
 
 
 class ContainerContractTest(unittest.TestCase):
@@ -99,17 +100,29 @@ class ContainerContractTest(unittest.TestCase):
         self.assertIn("TECHFLOW_RAG_PROVIDER_MODE: mock", COMPOSE)
 
     def test_official_web_search_is_operator_controlled_and_disabled_by_default(self) -> None:
-        self.assertIn("TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED: ${TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED:-false}", COMPOSE)
+        migrate = COMPOSE.split("  migrate:", 1)[1].split("  source-mirror-init:", 1)[0]
+        gateway = COMPOSE.split("  gateway:", 1)[1].split("  source-reconciler:", 1)[0]
+        setting = "TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED: ${TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED:-false}"
+        self.assertNotIn(setting, migrate)
+        self.assertIn(setting, gateway)
 
     def test_healthcheck_exists(self) -> None:
         self.assertGreaterEqual(COMPOSE.count("healthcheck:"), 2)
 
-    def test_community_checkpoint_waits_for_gateway_confirmation(self) -> None:
+    def test_community_confirmation_is_bounded_and_poller_has_freshness_healthcheck(self) -> None:
         self.assertIn(
             "TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS: "
-            "${TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS:-600}",
+            "${TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS:-180}",
             COMPOSE,
         )
+        poller = COMPOSE.split("  community-poller:", 1)[1].split("  artifact-maintainer:", 1)[0]
+        self.assertIn("healthcheck:", poller)
+        self.assertIn("TECHFLOW_COMMUNITY_POLLER_STATE", poller)
+        self.assertIn("st_mtime < 120", poller)
+        self.assertIn("gateway:", poller)
+        self.assertIn("condition: service_healthy", poller)
+        self.assertNotIn("from app import", POLLER)
+        self.assertIn('"app" / "__init__.py"', POLLER)
 
     def test_tree_sitter_parsers_are_prefetched_in_the_image(self) -> None:
         self.assertIn("scripts/prefetch_parsers.py", DOCKERFILE)

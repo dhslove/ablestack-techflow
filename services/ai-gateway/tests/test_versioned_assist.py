@@ -13,10 +13,12 @@ from app.versioned_assist import (
     coverage_payload,
     evidence_priority,
     expand_retrieval_question,
+    feature_source_terms,
     format_public_answer,
     format_knowledge_base,
     projection_is_safe,
     relevant_results,
+    implementation_identifiers,
     sanitize_public_text,
     simplify_public_text,
     select_context_results,
@@ -102,12 +104,138 @@ class VersionedAssistPolicyTest(unittest.TestCase):
                 combined = "\n".join(item["content"] for item in curated_platform_results(question))
                 self.assertIn(expected, combined)
 
+    def test_windows_server_time_question_loads_only_matching_official_time_guidance(self) -> None:
+        question = "Windows Server 2022 가상머신 NTP 설정과 PowerShell 강제 시간 동기화 방법"
+        expanded = expand_retrieval_question(question)
+        results = curated_platform_results(question)
+        combined = "\n".join(item["content"] for item in results)
+
+        for expected in (
+            "W32Time", "w32tm /query /source", "syncfromflags:domhier", "manualpeerlist",
+            "w32tm /resync /rediscover", "w32tm /stripchart", "UDP 123",
+        ):
+            self.assertIn(expected, combined)
+        self.assertIn("Get-TimeZone", expanded)
+        self.assertIn("rediscover", expanded)
+        self.assertNotIn("qemu-ga-x86_64.msi", combined)
+
+    def test_rocky_linux_smb_question_loads_exact_official_mount_procedure(self) -> None:
+        question = (
+            "Rocky Linux 8.10 가상머신에서 SMB 서버에 연결해서 마운트하고 싶습니다. "
+            "마운트 방법을 명령어로 알려주세요."
+        )
+        results = curated_platform_results(question)
+        combined = "\n".join(item["content"] for item in results)
+
+        for expected in (
+            "sudo dnf install -y cifs-utils", "sudo mkdir -p /mnt/smb", "mount -t cifs",
+            "credentials=/root/smb.cred", "sudo chmod 600", "sudo mount -a", "findmnt -T /mnt/smb",
+        ):
+            self.assertIn(expected, combined)
+        self.assertTrue(any("docs.redhat.com" in item["path"] for item in results))
+        self.assertNotIn("qemu-ga-x86_64.msi", combined)
+
+    def test_windows_time_inline_commands_render_as_powershell(self) -> None:
+        answer = format_public_answer({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "Windows 시간 원본을 확인합니다.",
+                "observedFacts": [], "diagnoses": [],
+                "recommendedActions": [
+                    "관리자 PowerShell에서 `w32tm /query /source`와 `w32tm /resync /rediscover`를 실행합니다."
+                ],
+                "unknowns": [], "currentAssessment": "CURRENT_CONFIG_ERROR",
+                "previewAssessment": "NOT_APPLICABLE", "previewGuidance": None,
+            },
+            "citations": [],
+        }) or ""
+
+        self.assertIn("```powershell\nw32tm /query /source\nw32tm /resync /rediscover\n```", answer)
+        self.assertIn("관리자 PowerShell에서 아래 명령을 실행합니다.", answer)
+        self.assertNotIn("다음 명령과 다음 명령", answer)
+
+    def test_incomplete_windows_stripchart_is_rendered_as_a_copyable_check(self) -> None:
+        answer = format_public_answer({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "NTP 응답을 확인합니다.", "observedFacts": [], "diagnoses": [],
+                "recommendedActions": ["관리자 PowerShell에서 `w32tm /stripchart`를 실행합니다."],
+                "unknowns": [], "currentAssessment": "CURRENT_CONFIG_ERROR",
+                "previewAssessment": "NOT_APPLICABLE", "previewGuidance": None,
+            },
+            "citations": [],
+        }) or ""
+
+        self.assertIn(
+            "w32tm /stripchart /computer:<NTP_SERVER> /dataonly /samples:5",
+            answer,
+        )
+
     def test_glue_koral_and_wall_expand_to_upstream_terms(self) -> None:
         self.assertIn("ceph health detail", expand_retrieval_question("Glue 상태가 WARN입니다."))
         self.assertIn("kubernetes", expand_retrieval_question("Koral Pod가 시작되지 않습니다."))
         self.assertIn("grafana-server", expand_retrieval_question("Wall 대시보드가 비어 있습니다."))
         self.assertIn("cloudstack api", expand_retrieval_question("Mold 가상머신 배포가 실패합니다."))
         self.assertIn("libvirt", expand_retrieval_question("Mold 가상머신 콘솔이 연결되지 않습니다."))
+
+    def test_network_request_failure_maps_feature_to_current_source_symbols(self) -> None:
+        question = '네트워크를 만들 때 "요청 실패"가 표시됩니다.'
+
+        terms = feature_source_terms(question)
+        expanded = expand_retrieval_question(question)
+        plan = versioned_plan(question)
+
+        for expected in (
+            "createNetwork", "CreateNetworkCmd", "NetworkServiceImpl", "ApiErrorCode",
+            "SamlDomainSwitcher", "listAndSwitchSamlAccount", "HTTP 432",
+        ):
+            self.assertIn(expected, terms)
+            self.assertIn(expected, expanded)
+            self.assertIn(expected, plan["featureSourceTerms"])
+
+        self.assertIn("CreateNetworkCmd", implementation_identifiers(expanded))
+        self.assertIn("SamlDomainSwitcher", implementation_identifiers(expanded))
+
+    def test_network_request_failure_prioritizes_api_and_ui_source_over_generic_network_text(self) -> None:
+        question = '네트워크 생성 중 요청 실패가 발생하고 화면에는 HTTP 432가 보입니다.'
+        rows = [
+            {"path": "docs/network.md", "content": "일반 네트워크 안내"},
+            {"path": "api/src/ApiErrorCode.java", "content": "UNSUPPORTED_ACTION_ERROR(432)"},
+            {"path": "ui/src/components/header/SamlDomainSwitcher.vue", "content": "listAndSwitchSamlAccount"},
+            {"path": "api/src/CreateNetworkCmd.java", "content": "createNetwork physicalNetworkId networkOfferingId"},
+        ]
+
+        ranked = relevant_results(question, rows)
+
+        self.assertEqual("api/src/CreateNetworkCmd.java", ranked[0]["path"])
+        self.assertEqual(
+            {
+                "api/src/ApiErrorCode.java",
+                "ui/src/components/header/SamlDomainSwitcher.vue",
+                "api/src/CreateNetworkCmd.java",
+            },
+            {item["path"] for item in ranked[:3]},
+        )
+
+    def test_network_request_failure_keeps_create_api_error_and_background_ui_context(self) -> None:
+        question = '네트워크 생성 중 요청 실패가 발생하고 화면에는 HTTP 432가 보입니다.'
+        current_rows = [
+            {"path": "api/src/CreateNetworkCmd.java", "content": "createNetwork physicalNetworkId"},
+            {"path": "server/src/NetworkServiceImpl.java", "content": "networkOfferingId guestType specifyVlan"},
+            {"path": "api/src/ApiErrorCode.java", "content": "UNSUPPORTED_ACTION_ERROR(432)"},
+            {"path": "server/src/ApiServer.java", "content": "Unknown API command unsupported action"},
+            {"path": "ui/src/SamlDomainSwitcher.vue", "content": "listAndSwitchSamlAccount"},
+            {"path": "ui/src/request.js", "content": "x-description errortext"},
+            {"path": "docs/generic-network.md", "content": "network"},
+        ]
+
+        selected = select_context_results(question, {"CLOUD_DIPLO": current_rows})
+
+        selected_paths = {item["path"] for item in selected}
+        self.assertEqual(6, len(selected))
+        self.assertIn("api/src/CreateNetworkCmd.java", selected_paths)
+        self.assertIn("api/src/ApiErrorCode.java", selected_paths)
+        self.assertIn("ui/src/SamlDomainSwitcher.vue", selected_paths)
 
     def test_live_official_source_has_platform_priority(self) -> None:
         self.assertEqual(

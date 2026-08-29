@@ -27,6 +27,12 @@ def curated_platform_results(question: str) -> list[dict[str, Any]]:
         terms = [str(item).casefold() for item in entry.get("matchTerms", ())]
         if not any(term in normalized for term in terms):
             continue
+        required_groups = [
+            [str(term).casefold() for term in group]
+            for group in entry.get("requiredTermGroups", ())
+        ]
+        if required_groups and not all(any(term in normalized for term in group) for group in required_groups):
+            continue
         locator = str(entry["sourceLocator"])
         content = str(entry["content"])
         digest = hashlib.sha256(f"{locator}\n{content}".encode("utf-8")).hexdigest()

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "issue": 106,
+  "pullRequest": 101,
+  "desktop": {
+    "viewportWidth": 1920,
+    "beforeShellWidth": 1165,
+    "afterShellLeft": 38,
+    "afterShellRight": 1867,
+    "afterShellWidth": 1829,
+    "beforeDiscussionResultsWidth": 758,
+    "afterDiscussionResultsWidth": 1422,
+    "afterPostStreamWidth": 1508,
+    "menuWidth": 280,
+    "quickLinkWidth": 48
+  },
+  "discussionEntry": {
+    "listHrefEndsWithFirstPost": true,
+    "directUrlStartsAtFirstPost": true,
+    "firstPostNumber": 1,
+    "scrollY": 0,
+    "timelineMilliseconds": [0, 100, 250, 500, 900, 1500, 2500, 4000],
+    "logoLeftAllSamples": 53,
+    "previousDetailLogoLeft": 92
+  },
+  "mobile": {
+    "viewportWidth": 390,
+    "documentScrollWidth": 375,
+    "discussionListWidth": 330,
+    "horizontalOverflow": false
+  },
+  "validation": {
+    "themeContractTestsPassed": 15,
+    "javascriptSyntax": "PASS",
+    "wslCycle": "issue106-detail-stable-final-20260829",
+    "wslEnable": "PASS",
+    "wslRollback": "PASS",
+    "wslReEnable": "PASS",
+    "productionLocalHttpStatus": 200,
+    "nginx": "active",
+    "phpFpm": "active",
+    "mariaDb": "active"
+  },
+  "production": {
+    "lessSha256": "5d302a43300e935656f85f0b9e80fe76b9d0e33546ff99cfbe38ac5d25603089",
+    "javascriptSha256": "310cd469db377bbe6da84a37bf458813c92980a31825b415badbe064d781148d",
+    "backupRoot": "/var/backups/techflow-flarum/theme-full-width-stable-20260829T1300KST",
+    "coreChanged": false,
+    "databaseChanged": false,
+    "contentChanged": false,
+    "attachmentsChanged": false,
+    "protectedIntegrationsChanged": false
+  }
+}

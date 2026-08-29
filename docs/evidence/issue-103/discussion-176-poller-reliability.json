@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-27T08:20:41Z",
+  "issue": 103,
+  "pullRequest": 101,
+  "incident": {
+    "discussionId": 176,
+    "requesterPostId": 419,
+    "assistantPostId": 420,
+    "requesterPostDetectedByPoller": true,
+    "activepiecesWebhookAccepted": true,
+    "gatewayEmbeddingsCalled": true,
+    "gatewayResponseWasRejectedBeforeFix": true,
+    "processRestartBeforeFix": 0,
+    "oomKilledBeforeFix": false
+  },
+  "rootCause": {
+    "resolutionProgressWasSentThroughRag": true,
+    "nonProgressingAbstentionReturned503": true,
+    "activepiecesAsyncAcceptanceHidDownstreamFailure": true,
+    "pollerBlockedOnSynchronousConfirmationSeconds": 600,
+    "gatewayVersionBefore": "0.16.2",
+    "pollerVersionBefore": "0.15.1"
+  },
+  "implementation": {
+    "deterministicResolutionProgress": true,
+    "durablePendingPosts": true,
+    "nonBlockingConfirmation": true,
+    "atomicCheckpoint": true,
+    "exponentialResubmission": true,
+    "confirmationLimitSeconds": 180,
+    "pollerStateFreshnessHealthcheckSeconds": 120,
+    "gatewayHealthyDependency": true,
+    "pollerVersionInMetrics": true
+  },
+  "runtime": {
+    "version": "0.16.3",
+    "image": "techflow/ai-gateway:issue103-0.16.3-ae2e92c",
+    "gatewayHealthy": true,
+    "pollerHealthy": true,
+    "gatewayRestartCount": 0,
+    "pollerRestartCount": 0,
+    "post419Seen": true,
+    "post420Seen": true,
+    "pendingPosts": 0,
+    "discussionCommentCount": 7,
+    "caseState": "PUBLISHED",
+    "answerState": "ANSWERED",
+    "conversationState": "RESOLVED",
+    "lastSeenPostId": "421",
+    "publishedPostId": "420",
+    "knowledgeBasePostId": "421",
+    "knowledgeBaseSourcePostId": "420",
+    "knowledgeBaseVersion": 1,
+    "knowledgeBaseSelectedAsSolution": true,
+    "stablePollWindowMinutes": 10,
+    "stablePollCompleted": 58,
+    "stablePollFailures": 0,
+    "stableDeliveryFailures": 0
+  },
+  "pendingTransition": [
+    {"submitted": 1, "delivered": 0, "pendingPosts": 1, "seenPosts": 170},
+    {"submitted": 1, "delivered": 1, "pendingPosts": 1, "seenPosts": 171},
+    {"submitted": 0, "delivered": 1, "pendingPosts": 0, "seenPosts": 172}
+  ],
+  "deployment": {
+    "backupRoot": "/home/ablecloud/techflow-backups/issue103-20260827T074530Z",
+    "communityStateBackupValidated": true,
+    "initialPollerImportFailureDetectedByHealthcheck": true,
+    "initialPollerImportFailureCorrected": true,
+    "composeValidated": true
+  },
+  "validation": {
+    "repositoryTestsPassed": 301,
+    "communityHttpStatus": 200,
+    "chatHttpStatus": 200,
+    "activepiecesHttpStatus": 200
+  },
+  "protectedServices": {
+    "sourceReconcilerChanged": false,
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  }
+}

@@ -1,5 +1,48 @@
 # TechFlow AI Gateway
 
+## v0.16.5 구현 범위
+
+- Synology Chat `post_id`를 `post_file_get`으로 조회해 Bot 대화의 이미지·로그·압축로그 수집
+- 파일을 메모리에 전체 적재하지 않고 Artifact 저장소의 비공개 임시 경로로 Streaming
+- Chat Turn에 `artifactIds`·`artifactWarnings`·다운로드 확인 상태를 저장해 재시도 멱등성 보장
+- 파일만 보낸 메시지도 질문으로 접수하고 같은 미해결 대화의 최신 Artifact 최대 5개 재사용
+- PNG·JPEG·WebP, 텍스트 로그, JSON·CSV 계열, ZIP·GZIP·TAR.GZ 분석
+- 손상·지원 제외·초과 파일을 한국어 경고로 안내하고 안전한 텍스트 질문은 계속 처리
+- Bot Token 기반 `post_file_get`만 허용하고 임의 외부 파일 URL은 수신 근거로 사용하지 않음
+
+## v0.16.4 구현 범위
+
+- 공식 Web Fallback 설정을 Migration이 아니라 실제 Gateway 컨테이너에 전달
+- Rocky Linux 8 계열 SMB/CIFS 마운트 공식 절차와 보안 Credential 방식 추가
+- Debian·SUSE·Fedora·Oracle Linux·FreeBSD 공식 문서 도메인 Catalog 확대
+- Alpine·Arch·Amazon Linux·Kali·Solaris·AIX·macOS 및 미등록 Linux의 제한 공식 검색 지원
+- 게스트 OS에 필수인 공식 검색이 비활성·실패·무결과이면 일반 보류 답변을 만들지 않고 재시도
+- `/healthz`에서 `officialWebSearch` 활성 상태 확인
+
+## v0.16.3 구현 범위
+
+- 성공 결과 댓글을 RAG 근거 부족으로 보류하지 않고 결정적 해결 진행 답변으로 처리
+- Activepieces 비동기 수락 이후 Gateway 확인을 Poller의 단일 실행 루프에서 분리
+- 미확인 Post를 `pendingPosts`에 지속 저장하고 다음 Poll에서 확인·지수 재전송
+- 한 Post의 장시간 AI 처리 또는 실패가 다른 Discussion 탐색을 막지 않도록 비차단 처리
+- Gateway 확인 기본 상한을 600초에서 180초로 축소하고 Poller 상태 파일 Freshness Healthcheck 추가
+- Poller 로그에 실행 버전을 표시해 Gateway·Poller 버전 불일치 확인 가능
+
+## v0.16.2 구현 범위
+
+- 일반 Windows·Ubuntu·RHEL 계열 게스트 운영체제 설정·운영 질문을 공식 자료 근거 대상으로 확장
+- 질문의 운영체제와 작업 주제가 모두 일치하는 승인 자료만 로컬 근거로 사용
+- Windows 일반 운영 질문의 Live Web Fallback을 Microsoft Learn으로 제한
+- Windows Server W32Time·NTP 설정, PowerShell 강제 동기화와 확인 절차 추가
+- 게스트 운영체제 절차를 답할 수 있을 때 ABLESTACK 버전·관리 서버·호스트 로그 선요청 금지
+
+## v0.16.1 구현 범위
+
+- 모든 Community 질문에서 관련 제품 기능·API·UI·Source Symbol을 먼저 식별
+- 첨부 화면의 상태 코드·API 명령·컴포넌트를 현재 Diplo Source 동작과 연결
+- 확인된 기초 진단과 안전한 첫 점검을 추가 자료 요청보다 먼저 제공
+- 이미 제공된 버전·이미지·시각·로그의 반복 요청과 후속 ABSTAINED 게시 차단
+
 ## v0.16.0 구현 범위
 
 - Synology Chat 일반 질문에 즉시 접수 확인을 반환하고 AI 분석은 백그라운드 Job으로 실행

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-28T08:10:00Z",
+  "issue": 104,
+  "pullRequest": 101,
+  "incident": {
+    "surface": "Synology Chat",
+    "userId": "19",
+    "contextVersion": 4,
+    "postId": "1945620185248",
+    "questionFamily": "RHEL_FAMILY",
+    "questionTopic": "SMB_MOUNT",
+    "previousJobState": "COMPLETED",
+    "previousAnswerWasGenericInformationRequest": true
+  },
+  "rootCause": {
+    "envFileOfficialSearchEnabled": true,
+    "gatewayContainerReceivedOfficialSearchFlag": false,
+    "migrationContainerReceivedFlagInstead": true,
+    "officialWebCallsBeforeFix": 0
+  },
+  "implementation": {
+    "gatewayRuntimeFlagWired": true,
+    "healthReportsOfficialSearch": true,
+    "requiredGuestOsSearchFailsClosed": true,
+    "officialSearchContractRetryCount": 1,
+    "topicSpecificUrlValidation": true,
+    "rockySmbApprovedSnapshot": true,
+    "genericLinuxOfficialCatalog": true,
+    "unknownOsDoesNotUseProductLogs": true
+  },
+  "supportedFamilies": [
+    "WINDOWS", "UBUNTU", "RHEL_FAMILY", "DEBIAN", "SUSE", "FEDORA", "ORACLE_LINUX",
+    "FREEBSD", "ALPINE", "ARCH", "AMAZON_LINUX", "KALI", "SOLARIS", "AIX", "MACOS",
+    "GENERIC_LINUX"
+  ],
+  "e2e": {
+    "rockyState": "ANSWERED",
+    "rockyOfficialCitation": "https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/8/html/managing_file_systems/mounting-an-smb-share-on-red-hat-enterprise-linux_managing-file-systems",
+    "rockyContainsCifsUtils": true,
+    "rockyContainsTemporaryMount": true,
+    "rockyContainsCredentialFile": true,
+    "rockyContainsFstab": true,
+    "chatCorrectionSent": true,
+    "debianLiveState": "ANSWERED",
+    "debianLiveCitation": "https://manpages.debian.org/bookworm/cifs-utils/mount.cifs.8.en.html",
+    "wrongTopicOfficialUrlRejected": true
+  },
+  "release": {
+    "version": "0.16.4",
+    "image": "techflow/ai-gateway:issue104-0.16.4-59ca9e2",
+    "backupRoot": "/home/ablecloud/techflow-backups/issue104-20260828T074627Z"
+  },
+  "validation": {
+    "repositoryTestsPassed": 308,
+    "gatewayHealthy": true,
+    "pollerHealthy": true,
+    "officialWebSearch": "enabled",
+    "gatewayErrors": 0,
+    "pollerErrors": 0,
+    "communityHttpStatus": 200,
+    "chatHttpStatus": 200,
+    "activepiecesHttpStatus": 200
+  },
+  "protectedServices": {
+    "sourceReconcilerChanged": false,
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  }
+}

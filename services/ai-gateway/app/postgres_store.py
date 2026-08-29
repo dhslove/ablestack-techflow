@@ -14,6 +14,7 @@ from .conversation import conversation_state_for_draft, source_post_id
 from .config import Settings
 from .indexing import build_index_bundle, reciprocal_rank_fusion
 from .source_registry import SOURCE_PROFILES, get_profile, list_profiles, validate_candidate_contract
+from .versioned_assist import implementation_identifiers
 from .store import (
     KB_SOLUTION_CONFIRMED_EVENT,
     ConflictError,
@@ -897,15 +898,33 @@ class PostgresStore:
                 base + " WHERE c.active AND v.state='ACTIVE' AND c.source_version_id=ANY(%s) AND c.symbol IS NOT NULL ORDER BY similarity(c.symbol, %s) DESC, c.id LIMIT 20",
                 (version_ids, request["question"]),
             ).fetchall()
+            identifiers = list(implementation_identifiers(request["question"]))
+            implementation = []
+            if identifiers:
+                implementation = connection.execute(
+                    base + """ CROSS JOIN LATERAL (
+                        SELECT count(*) AS hits FROM unnest(%s::text[]) AS term
+                        WHERE position(lower(term) in lower(c.path)) > 0
+                           OR position(lower(term) in lower(coalesce(c.symbol, ''))) > 0
+                      ) lexical
+                      WHERE c.active AND v.state='ACTIVE' AND c.source_version_id=ANY(%s)
+                        AND lexical.hits > 0
+                      ORDER BY lexical.hits DESC, c.id LIMIT 20""",
+                    (identifiers, version_ids),
+                ).fetchall()
             vector = connection.execute(
                 base + " JOIN rag_chunk_embedding e ON e.chunk_id=c.id WHERE c.active AND v.state='ACTIVE' AND c.source_version_id=ANY(%s) ORDER BY e.embedding <=> %s::vector, c.id LIMIT 30",
                 (version_ids, query_vector),
             ).fetchall()
-            lookup = {row["id"]: row for row in [*fts, *identifier, *vector]}
+            lookup = {row["id"]: row for row in [*fts, *identifier, *implementation, *vector]}
             kinds = {key: row["source_kind"] for key, row in lookup.items()}
             ranked = reciprocal_rank_fusion(
-                {"fts": [row["id"] for row in fts], "identifier": [row["id"] for row in identifier],
-                 "vector": [row["id"] for row in vector]}, kinds,
+                {
+                    "fts": [row["id"] for row in fts],
+                    "identifier": [row["id"] for row in identifier],
+                    "implementation": [row["id"] for row in implementation],
+                    "vector": [row["id"] for row in vector],
+                }, kinds,
             )[:10]
             self._record_embedding_call(connection, embedding_result, correlation_id, query_id=query_id)
         results = []
@@ -1840,7 +1859,9 @@ class PostgresStore:
             return [{
                 "turnId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
                 "postId": row["post_id"], "role": row["role"], "content": row["content"],
-                "contentSha256": row["content_sha256"], "createdAt": row["created_at"],
+                "contentSha256": row["content_sha256"], "artifactIds": row["artifact_ids"] or [],
+                "artifactWarnings": row["artifact_warnings"] or [], "artifactChecked": row["artifact_checked"],
+                "createdAt": row["created_at"],
             } for row in reversed(rows)]
 
     def record_chat_turn(self, user_id: str, post_id: str, role: str, content: str) -> dict[str, Any]:
@@ -1853,17 +1874,41 @@ class PostgresStore:
                 raise InvalidStateError("active Chat conversation is required")
             row = connection.execute(
                 """INSERT INTO chat_assist_turn
-                   (id,user_id,context_version,post_id,role,content,content_sha256)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   (id,user_id,context_version,post_id,role,content,content_sha256,artifact_checked)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (user_id,context_version,post_id,role) DO UPDATE SET post_id=EXCLUDED.post_id
                    RETURNING *""",
                 (uuid4(), user_id, conversation["context_version"], post_id, role, content[:16000],
-                 hashlib.sha256(content.encode("utf-8")).hexdigest()),
+                 hashlib.sha256(content.encode("utf-8")).hexdigest(), role == "ASSISTANT"),
             ).fetchone()
             return {
                 "turnId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
                 "postId": row["post_id"], "role": row["role"], "content": row["content"],
-                "contentSha256": row["content_sha256"], "createdAt": row["created_at"],
+                "contentSha256": row["content_sha256"], "artifactIds": row["artifact_ids"] or [],
+                "artifactWarnings": row["artifact_warnings"] or [], "artifactChecked": row["artifact_checked"],
+                "createdAt": row["created_at"],
+            }
+
+    def update_chat_turn_artifacts(
+        self, user_id: str, post_id: str, artifact_ids: list[str], artifact_warnings: list[str]
+    ) -> dict[str, Any]:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """UPDATE chat_assist_turn t SET artifact_ids=%s::jsonb,artifact_warnings=%s::jsonb,
+                   artifact_checked=true FROM chat_assist_conversation c
+                   WHERE t.user_id=c.user_id AND t.context_version=c.context_version AND c.state='ACTIVE'
+                     AND t.user_id=%s AND t.post_id=%s AND t.role='USER' RETURNING t.*""",
+                (json.dumps(list(dict.fromkeys(artifact_ids))[:5]),
+                 json.dumps(list(dict.fromkeys(artifact_warnings))[:5]), user_id, post_id),
+            ).fetchone()
+            if not row:
+                raise NotFoundError("Chat turn not found")
+            return {
+                "turnId": row["id"], "userId": row["user_id"], "contextVersion": row["context_version"],
+                "postId": row["post_id"], "role": row["role"], "content": row["content"],
+                "contentSha256": row["content_sha256"], "artifactIds": row["artifact_ids"] or [],
+                "artifactWarnings": row["artifact_warnings"] or [], "artifactChecked": row["artifact_checked"],
+                "createdAt": row["created_at"],
             }
 
     def resolve_chat_conversation(self, user_id: str) -> dict[str, Any]:

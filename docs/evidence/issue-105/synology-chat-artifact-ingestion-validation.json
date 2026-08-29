@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "issue": 105,
+  "pullRequest": 101,
+  "release": {
+    "version": "0.16.5",
+    "image": "techflow/ai-gateway:issue105-0.16.5-93152e6",
+    "backupRoot": "/home/ablecloud/techflow-backups/issue105-20260828T085032Z"
+  },
+  "implementation": {
+    "synologyPostFileGet": true,
+    "streamingDownload": true,
+    "artifactTurnPersistence": true,
+    "fileOnlyQuestion": true,
+    "conversationArtifactReuse": true,
+    "currentArtifactRequired": true,
+    "priorArtifactOptional": true,
+    "latestQuestionPreserved": true
+  },
+  "automatedValidation": {
+    "testsPassed": 320,
+    "image": true,
+    "plainLog": true,
+    "zip": true,
+    "tarGzip": true,
+    "fileOnly": true,
+    "multipleAttachments": true,
+    "damagedFile": true,
+    "unsupportedFile": true,
+    "oversizedFile": true,
+    "archiveSafety": true
+  },
+  "productionE2e": [
+    {"postId": "1945620185255", "kind": "IMAGE", "state": "COMPLETED", "artifactCount": 1, "warningCount": 0},
+    {"postId": "1945620185257", "kind": "LOG", "state": "COMPLETED", "artifactCount": 1, "warningCount": 0, "priorContextReused": true},
+    {"postId": "1945620185259", "kind": "IMAGE_FILE_ONLY", "state": "COMPLETED", "artifactCount": 1, "warningCount": 0},
+    {"postId": "1945620185265", "kind": "UNSUPPORTED_PDF", "state": "COMPLETED", "artifactCount": 0, "warningCount": 1}
+  ],
+  "runtime": {
+    "gatewayHealthy": true,
+    "pollerHealthy": true,
+    "gatewayRestartCount": 0,
+    "pollerRestartCount": 0,
+    "gatewayOomKilled": false,
+    "pollerOomKilled": false,
+    "communityHttpStatus": 200,
+    "chatHttpStatus": 200,
+    "techflowHttpStatus": 200,
+    "recentGatewayErrors": 0,
+    "recentPollerErrors": 0
+  },
+  "protectedServices": {
+    "sourceReconcilerChanged": false,
+    "eventGatewayChanged": false,
+    "activepiecesAppChanged": false,
+    "activepiecesWorkerChanged": false
+  }
+}
