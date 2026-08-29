@@ -15,6 +15,8 @@
   var emojiPalette = null;
   var emojiPaletteTrigger = null;
   var emojiSelectionRange = null;
+  var discussionTopPath = null;
+  var discussionTopTimers = [];
   var commonEmojis = [
     ['😀', '웃는 얼굴'],
     ['😃', '활짝 웃는 얼굴'],
@@ -607,11 +609,63 @@
       var url = new URL(link.getAttribute('href'), window.location.origin);
       var canonicalPath = url.pathname.replace(/(\/d\/[^/]+)\/\d+\/?$/, '$1');
 
-      if (canonicalPath !== url.pathname) {
-        link.setAttribute('href', canonicalPath + url.search);
+      if (/^\/d\/[^/]+\/?$/.test(canonicalPath)) {
+        link.setAttribute('href', canonicalPath.replace(/\/$/, '') + '/1' + url.search);
       }
 
       link.setAttribute('data-ablecloud-start-from-top', 'true');
+    });
+  }
+
+  function ensureDiscussionFirstPostRoute(root) {
+    if (!root.querySelector('.App--discussion .DiscussionPage')) {
+      discussionTopPath = null;
+      return false;
+    }
+
+    var matched = window.location.pathname.match(/^(\/d\/[^/]+)(?:\/\d+)?\/?$/);
+
+    if (!matched) {
+      return false;
+    }
+
+    var firstPostPath = matched[1] + '/1';
+
+    if (window.location.pathname.replace(/\/$/, '') === firstPostPath) {
+      return false;
+    }
+
+    window.location.replace(firstPostPath + window.location.search);
+    return true;
+  }
+
+  function keepDiscussionAtTop(root) {
+    var page = root.querySelector('.App--discussion .DiscussionPage');
+    var currentPath = window.location.pathname.replace(/\/$/, '');
+
+    if (!page || !/\/d\/[^/]+\/1$/.test(currentPath) || discussionTopPath === currentPath) {
+      return;
+    }
+
+    discussionTopTimers.forEach(window.clearTimeout);
+    discussionTopTimers = [];
+    discussionTopPath = currentPath;
+
+    [0, 80, 250, 600, 1200].forEach(function (delay) {
+      discussionTopTimers.push(window.setTimeout(function () {
+        if (window.location.pathname.replace(/\/$/, '') !== currentPath) {
+          return;
+        }
+
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        var stream = document.querySelector('.App--discussion .DiscussionPage-stream');
+
+        if (stream) {
+          stream.scrollTop = 0;
+        }
+      }, delay));
     });
   }
 
@@ -859,6 +913,10 @@
   }
 
   forumApp.initializers.add('ablecloud-community-theme-tag-date', function () {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
     var pendingFrame = 0;
     var schedule = function () {
       window.cancelAnimationFrame(pendingFrame);
@@ -871,7 +929,11 @@
         ensureFallbackDiscussionPane(document);
         syncComposerPaneState(document);
         syncMobileNavigationState(document);
+        if (ensureDiscussionFirstPostRoute(document)) {
+          return;
+        }
         enhanceDiscussionDetail(document);
+        keepDiscussionAtTop(document);
       });
     };
 

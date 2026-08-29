@@ -4433,6 +4433,12 @@ body {
 }
 
 @media (min-width: 768px) {
+  .App--discussion.hasPane .Header-title {
+    // Flarum reserves the hidden previous/list control slot when the pane is
+    // enabled. Move only the logo back to the shared shell start position.
+    transform: translateX(-39px);
+  }
+
   .App--discussion .DiscussionHero {
     margin-top: 16px;
   }

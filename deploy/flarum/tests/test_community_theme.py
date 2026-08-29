@@ -161,6 +161,10 @@ class CommunityThemeContractTests(unittest.TestCase):
         self.assertNotIn("window.location.assign(href)", self.forum_js)
         self.assertNotIn("event.preventDefault()", self.forum_js.split("function openDiscussionFromTop", 1)[1].split("function captureDiscussionListSnapshot", 1)[0])
         self.assertIn("window.scrollTo(0, 0)", self.forum_js)
+        self.assertIn("canonicalPath.replace(/\\/$/, '') + '/1'", self.forum_js)
+        self.assertIn("ensureDiscussionFirstPostRoute", self.forum_js)
+        self.assertIn("keepDiscussionAtTop", self.forum_js)
+        self.assertIn("window.history.scrollRestoration = 'manual'", self.forum_js)
         self.assertIn("document.addEventListener('click', openDiscussionFromTop, true)", self.forum_js)
         self.assertIn("captureDiscussionListSnapshot", self.forum_js)
         self.assertIn("ensureFallbackDiscussionPane", self.forum_js)
@@ -327,6 +331,8 @@ class CommunityThemeContractTests(unittest.TestCase):
         self.assertIn("scrollbar-gutter: stable", self.less)
         self.assertIn(".App--discussion .App-header > .container", self.less)
         self.assertIn("margin-top: 16px", self.less)
+        self.assertIn(".App--discussion.hasPane .Header-title", self.less)
+        self.assertIn("transform: translateX(-39px)", self.less)
         self.assertIn("justify-content: flex-start", self.less)
 
     def test_compact_hero_and_navigation_width_contract(self) -> None:
