@@ -1552,7 +1552,7 @@ body {
 
   .Post-body p,
   .Post-body li {
-    max-width: 82ch;
+    max-width: none;
   }
 
   .Post-body h2,
@@ -2303,10 +2303,15 @@ body {
   }
 
   .Composer .TextEditor-editor {
+    max-width: 100%;
     padding: 12px 14px;
     border: 1px solid var(--ablecloud-brand-border);
     border-radius: 11px;
     background: #fbfdff;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: pre-wrap;
   }
 
   .DiscussionList-loadMore[data-ablecloud-auto-load="true"][data-ablecloud-loading="true"] .Button {
@@ -4314,24 +4319,61 @@ body {
 
 .App--discussion .Post-body {
   max-width: none;
+  min-width: 0;
   color: #26364d;
   font-size: 16px;
   line-height: 1.82;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 .App--discussion .Post-body p,
 .App--discussion .Post-body li {
-  max-width: 82ch;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 .App--discussion .Post-body blockquote {
-  max-width: 82ch;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
   margin: 18px 0;
   padding: 12px 16px;
   border-left: 3px solid #8cb0ec;
   border-radius: 0 10px 10px 0;
   background: #f4f8ff;
   color: #425875;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.App--discussion .Post-body ul,
+.App--discussion .Post-body ol {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.App--discussion .Post-body a,
+.App--discussion .Post-body code {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.App--discussion .Post-body table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .App--discussion .Post-body pre {
@@ -4341,6 +4383,12 @@ body {
   background: #f6f8fb;
   color: #203047;
   overflow: auto;
+}
+
+.App--discussion .Post-body pre code {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .App--discussion .Post-body pre.ablecloud-TechnicalBlock--collapsed {
