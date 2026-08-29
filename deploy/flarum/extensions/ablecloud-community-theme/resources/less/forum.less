@@ -2490,6 +2490,22 @@ body {
     box-sizing: border-box;
   }
 
+  .App-header > .container {
+    position: relative;
+    min-height: 44px;
+  }
+
+  .App-header .Header-title {
+    position: absolute;
+    top: 0;
+    left: 15px;
+    margin: 0;
+  }
+
+  .App-header .Header-primary {
+    margin-left: 247px;
+  }
+
   .WelcomeHero > .container,
   .TagHero > .container,
   .UserHero .container,
@@ -4433,12 +4449,6 @@ body {
 }
 
 @media (min-width: 768px) {
-  .App--discussion.hasPane .Header-title {
-    // Flarum reserves the hidden previous/list control slot when the pane is
-    // enabled. Move only the logo back to the shared shell start position.
-    transform: translateX(-39px);
-  }
-
   .App--discussion .DiscussionHero {
     margin-top: 16px;
   }

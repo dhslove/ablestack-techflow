@@ -17,6 +17,7 @@
   var emojiSelectionRange = null;
   var discussionTopPath = null;
   var discussionTopTimers = [];
+  var discussionTopRouteKey = 'ablecloud-community-discussion-top-route';
   var commonEmojis = [
     ['😀', '웃는 얼굴'],
     ['😃', '활짝 웃는 얼굴'],
@@ -620,6 +621,11 @@
   function ensureDiscussionFirstPostRoute(root) {
     if (!root.querySelector('.App--discussion .DiscussionPage')) {
       discussionTopPath = null;
+      try {
+        window.sessionStorage.removeItem(discussionTopRouteKey);
+      } catch (error) {
+        // The first-post route still works for list links without session storage.
+      }
       return false;
     }
 
@@ -630,9 +636,31 @@
     }
 
     var firstPostPath = matched[1] + '/1';
+    var handledPath = '';
+
+    try {
+      handledPath = window.sessionStorage.getItem(discussionTopRouteKey) || '';
+    } catch (error) {
+      handledPath = '';
+    }
 
     if (window.location.pathname.replace(/\/$/, '') === firstPostPath) {
+      try {
+        window.sessionStorage.setItem(discussionTopRouteKey, matched[1]);
+      } catch (error) {
+        // Continue with the explicit /1 route.
+      }
       return false;
+    }
+
+    if (handledPath === matched[1]) {
+      return false;
+    }
+
+    try {
+      window.sessionStorage.setItem(discussionTopRouteKey, matched[1]);
+    } catch (error) {
+      // A single hard navigation still provides the first-post route.
     }
 
     window.location.replace(firstPostPath + window.location.search);
