@@ -309,7 +309,8 @@
 }
 
 :root {
-  --ablecloud-page-shell-width: 1165px;
+  --ablecloud-page-inline-space: clamp(32px, 4vw, 80px);
+  --ablecloud-page-edge-gutter: clamp(16px, 2vw, 40px);
   --ablecloud-page-rail-space: 80px;
   --ablecloud-brand-primary: #155eef;
   --ablecloud-brand-primary-hover: #004eeb;
@@ -662,6 +663,11 @@ body {
   .UserPage .UserPage-nav .Dropdown-menu {
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .App-header {
+    padding-right: 0;
+    padding-left: 0;
   }
 
   .UserPage .UserPage-nav .Dropdown-menu > li > a,
@@ -1491,7 +1497,7 @@ body {
 
   .DiscussionPage-discussion > .container,
   .PostStream {
-    max-width: 1180px;
+    max-width: none;
   }
 
   .PostStream-item {
@@ -1686,7 +1692,7 @@ body {
     position: fixed;
     top: 50%;
     // Escape the whole function so LESS does not fold max() to 12px at build time.
-    right: ~"max(12px, calc((100vw - 1165px) / 2 + 16px))";
+    right: ~"calc(var(--ablecloud-page-edge-gutter) + 16px)";
     bottom: auto;
     left: auto;
     width: 48px;
@@ -2467,11 +2473,9 @@ body {
   /*
    * Shared desktop shell
    *
-   * Flarum's default desktop container is 1100px while the discussion feed
-   * uses a 1165px shell (1100px content + the adjacent quick-link rail).
-   * Apply that same outer edge to tags, profile, settings and security pages.
-   * The extra 65px is reserved on the right, so the established 1070px inner
-   * content width does not stretch and never sits underneath the fixed rail.
+   * Use the available browser width while preserving a small responsive edge
+   * gutter and the adjacent quick-link rail. Apply the same outer edge to the
+   * header, index, discussion, tags, profile, settings and security pages.
    */
   .App-header > .container,
   .WelcomeHero > .container,
@@ -2479,8 +2483,10 @@ body {
   .UserHero .container,
   .TagsPage > .container,
   .UserPage > .container {
-    width: 100%;
-    max-width: var(--ablecloud-page-shell-width);
+    width: ~"calc(100% - var(--ablecloud-page-inline-space))";
+    max-width: none;
+    margin-right: auto;
+    margin-left: auto;
     box-sizing: border-box;
   }
 
@@ -2500,25 +2506,27 @@ body {
 
   html:has(body > .App--index) {
     // Reserve the same vertical-scrollbar gutter used by discussion pages so
-    // the 1165px index and discussion shells share identical outer edges.
+    // the index and discussion shells share identical outer edges.
     scrollbar-gutter: stable;
   }
 
   body {
-    // Align the top navigation and welcome area with the 1165px page shell.
-    // The inner content remains 1100px; the added width represents the quick-link rail.
+    // Align the top navigation and welcome area with the full-width page shell.
     .App--index .App-header > .container,
     .App--discussion .App-header > .container,
     .App--index .WelcomeHero > .container {
-      width: 100%;
-      max-width: 1165px;
+      width: ~"calc(100% - var(--ablecloud-page-inline-space))";
+      max-width: none;
+      margin-right: auto;
+      margin-left: auto;
       box-sizing: border-box;
     }
 
     // Keep the desktop index shell anchored below the fixed header. The full
     // right column scrolls while a narrow reserved rail sits immediately next
-    // to the unchanged 1100px content area.
+    // to the expanded content area.
     .App--index {
+      position: relative;
       height: 100%;
       min-height: 0;
       padding-bottom: 0;
@@ -2526,7 +2534,7 @@ body {
     }
 
     .App--index > .App-content {
-      position: fixed;
+      position: absolute;
       top: 52px;
       right: 0;
       bottom: 0;
@@ -2552,10 +2560,8 @@ body {
     }
 
     .App--index .IndexPage > .container {
-      width: 100%;
-      // Preserve the original 1100px content width and add only the 65px
-      // needed for the 48px quick-link rail and its 17px separation.
-      max-width: 1165px;
+      width: ~"calc(100% - var(--ablecloud-page-inline-space))";
+      max-width: none;
       flex: 1 1 auto;
       min-height: 0;
       box-sizing: border-box;
@@ -4103,7 +4109,7 @@ body {
 /*
  * Discussion reading flow
  *
- * Keep the established 1100px content width and the adjacent quick-link rail.
+ * Expand the content shell while preserving the adjacent quick-link rail.
  * The index no longer uses a welcome banner. Discussion pages use a compact,
  * content-aligned title block and the native Flarum vertical navigator.
  */
@@ -4119,8 +4125,10 @@ body {
 }
 
 .App--discussion .DiscussionHero .container {
-  width: 100%;
-  max-width: 1165px;
+  width: ~"calc(100% - var(--ablecloud-page-inline-space))";
+  max-width: none;
+  margin-right: auto;
+  margin-left: auto;
   box-sizing: border-box;
   padding: 17px 80px 15px 15px;
 }
@@ -4236,8 +4244,10 @@ body {
 }
 
 .App--discussion .DiscussionPage-discussion > .container {
-  width: 100%;
-  max-width: 1165px;
+  width: ~"calc(100% - var(--ablecloud-page-inline-space))";
+  max-width: none;
+  margin-right: auto;
+  margin-left: auto;
   box-sizing: border-box;
   padding-right: 80px;
 }
@@ -4245,7 +4255,7 @@ body {
 .App--discussion .DiscussionPage-stream,
 .App--discussion .PostStream {
   width: 100%;
-  max-width: 1100px;
+  max-width: none;
   box-sizing: border-box;
 }
 .App--discussion .PostStream {

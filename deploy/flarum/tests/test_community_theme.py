@@ -131,7 +131,7 @@ class CommunityThemeContractTests(unittest.TestCase):
         self.assertIn("font-size: 18px", self.less)
         self.assertIn(".Header-secondary > ul", self.less)
         self.assertIn("height: 44px", self.less)
-        self.assertIn("max-width: 1165px", self.less)
+        self.assertIn('width: ~"calc(100% - var(--ablecloud-page-inline-space))"', self.less)
         self.assertIn("--ablecloud-footer-icon", self.less)
         self.assertGreaterEqual(len(re.findall(r"min-height:\s*44px", self.less)), 3)
         self.assertGreaterEqual(contrast("#155eef", "#ffffff"), 4.5)
@@ -321,8 +321,8 @@ class CommunityThemeContractTests(unittest.TestCase):
                 self.assertIn(style_contract, self.less)
 
         self.assertIn("display: none !important", self.less)
-        self.assertIn("max-width: 1100px", self.less)
-        self.assertIn("max-width: 1165px", self.less)
+        self.assertIn("max-width: none", self.less)
+        self.assertNotIn("max-width: 1165px", self.less)
         self.assertIn("padding-right: 80px", self.less)
         self.assertIn("scrollbar-gutter: stable", self.less)
         self.assertIn(".App--discussion .App-header > .container", self.less)
@@ -330,7 +330,8 @@ class CommunityThemeContractTests(unittest.TestCase):
         self.assertIn("justify-content: flex-start", self.less)
 
     def test_compact_hero_and_navigation_width_contract(self) -> None:
-        self.assertIn("--ablecloud-page-shell-width: 1165px", self.less)
+        self.assertIn("--ablecloud-page-inline-space: clamp(32px, 4vw, 80px)", self.less)
+        self.assertIn("--ablecloud-page-edge-gutter: clamp(16px, 2vw, 40px)", self.less)
         self.assertIn("--ablecloud-page-rail-space: 80px", self.less)
         for shell_selector in (
             ".App-header > .container",
@@ -342,7 +343,8 @@ class CommunityThemeContractTests(unittest.TestCase):
         ):
             with self.subTest(shell_selector=shell_selector):
                 self.assertIn(shell_selector, self.less)
-        self.assertIn("max-width: var(--ablecloud-page-shell-width)", self.less)
+        self.assertIn('width: ~"calc(100% - var(--ablecloud-page-inline-space))"', self.less)
+        self.assertIn("max-width: none", self.less)
         self.assertIn("padding-right: var(--ablecloud-page-rail-space)", self.less)
         self.assertIn("Shared desktop shell", self.less)
         self.assertIn(".WelcomeHero .container", self.less)
@@ -525,9 +527,9 @@ class CommunityThemeContractTests(unittest.TestCase):
         self.assertIn(".App--index .App-header > .container", self.less)
         self.assertIn(".App--index .WelcomeHero > .container", self.less)
         self.assertIn("Align the top navigation and welcome area", self.less)
-        self.assertIn('right: ~"max(12px, calc((100vw - 1165px) / 2 + 16px))"', self.less)
+        self.assertIn('right: ~"calc(var(--ablecloud-page-edge-gutter) + 16px)"', self.less)
         self.assertIn("flex-direction: column", self.less)
-        self.assertIn("max-width: 1165px", self.less)
+        self.assertIn('width: ~"calc(100% - var(--ablecloud-page-inline-space))"', self.less)
         self.assertIn("padding-right: 80px", self.less)
         self.assertIn("transform: translateY(-50%)", self.less)
         self.assertIn("bottom: 16px", self.less)
