@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "issue": 107,
+  "pullRequest": 108,
+  "rootCause": {
+    "postBodyWidthPx": 1383,
+    "paragraphWidthBeforePx": 728,
+    "paragraphMaxWidthBefore": "82ch",
+    "composerInsertedBreaks": false,
+    "storedBrCount": 0,
+    "storedWbrCount": 0
+  },
+  "implementation": {
+    "paragraphUsesFullWidth": true,
+    "listUsesFullWidth": true,
+    "blockquoteUsesFullWidth": true,
+    "longTokenWrap": "anywhere",
+    "koreanWordBreak": "keep-all",
+    "preformattedCodePreserved": true,
+    "wideTableScrollsInsidePost": true,
+    "composerVisualWrapOnly": true
+  },
+  "browserValidation": {
+    "desktopViewportWidth": 1920,
+    "postBodyWidthPx": 1383,
+    "paragraphWidthAfterPx": 1383,
+    "maxChildOverflowPx": 0,
+    "mobileViewportWidth": 390,
+    "mobileDocumentScrollWidthPx": 375,
+    "mobilePostBodyWidthPx": 242,
+    "mobileHorizontalOverflow": false
+  },
+  "validation": {
+    "themeContractTestsPassed": 16,
+    "wslCycle": "issue107-detail-content-width-20260829",
+    "wslEnable": "PASS",
+    "wslRollback": "PASS",
+    "wslReEnable": "PASS",
+    "productionLocalHttpStatus": 200,
+    "nginx": "active",
+    "phpFpm": "active",
+    "mariaDb": "active"
+  },
+  "production": {
+    "lessSha256": "4316ad01c19ae9dcd3a821ddb5762c4dc2ef9ecd07729a94a154acbfab8e0ea0",
+    "backupRoot": "/var/backups/techflow-flarum/theme-content-width-20260829T1035KST",
+    "coreChanged": false,
+    "databaseChanged": false,
+    "contentChanged": false,
+    "attachmentsChanged": false,
+    "protectedIntegrationsChanged": false
+  }
+}

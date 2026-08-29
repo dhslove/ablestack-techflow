@@ -120,6 +120,12 @@ sudo bash deploy/flarum/apply-community-theme-update.sh \
   태그 사이에 약 18px의 시각적 간격이 있어야 한다.
 - 일반 답변은 카드 중첩 없이 1px 구분선으로 나누고 AI 기술지원·추가 확인 필요·
   최종 해결 가이드만 의미 색상 카드로 구분한다.
+- 상세 게시물의 `p`, `li`, `blockquote`, `ul`, `ol`에는 글자 수 기반 최대 폭을
+  적용하지 않고 Post Body 가용 폭을 사용한다. 일반 한국어 문장은 `word-break: keep-all`,
+  URL·Hash·Inline Code는 `overflow-wrap: anywhere`로 영역 안에서 줄바꿈한다.
+- `pre` Code·Log Block은 `white-space: pre`와 자체 가로 Scroll을 유지하고, Table은
+  Post Body 안에서만 가로 Scroll한다. Composer는 `white-space: pre-wrap`으로 입력창에서
+  긴 문자열을 시각적으로 줄바꿈하되 저장 원문에 임의 개행을 추가하지 않는다.
 - 첫 게시물 안의 선택 답변 미리보기는 숨기고 `해결 답변 보기`가 실제 선택 답변으로
   이동해야 한다. 이동 후 선택 답변 상단은 고정 Header 아래에서 보여야 한다.
 - 질문 다음에는 `답변을 작성해 주세요` 버튼이 표시되어 기존 Flarum 답장 작성기를
@@ -203,6 +209,9 @@ sudo systemctl restart php8.3-fpm nginx
   Header·목록·상세·태그·사용자 화면의 좌우선을 통일했다. 토론 상세 Logo와 첫 게시물
   진입도 Pane 상태와 관계없이 고정했다. 최신 운영 백업은
   `/var/backups/techflow-flarum/theme-full-width-stable-20260829T1300KST`이다.
+- 2026-08-29 상세 본문 후속 적용 완료: 기존 `82ch` 문단 제한을 제거하고 긴 문자열·
+  URL·Inline Code의 안전한 줄바꿈을 적용했다. 최신 백업은
+  `/var/backups/techflow-flarum/theme-content-width-20260829T1035KST`이다.
 - 2026-08-20 운영 적용 완료: 사용자 메뉴 겹침 보완과 Reddit형 평면 피드·게시물
   정보 계층·이미지 썸네일, 하단 Footer 제거와 우측 고정 퀵 링크, 메인 환영 배너
   제거, Flarum 세로 탐색 복원과 당시 1165px 상세 셸 정렬이 WSL 및 운영에 반영되었다.
