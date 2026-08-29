@@ -120,6 +120,9 @@ sudo bash deploy/flarum/apply-community-theme-update.sh \
   태그 사이에 약 18px의 시각적 간격이 있어야 한다.
 - 일반 답변은 카드 중첩 없이 1px 구분선으로 나누고 AI 기술지원·추가 확인 필요·
   최종 해결 가이드만 의미 색상 카드로 구분한다.
+- 최종 해결 가이드의 배경·테두리·강조선·상태 칩은 별도의 녹색 팔레트를 사용하지
+  않고 ABLESTACK Primary Blue의 명도 단계로 표현한다. 온라인 상태점처럼 의미가 다른
+  상태 색상은 이 규칙의 대상이 아니다.
 - 상세 게시물의 `p`, `li`, `blockquote`, `ul`, `ol`에는 글자 수 기반 최대 폭을
   적용하지 않고 Post Body 가용 폭을 사용한다. 일반 한국어 문장은 `word-break: keep-all`,
   URL·Hash·Inline Code는 `overflow-wrap: anywhere`로 영역 안에서 줄바꿈한다.

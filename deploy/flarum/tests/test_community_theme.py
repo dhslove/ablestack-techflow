@@ -64,6 +64,18 @@ class CommunityThemeContractTests(unittest.TestCase):
         self.assertIn("/u/TechFlow-Assistant", self.less)
         self.assertIn('content: "최종 해결 가이드"', self.less)
 
+    def test_solution_state_uses_the_blue_brand_palette(self) -> None:
+        for token in (
+            "--ablecloud-brand-solution: #edf4ff",
+            "--ablecloud-brand-solution-border: #8fb5ef",
+            "--ablecloud-brand-solution-accent: var(--ablecloud-brand-primary)",
+            "--ablecloud-brand-solution-ink: var(--ablecloud-brand-primary-deep)",
+        ):
+            self.assertIn(token, self.less)
+
+        for legacy_green in ("#078248", "#86d2aa", "#d9f5e6", "#056038", "#f4fcf7", "#f2fbf6"):
+            self.assertNotIn(legacy_green, self.less)
+
     def test_korean_best_answer_labels(self) -> None:
         for text in ("해결됨", "해결 답변으로 선택", "해결 답변 선택 취소", "해결된 답변"):
             self.assertIn(text, self.less)

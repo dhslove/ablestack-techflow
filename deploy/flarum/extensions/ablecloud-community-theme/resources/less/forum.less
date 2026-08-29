@@ -323,7 +323,10 @@
   --ablecloud-brand-canvas: #f3f7fc;
   --ablecloud-brand-border: #d5e1f1;
   --ablecloud-brand-assistant: #eaf2ff;
-  --ablecloud-brand-solution: #eafaf2;
+  --ablecloud-brand-solution: #edf4ff;
+  --ablecloud-brand-solution-border: #8fb5ef;
+  --ablecloud-brand-solution-accent: var(--ablecloud-brand-primary);
+  --ablecloud-brand-solution-ink: var(--ablecloud-brand-primary-deep);
   --ablecloud-brand-warning: #fff6df;
   --ablecloud-focus-ring: #0b66e4;
   --ablecloud-radius: 16px;
@@ -1491,7 +1494,7 @@ body {
   }
 
   .Badge--answered {
-    background: #078248;
+    background: var(--ablecloud-brand-solution-accent);
     color: #fff;
   }
 
@@ -1802,8 +1805,8 @@ body {
   article.TechFlowPost--knowledge-base > div,
   article.Post.Post--bestAnswer > div,
   article.Post.Post--bestAnswer:has(> div > .Post-header .PostUser-name a[href="/u/TechFlow-Assistant"]) > div {
-    border-color: #86d2aa;
-    border-left: 5px solid #078248;
+    border-color: var(--ablecloud-brand-solution-border);
+    border-left: 5px solid var(--ablecloud-brand-solution-accent);
     background: linear-gradient(135deg, #ffffff 0%, var(--ablecloud-brand-solution) 100%);
   }
 
@@ -1827,8 +1830,8 @@ body {
   }
 
   .TechFlowPost-label[data-kind="knowledge-base"] {
-    background: #d9f5e6;
-    color: #056038;
+    background: #dce9ff;
+    color: var(--ablecloud-brand-solution-ink);
   }
 
   .TechFlowPost-label[data-kind="needs-information"] {
@@ -1852,8 +1855,8 @@ body {
   }
 
   article.Post.Post--bestAnswer:has(> div > .Post-header .PostUser-name a[href="/u/TechFlow-Assistant"]) > div > .Post-header .PostUser-name::after {
-    background: #d9f5e6;
-    color: #056038;
+    background: #dce9ff;
+    color: var(--ablecloud-brand-solution-ink);
     content: "최종 해결 가이드";
   }
 
@@ -1875,10 +1878,10 @@ body {
     gap: 6px;
     min-height: 28px;
     padding: 4px 10px;
-    border: 1px solid #86d2aa;
+    border: 1px solid var(--ablecloud-brand-solution-border);
     border-radius: 999px;
-    background: #d9f5e6;
-    color: #056038;
+    background: #dce9ff;
+    color: var(--ablecloud-brand-solution-ink);
     font-weight: 750;
     line-height: 1.25;
     box-shadow: none;
@@ -1927,17 +1930,17 @@ body {
   .item-bestAnswerPost > .CommentPost {
     max-height: 430px;
     overflow: hidden;
-    border: 1px solid #86d2aa;
-    border-left: 4px solid #078248;
+    border: 1px solid var(--ablecloud-brand-solution-border);
+    border-left: 4px solid var(--ablecloud-brand-solution-accent);
     border-radius: 12px;
-    background: #f4fcf7;
+    background: var(--ablecloud-brand-primary-faint);
     padding: 15px 18px 17px;
   }
 
   .item-bestAnswerPost > .CommentPost::before {
     display: block;
     margin-bottom: 8px;
-    color: #056038;
+    color: var(--ablecloud-brand-solution-ink);
     content: "✓ 선택된 해결 답변";
     font-size: 14px;
     font-weight: 750;
@@ -2787,8 +2790,8 @@ body {
       gap: 5px;
       padding: 0 9px;
       border-radius: 999px;
-      background: #d9f5e6;
-      color: #056038;
+      background: #dce9ff;
+      color: var(--ablecloud-brand-solution-ink);
       font-size: 12px;
       font-weight: 730;
       line-height: 24px;
@@ -4204,10 +4207,10 @@ body {
   width: auto;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #86d2aa;
+  border: 1px solid var(--ablecloud-brand-solution-border);
   border-radius: 999px;
-  background: #d9f5e6;
-  color: #056038;
+  background: #dce9ff;
+  color: var(--ablecloud-brand-solution-ink);
   box-shadow: none;
 }
 
@@ -4250,10 +4253,10 @@ body {
   min-height: 30px;
   margin-left: auto;
   padding: 4px 10px;
-  border: 1px solid #86d2aa;
+  border: 1px solid var(--ablecloud-brand-solution-border);
   border-radius: 999px;
-  background: #f2fbf6;
-  color: #056038 !important;
+  background: var(--ablecloud-brand-primary-faint);
+  color: var(--ablecloud-brand-solution-ink) !important;
   font-size: 13px;
   font-weight: 750;
 }
@@ -4436,8 +4439,8 @@ body {
 
 .App--discussion article.TechFlowPost--knowledge-base > div,
 .App--discussion article.Post.Post--bestAnswer > div {
-  border: 1px solid #86d2aa;
-  border-left: 5px solid #078248;
+  border: 1px solid var(--ablecloud-brand-solution-border);
+  border-left: 5px solid var(--ablecloud-brand-solution-accent);
 }
 
 .App--discussion article.TechFlowPost--needs-information > div {
