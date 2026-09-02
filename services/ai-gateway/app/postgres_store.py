@@ -1709,7 +1709,30 @@ class PostgresStore:
             if not row:
                 raise NotFoundError("community case not found")
             if row["state"] == "PUBLISHED" and row.get("published_post_id") == publication["postId"]:
-                return self._community_payload(row)
+                if row.get("draft_answer") == answer:
+                    return self._community_payload(row)
+                updated = connection.execute(
+                    """UPDATE community_case SET draft_answer=%s,updated_at=now()
+                       WHERE id=%s RETURNING *""",
+                    (answer, case_id),
+                ).fetchone()
+                connection.execute(
+                    """UPDATE community_response SET answer=%s,updated_at=now()
+                       WHERE case_id=%s AND draft_version=%s""",
+                    (answer, case_id, row["draft_version"]),
+                )
+                connection.execute(
+                    """UPDATE community_turn SET content=%s
+                       WHERE case_id=%s AND source_post_id=%s AND role='ASSISTANT'""",
+                    (answer, case_id, publication["postId"]),
+                )
+                connection.execute(
+                    """INSERT INTO community_case_event
+                       (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
+                       VALUES (%s,%s,'AUTO_PUBLISHED_CORRECTED','techflow-assistant',%s,%s,%s)""",
+                    (uuid4(), case_id, idempotency_key, row["correlation_id"], json.dumps(publication)),
+                )
+                return self._community_payload(updated)
             if (
                 row["state"] not in {"DRAFT_PENDING", "PUBLISHED"}
                 or row.get("reviewer") == "techflow:auto"

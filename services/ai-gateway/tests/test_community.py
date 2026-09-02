@@ -544,6 +544,34 @@ class CommunityTests(unittest.TestCase):
         events = store.list_community_case_events(retried["caseId"], 10)
         self.assertIn("FAILED_DRAFT_RETRIED", [item["eventType"] for item in events])
 
+    def test_reused_assistant_post_correction_updates_case_response_and_turn(self) -> None:
+        store = MemoryStore()
+        case = store.create_community_case(
+            {**self.payload(), "postId": "430", "postNumber": 9, "postAuthorId": "46", "turnRole": "REQUESTER"},
+            {"draftAnswer": "이전 실행 안내", "answerState": "ANSWERED", "citations": []},
+            "correction-create", "correction-create-correlation",
+        )
+        publication = {"postId": "431", "postUrl": "https://community.ablecloud.io/d/177/431"}
+        store.mark_community_auto_published(case["caseId"], "이전 실행 안내", publication, "correction-publish")
+        store.record_community_turn(
+            {
+                "discussionId": "901", "postId": "431", "postNumber": 10,
+                "postAuthorId": "40", "authorId": "40", "turnRole": "ASSISTANT",
+                "question": "이전 실행 안내", "artifactIds": [],
+            },
+            "correction-turn", "correction-turn-correlation",
+        )
+
+        updated = store.mark_community_auto_published(
+            case["caseId"], "접속·로그 경로를 포함한 보완 답변", publication, "correction-update",
+        )
+
+        self.assertEqual("접속·로그 경로를 포함한 보완 답변", updated["draftAnswer"])
+        assistant = next(item for item in store.list_community_turns("901") if item["sourcePostId"] == "431")
+        self.assertEqual("접속·로그 경로를 포함한 보완 답변", assistant["content"])
+        events = store.list_community_case_events(case["caseId"], 20)
+        self.assertIn("AUTO_PUBLISHED_CORRECTED", [item["eventType"] for item in events])
+
     def test_requester_best_answer_resolves_and_unset_reopens_conversation(self) -> None:
         store = MemoryStore()
         first = {**self.payload(), "postId": "100", "postNumber": 1, "postAuthorId": "42"}

@@ -1197,6 +1197,18 @@ class MemoryStore:
             if not value:
                 raise NotFoundError("community case not found")
             if value["state"] == "PUBLISHED" and value.get("publishedPostId") == publication["postId"]:
+                if value.get("draftAnswer") != answer:
+                    now = utc_now()
+                    value.update(draftAnswer=answer, updatedAt=now)
+                    if self._community_responses.get(case_id):
+                        self._community_responses[case_id][-1].update(answer=answer, updatedAt=now)
+                    for turn in self._community_turns.get(case_id, []):
+                        if turn.get("sourcePostId") == publication["postId"] and turn.get("role") == "ASSISTANT":
+                            turn["content"] = answer
+                    self._community_events.append({
+                        "caseId": case_id, "eventType": "AUTO_PUBLISHED_CORRECTED",
+                        "actor": "techflow-assistant", "createdAt": now, "details": deepcopy(publication),
+                    })
                 return self._remember("auto_publish_community_case", idempotency_key, value)
             if (
                 value["state"] not in {"DRAFT_PENDING", "PUBLISHED"}
