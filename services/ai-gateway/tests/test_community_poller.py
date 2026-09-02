@@ -197,6 +197,36 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual(["/assets/four.png", "/assets/five.png"], result["attachmentUrls"])
         self.assertEqual(2, result["_attachmentReferenceCount"])
 
+    def test_legacy_context_tracks_prior_human_posts_as_coalesced(self) -> None:
+        events = [
+            {"postId": "434", "postNumber": 1, "turnRole": "REQUESTER"},
+            {"postId": "435", "postNumber": 2, "turnRole": "REQUESTER"},
+            {"postId": "436", "postNumber": 3, "turnRole": "ASSISTANT"},
+            {"postId": "437", "postNumber": 4, "turnRole": "STAFF"},
+        ]
+
+        self.assertEqual(["434"], poll_flarum.coalesced_legacy_post_ids(events[1], events))
+        self.assertEqual(["434", "435"], poll_flarum.coalesced_legacy_post_ids(events[3], events))
+
+    def test_confirmed_combined_post_clears_coalesced_pending_posts(self) -> None:
+        seen_posts: set[str] = set()
+        pending_posts = {
+            "434": {"discussionId": "178", "attempts": 1},
+            "435": {
+                "discussionId": "178", "attempts": 1,
+                "coalescedPostIds": ["434"],
+            },
+            "999": {"discussionId": "999", "attempts": 1},
+        }
+
+        completed = poll_flarum.checkpoint_confirmed_post(
+            "435", pending_posts["435"], seen_posts, pending_posts
+        )
+
+        self.assertEqual({"434", "435"}, completed)
+        self.assertEqual({"434", "435"}, seen_posts)
+        self.assertEqual({"999"}, set(pending_posts))
+
     def test_resolution_event_carries_best_answer_actor(self) -> None:
         event = poll_flarum.resolution_event({
             "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
@@ -614,6 +644,7 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertEqual(1, result["pendingPosts"])
         self.assertNotIn("412", state["seenPosts"])
         self.assertEqual(1, state["pendingPosts"]["412"]["attempts"])
+        self.assertEqual(["301"], state["pendingPosts"]["412"]["coalescedPostIds"])
         self.assertEqual(1, state["discussions"]["137"]["commentCount"])
 
     def test_confirmed_gateway_post_is_checkpointed(self) -> None:

@@ -412,6 +412,17 @@ def include_legacy_discussion_context(current: dict, events: list[dict]) -> dict
     return current
 
 
+def coalesced_legacy_post_ids(current: dict, events: list[dict]) -> list[str]:
+    """Return earlier human posts represented by a legacy combined context."""
+    return [
+        item["postId"]
+        for item in events
+        if item["postId"] != current["postId"]
+        and item["postNumber"] <= current["postNumber"]
+        and item["turnRole"] != "ASSISTANT"
+    ]
+
+
 def normalize(payload: dict, base_url: str) -> list[dict]:
     """Backward-compatible normalizer used by contract tests for first-post events."""
     included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
@@ -554,6 +565,23 @@ def gateway_post_is_confirmed(case: dict, post_id: str, *, require_publication: 
     return post_confirmed and publication_confirmed
 
 
+def checkpoint_confirmed_post(
+    pending_post_id: str,
+    pending: dict,
+    seen_posts: set[str],
+    pending_posts: dict[str, dict],
+) -> set[str]:
+    """Checkpoint a confirmed event and any earlier posts represented by it."""
+    completed_post_ids = {
+        pending_post_id,
+        *(str(value) for value in pending.get("coalescedPostIds") or []),
+    }
+    for completed_post_id in completed_post_ids:
+        seen_posts.add(completed_post_id)
+        pending_posts.pop(completed_post_id, None)
+    return completed_post_ids
+
+
 def gateway_resolution_is_confirmed(case: dict, source_post_id: str) -> bool:
     """Require final KB publication and solution selection before checkpointing a Flarum resolution."""
     source_matches = source_post_id in {
@@ -641,8 +669,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                 pending_post_id,
                 require_publication=bool(pending.get("requirePublication")),
             ):
-                seen_posts.add(pending_post_id)
-                pending_posts.pop(pending_post_id, None)
+                checkpoint_confirmed_post(pending_post_id, pending, seen_posts, pending_posts)
                 confirmed += 1
         except Exception:
             # A transient Gateway lookup must not stop discovery of other discussions.
@@ -716,7 +743,9 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                         "attempt": attempts,
                     }, separators=(",", ":")), flush=True)
                 correlation = f"community-{discussion_id}-{post_id}-{uuid4().hex[:8]}"
+                coalesced_post_ids: list[str] = []
                 if gateway_case is None and event["postNumber"] > 1:
+                    coalesced_post_ids = coalesced_legacy_post_ids(event, events)
                     include_legacy_discussion_context(event, events)
                 event["correlationId"] = correlation
                 event["eventId"] = f"flarum-post-{post_id}"
@@ -736,6 +765,8 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
                         "nextRetryAt": now + retry_delay,
                         "attempts": attempts,
                     }
+                    if coalesced_post_ids:
+                        pending_posts[post_id]["coalescedPostIds"] = coalesced_post_ids
                     _write_state(state_path, seen_posts, snapshots, pending_posts, pending_resolutions)
                     submitted += 1
                     discussion_waiting = True
