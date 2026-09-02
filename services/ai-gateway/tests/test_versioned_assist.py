@@ -129,6 +129,23 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("rediscover", expanded)
         self.assertNotIn("qemu-ga-x86_64.msi", combined)
 
+    def test_kvm_ha_degraded_guidance_has_exact_targets_services_and_logs(self) -> None:
+        question = (
+            "BMC 활성화 후 HA 공급자 kvmhapervider는 오타이고 kvmhaprovider가 맞습니다. "
+            "호스트 HA 상태가 Suspect에서 Degraded로 바뀌었습니다."
+        )
+        combined = "\n".join(item["content"] for item in curated_platform_results(question))
+
+        for expected in (
+            "kvmhaprovider", "Activity Check", "kvm.ha.on.storage.heartbeat", "HA.STATE.TRANSITION",
+            "ssh -p <SSH_PORT>", "mold.service", "mold-agent.service",
+            "/var/log/cloudstack/management/management-server.log",
+            "/var/log/cloudstack/agent/agent.log", "--since", "--until", "마스킹",
+        ):
+            self.assertIn(expected, combined)
+        self.assertIn("Degraded를 libvirt 장애 하나로 단정하지 않는다", combined)
+        self.assertIn("Available 전에는 호스트 전원 차단", combined)
+
     def test_rocky_linux_smb_question_loads_exact_official_mount_procedure(self) -> None:
         question = (
             "Rocky Linux 8.10 가상머신에서 SMB 서버에 연결해서 마운트하고 싶습니다. "
@@ -519,6 +536,10 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         console = next(item for item in payload["cases"] if item["caseKey"] == "MOLD-CONSOLE-CONNECTING-001")
         self.assertEqual("Mold에서 가상머신의 콘솔 보기를 클릭하면 콘솔 화면이 표시되지만 \"연결중\"이라고 표시되고, 더 이상 화면을 보여주지 않습니다. 콘솔을 보려면 어떻게 해야 하나요?", console["question"])
         self.assertIn("query-vnc", console["requiredPublicGuidance"])
+        ha_case = next(item for item in payload["cases"] if item["caseKey"] == "COMMUNITY-177-KVM-HA-DEGRADED-001")
+        self.assertIn("kvmhapervider", ha_case["question"])
+        self.assertIn("mold-agent.service", ha_case["requiredPublicGuidance"])
+        self.assertIn("kvmhapervider가 실제 값인지 확인", ha_case["forbiddenPublicClaims"])
 
     def test_product_first_evidence_priority_is_stable(self) -> None:
         self.assertEqual((1, "ABLESTACK_DOCUMENTATION"), evidence_priority("SHARED_DOCS", "DOCUMENTATION"))

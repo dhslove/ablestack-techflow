@@ -4,14 +4,17 @@ import unittest
 from uuid import uuid4
 
 from app.conversation import (
+    ACTIONABILITY_RETRY_INSTRUCTION,
     PROGRESSION_RETRY_INSTRUCTION,
     build_conversation_question,
     build_chat_question,
     build_knowledge_base_question,
     build_progression_retry_question,
+    community_actionability_issues,
     community_result_advances,
     conversation_artifact_ids,
     is_resolution_progress_update,
+    probable_identifier_typos,
     resolution_progress_result,
 )
 from app.embedding import MAX_INPUT_BYTES, validate_inputs
@@ -47,6 +50,38 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertTrue(prompt.endswith(current))
         self.assertIn("이전 대화:", prompt)
         self.assertEqual((prompt,), validate_inputs([prompt]))
+
+    def test_probable_product_identifier_typo_is_non_blocking_context(self) -> None:
+        turns = [
+            {
+                "sourcePostId": "423", "postNumber": 2, "role": "ASSISTANT",
+                "content": "정상 HA 공급자는 kvmhaprovider이며 상태는 Available입니다.",
+            }
+        ]
+        incoming = {
+            "discussionId": "177", "postId": "424", "postNumber": 3,
+            "turnRole": "REQUESTER",
+            "question": "BMC 활성화 후 HA 공급자: kvmhapervider까지 확인했지만 HA 상태는 Suspect입니다.",
+        }
+
+        self.assertEqual(
+            (("kvmhapervider", "kvmhaprovider"),),
+            probable_identifier_typos(turns, incoming["question"]),
+        )
+        prompt = build_conversation_question("호스트 HA 상태 확인", turns, incoming)
+        self.assertIn("`kvmhapervider` → `kvmhaprovider`", prompt)
+        self.assertIn("오타로 보고 진행", prompt)
+        self.assertIn(incoming["question"], prompt)
+        self.assertIn("오타 확인만을 위해 답변을 중단하지 마십시오", prompt)
+
+    def test_status_and_literal_log_values_are_never_typo_candidates(self) -> None:
+        turns = [{
+            "role": "ASSISTANT",
+            "content": "정상 상태는 Available이며 관리 서비스는 mold-agent입니다.",
+        }]
+
+        self.assertEqual((), probable_identifier_typos(turns, "현재 상태는 Availble이 아니라 Degrded입니다."))
+        self.assertEqual((), probable_identifier_typos(turns, "로그에는 `mold-agnet`가 표시됩니다."))
 
     def setUp(self) -> None:
         self.turns = [
@@ -222,6 +257,59 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertLessEqual(len(prompt), 4000)
         self.assertIn("restorecon 명령으로 해결했습니다", prompt)
         self.assertTrue(prompt.endswith(PROGRESSION_RETRY_INSTRUCTION))
+
+    def test_actionability_gate_rejects_commands_without_access_and_exact_logs(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "recommendedActions": [
+                    "systemctl status libvirtd와 virsh list --all을 실행하십시오. 정상인지 확인하십시오."
+                ],
+                "unknowns": ["Mold 관리 서버의 HA 로그를 보내 주세요. BMC 암호는 제거하십시오."],
+            },
+        }
+
+        issues = community_actionability_issues(result)
+
+        for expected in (
+            "missing-access-example", "missing-execution-target", "missing-service-unit",
+            "missing-success-criteria", "missing-log-source", "missing-time-window",
+        ):
+            self.assertIn(expected, issues)
+
+    def test_actionability_gate_accepts_targeted_copyable_diagnostics(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "recommendedActions": [
+                    "KVM 호스트에 `ssh -p <SSH_PORT> <HOST_ADMIN>@<HOST_MANAGEMENT_IP>`로 접속하고 "
+                    "관리자 권한에서 `sudo systemctl status mold-agent.service --no-pager -l`과 "
+                    "`sudo virsh -c qemu:///system list --all`을 실행하십시오. 오류 없이 VM 목록을 반환하면 정상 기준을 충족합니다."
+                ],
+                "unknowns": [
+                    "관리 서버에 `ssh -p <SSH_PORT> <MANAGEMENT_ADMIN>@<MOLD_MANAGEMENT_IP>`로 접속한 뒤 "
+                    "`sudo journalctl -u mold.service --since '<상태 변경 10분 전>' --until '<상태 변경 10분 후>' --no-pager`와 "
+                    "`/var/log/cloudstack/management/management-server.log` 결과를 확인하십시오. "
+                    "BMC 암호, API Key, Token, Cookie와 내부 IP는 마스킹하십시오."
+                ],
+            },
+        }
+
+        self.assertEqual((), community_actionability_issues(result))
+
+    def test_actionability_retry_lists_missing_contract_items(self) -> None:
+        prompt = build_progression_retry_question(
+            "호스트 HA 상태 확인",
+            self.turns,
+            {
+                "discussionId": "177", "postId": "424", "postNumber": 3,
+                "turnRole": "REQUESTER", "question": "HA 상태가 Degraded입니다.",
+            },
+            actionability_issues=("missing-access-example", "missing-log-source"),
+        )
+
+        self.assertIn(ACTIONABILITY_RETRY_INSTRUCTION, prompt)
+        self.assertTrue(prompt.endswith("missing-access-example, missing-log-source"))
 
     def test_knowledge_base_prompt_preserves_selected_solution_within_model_limit(self) -> None:
         turns = [

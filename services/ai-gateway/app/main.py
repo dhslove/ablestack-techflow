@@ -69,6 +69,7 @@ from .conversation import (
     build_chat_question,
     build_knowledge_base_question,
     build_progression_retry_question,
+    community_actionability_issues,
     community_result_advances,
     conversation_artifact_ids,
     resolution_progress_result,
@@ -959,12 +960,18 @@ def create_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"code": "AI_PROVIDER_TEMPORARY_FAILURE", "message": "community draft generation will retry"},
             )
-        if not community_result_advances(result, turns):
+        progresses = community_result_advances(result, turns)
+        actionability_issues = community_actionability_issues(result)
+        if not progresses or actionability_issues:
             _json_log(
                 "community_answer_progression_retry", correlationId=correlation_id,
                 discussionId=request.discussion_id, sourcePostId=post_id,
+                actionabilityIssues=list(actionability_issues),
             )
-            rewrite_question = build_progression_retry_question(request.title, turns, analysis_event)
+            rewrite_question = build_progression_retry_question(
+                request.title, turns, analysis_event,
+                actionability_issues=actionability_issues,
+            )
             retry_request = ComprehensiveQueryRequest(
                 queryId=uuid4(), question=rewrite_question, actorId=f"community:{request.author_id}",
                 productVersion=request.product_version or "diplo", artifactIds=conversation_artifacts,
@@ -976,16 +983,22 @@ def create_app(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail={"code": "AI_PROVIDER_TEMPORARY_FAILURE", "message": "community draft generation will retry"},
                 )
-            if not community_result_advances(result, turns):
+            retry_progresses = community_result_advances(result, turns)
+            retry_actionability_issues = community_actionability_issues(result)
+            if not retry_progresses or retry_actionability_issues:
                 _json_log(
                     "community_answer_progression_rejected", correlationId=correlation_id,
                     discussionId=request.discussion_id, sourcePostId=post_id,
+                    actionabilityIssues=list(retry_actionability_issues),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail={
-                        "code": "COMMUNITY_RESPONSE_NOT_PROGRESSING",
-                        "message": "repetitive community answer was not published and will retry",
+                        "code": (
+                            "COMMUNITY_RESPONSE_NOT_ACTIONABLE"
+                            if retry_actionability_issues else "COMMUNITY_RESPONSE_NOT_PROGRESSING"
+                        ),
+                        "message": "community answer did not meet progression or actionability requirements",
                     },
                 )
         result["userQuestion"] = request.question

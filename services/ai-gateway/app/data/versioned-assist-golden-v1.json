@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "setId": "ABLESTACK_VERSIONED_ASSIST_GOLDEN_V1",
   "publicDocumentSections": ["증상", "원인", "해결 방법", "추가 고려사항", "적용 버전"],
-  "caseCount": 16,
+  "caseCount": 17,
   "cases": [
     {
       "caseKey": "CURRENT-DEFECT-PREVIEW-IMPROVED-001",
@@ -151,6 +151,16 @@
       "allowedAnswerState": "ANSWERED",
       "requiredPublicGuidance": ["Mold"],
       "forbiddenPublicClaims": ["CloudStack 제품으로 문의", "github.com"]
+    },
+    {
+      "caseKey": "COMMUNITY-177-KVM-HA-DEGRADED-001",
+      "question": "이전 TechFlow 답변에서 정상 HA 공급자는 kvmhaprovider라고 안내했습니다. 사용자가 'BMC 활성화 후 HA 공급자: kvmhapervider까지는 확인했지만 HA 상태는 Suspect입니다'라고 답했고, 이어 공급자 이름은 단순 오타이며 현재 HA 상태가 Degraded로 바뀌었다고 정정했습니다. 다음 점검 방법을 알려주세요.",
+      "expectedCurrentAssessment": "INSUFFICIENT_EVIDENCE",
+      "allowedAnswerState": "ANSWERED",
+      "expectedPreviewAssessment": "NOT_APPLICABLE",
+      "expectedPublicGuidance": "명백한 공급자 오타를 짧게 교정하고 Degraded의 Activity Check 경로를 설명한 뒤 관리 서버와 KVM 호스트의 접속·서비스·로그·정상 기준을 실행 가능한 형태로 안내",
+      "requiredPublicGuidance": ["오타로 보고", "kvmhaprovider", "Degraded", "HA.STATE.TRANSITION", "kvm.ha.on.storage.heartbeat", "이웃", "ssh -p", "mold.service", "mold-agent.service", "/var/log/cloudstack/management/management-server.log", "/var/log/cloudstack/agent/agent.log", "--since", "--until", "마스킹"],
+      "forbiddenPublicClaims": ["kvmhapervider가 실제 값인지 확인", "cloudstack-management.service", "libvirt 장애로 확정", "DB를 직접 수정", "호스트 전원 차단 시험", "github.com"]
     }
   ]
 }

@@ -1,5 +1,14 @@
 # TechFlow AI Gateway
 
+## v0.16.7 구현 범위
+
+- Community 후속 댓글의 영문 제품 식별자를 이전 TechFlow 답변과 비교해 단일 오타 후보 탐지
+- 원문을 바꾸지 않고 오타 가정을 한 번만 알린 뒤 핵심 증상 분석 계속
+- IP·UUID·버전·명령·경로·상태·로그·Citation·Artifact ID 자동 교정 금지
+- Linux 운영 명령·로그 답변에 실행 대상·SSH/콘솔·권한·정확한 Unit·로그 경로·시간 범위·정상 기준 검사
+- 실행 가능성 미달 답변의 Provider 재작성과 최종 게시 차단
+- Diplo KVM HA Suspect·Degraded 운영 근거와 Discussion #177 Golden Case 추가
+
 ## v0.16.6 구현 범위
 
 - 누적 Chat 대화 문맥을 글자 수가 아니라 UTF-8 Byte 기준으로 압축

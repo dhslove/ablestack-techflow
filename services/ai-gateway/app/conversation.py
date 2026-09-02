@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import re
 from typing import Any, Iterable
 
@@ -27,6 +28,26 @@ PROGRESSION_RETRY_INSTRUCTION = (
     "실행 위치, 정상 판정 기준을 포함하십시오. 원인을 확정하지 못해도 확인된 실패 분기와 안전한 점검 순서를 "
     "먼저 설명한 뒤, 아직 제공되지 않은 자료 한정으로 구체적인 명령 결과나 응답 본문을 요청하십시오."
 )
+
+ACTIONABILITY_RETRY_INSTRUCTION = (
+    "[실행 안내 재작성 필수]\n"
+    "Linux 운영 명령이나 로그 확인을 안내할 때는 실행 대상, SSH 또는 콘솔 접속 예시, 필요한 권한, "
+    "정확한 systemd .service 이름, 복사 가능한 명령, 정상 판정 기준을 함께 쓰십시오. "
+    "로그는 journalctl -u <service> 또는 /var/log/...의 정확한 경로와 상태 변경 전후 시간 범위를 제시하십시오. "
+    "공개 Community에 올리기 전에 BMC 암호, API Key, Token, Cookie와 내부 인프라 식별자를 마스킹하도록 안내하십시오. "
+    "근거 없이 DB 수정, 서비스 재시작, 호스트 전원 작업을 제안하지 마십시오."
+)
+
+_IDENTIFIER_TOKEN = re.compile(r"(?<![A-Za-z0-9_.:/-])[A-Za-z]{8,48}(?![A-Za-z0-9_.:/-])")
+_LITERAL_EVIDENCE = re.compile(r"```.*?```|`[^`]*`|https?://\S+", re.DOTALL | re.IGNORECASE)
+_TYPO_PROTECTED_TERMS = {
+    "available", "suspect", "checking", "degraded", "recovering", "recovered", "fencing", "fenced",
+    "disabled", "enabled", "ineligible", "systemctl", "journalctl", "libvirtd", "virtqemud", "powershell",
+    "community", "techflow", "assistant", "localhost",
+}
+_LINUX_OPERATION = re.compile(r"\b(?:sudo\s+)?(?:systemctl|journalctl|virsh|grep|tail)\b", re.IGNORECASE)
+_SSH_EXAMPLE = re.compile(r"\bssh(?:\s+-p\s+\S+)?\s+\S+@\S+", re.IGNORECASE)
+_SERVICE_UNIT = re.compile(r"\b[a-zA-Z0-9_.@-]+\.service\b")
 
 
 def _excerpt(value: object, limit: int) -> str:
@@ -58,6 +79,61 @@ def _utf8_excerpt(value: object, limit: int) -> str:
     head = encoded[:head_limit].decode("utf-8", errors="ignore")
     tail = encoded[-tail_limit:].decode("utf-8", errors="ignore") if tail_limit else ""
     return head + marker + tail
+
+
+def _plain_identifier_tokens(value: object) -> list[str]:
+    text = _LITERAL_EVIDENCE.sub(" ", str(value or ""))
+    return _IDENTIFIER_TOKEN.findall(text)
+
+
+def probable_identifier_typos(
+    prior_turns: Iterable[dict[str, Any]], current_text: object, *, limit: int = 3,
+) -> tuple[tuple[str, str], ...]:
+    """Find unique, low-risk identifier typos without changing the user's original text."""
+    canonical: dict[str, str] = {}
+    for item in prior_turns:
+        if str(item.get("role") or "") != "ASSISTANT":
+            continue
+        for token in _plain_identifier_tokens(item.get("content")):
+            canonical.setdefault(token.casefold(), token)
+    if not canonical:
+        return ()
+
+    found: list[tuple[str, str]] = []
+    for token in _plain_identifier_tokens(current_text):
+        normalized = token.casefold()
+        if normalized in canonical or normalized in _TYPO_PROTECTED_TERMS:
+            continue
+        candidates: list[tuple[float, str, str]] = []
+        for expected, display in canonical.items():
+            if expected in _TYPO_PROTECTED_TERMS or expected[:3] != normalized[:3]:
+                continue
+            if abs(len(expected) - len(normalized)) > 2:
+                continue
+            score = SequenceMatcher(None, normalized, expected).ratio()
+            if score >= 0.90:
+                candidates.append((score, expected, display))
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        if not candidates or (len(candidates) > 1 and candidates[0][0] == candidates[1][0]):
+            continue
+        found.append((token, candidates[0][2]))
+        if len(found) == limit:
+            break
+    return tuple(found)
+
+
+def _typo_guidance(candidates: Iterable[tuple[str, str]]) -> str:
+    rows = list(candidates)
+    if not rows:
+        return ""
+    mappings = "\n".join(f"- `{actual}` → `{expected}`" for actual, expected in rows)
+    return (
+        "[문맥상 오타 후보]\n"
+        f"{mappings}\n"
+        "원문을 변경하지 마십시오. 앞선 대화와 제공된 Source 근거가 정식 표기를 뒷받침하면 "
+        "오타로 보고 진행한다고 한 문장으로 알린 뒤 핵심 증상 분석을 계속하십시오. "
+        "오타 확인을 unknowns로 반복 요청하지 마십시오. 실제 화면·로그의 값일 가능성은 기초 답변 뒤에만 짧게 덧붙이십시오."
+    )
 
 
 def source_post_id(request: dict[str, Any]) -> str:
@@ -215,10 +291,13 @@ def build_conversation_question(
         1200,
     )
     previous_assistant = _excerpt((assistant_turns[-1] if assistant_turns else {}).get("content"), 1200)
+    typo_guidance = _typo_guidance(probable_identifier_typos(rows, latest_human))
+    typo_section = f"[오타 처리 안내]\n{typo_guidance}\n\n" if typo_guidance else ""
     prompt = (
         f"[Community 기술지원 제목]\n{title}\n\n"
         f"[최초 질문]\n{original_text}\n\n"
         f"[참여자의 최신 추가 정보 또는 질문]\n{latest_human}\n\n"
+        f"{typo_section}"
         f"[직전 TechFlow 답변]\n{previous_assistant or '없음'}\n\n"
         "[지금까지의 대화]\n"
         + "\n".join(transcript)
@@ -233,6 +312,9 @@ def build_conversation_question(
         "추가 자료 요청으로 답변을 시작하지 마십시오. 추가 자료는 기초 답변과 우선 점검을 제공한 뒤에만, "
         "사용자가 아직 제공하지 않은 정확한 API 응답 본문, 명령 결과 또는 로그 이름으로 구체적으로 요청하십시오. "
         "이미 제공된 제품 버전, 첨부 화면, 시각 또는 로그를 다시 요청하지 마십시오. "
+        "문맥상 명백한 오타 후보는 짧게 가정하고 핵심 분석을 계속하십시오. 오타 확인만을 위해 답변을 중단하지 마십시오. "
+        "Linux 운영 명령과 로그를 요청할 때는 실행 대상, SSH 또는 콘솔 접속 예시, 필요한 권한, 정확한 서비스명과 로그 경로, 시간 범위, 정상 기준을 포함하십시오. "
+        "공개 답변에는 BMC 암호, API Key, Token, Cookie와 내부 인프라 식별자 마스킹 방법을 포함하십시오. "
         "설명 문장과 CLI 명령을 섞지 마십시오. CLI는 설명 다음 줄의 독립된 ```bash 코드 블록에 넣고, 블록 안에는 바로 복사해 실행할 명령만 쓰십시오. "
         "직전 TechFlow 답변의 원인 설명이나 점검 목록을 다시 말하지 마십시오. 후속 답변은 반드시 진단을 한 단계 더 진행해야 합니다. "
         "SELinux 전체 비활성화, chmod 777, 근거 없는 audit2allow처럼 위험하거나 과도한 우회 조치는 제안하지 마십시오."
@@ -243,6 +325,8 @@ def build_conversation_question(
         "[응답 지침]\n"
         "관련 기능과 Source를 분석하고 첨부의 상태 코드·API·오류를 Source 동작과 연결하십시오. "
         "최신 질문에 기초 진단, 해결 방법, 근거 있는 CLI 명령, 정상 판정 기준을 먼저 제시하십시오. "
+        "명백한 오타는 짧게 알리고 분석을 계속하십시오. Linux 운영 명령·로그에는 실행 대상, SSH/콘솔 접속, 권한, "
+        "정확한 .service 이름, 로그 경로, 시간 범위와 마스킹 안내를 포함하십시오. "
         "CLI는 설명과 분리한 ```bash 코드 블록으로 작성하십시오. 해결되지 않을 때만 대안과 구체적인 결과·로그를 요청하고 "
         "이미 받은 자료를 다시 요청하거나 직전 답변을 반복하지 마십시오."
     )
@@ -250,6 +334,7 @@ def build_conversation_question(
         f"[Community 기술지원 제목]\n{title[:200]}\n\n"
         f"[최초 질문]\n{_excerpt(original_text, 650)}\n\n"
         f"[참여자의 최신 추가 정보 또는 질문]\n{_excerpt(latest_human, 900)}\n\n"
+        f"{_excerpt(typo_section, 500)}"
         f"[직전 TechFlow 답변]\n{_excerpt(previous_assistant, 650) or '없음'}\n\n"
         "[최근 대화]\n"
     )
@@ -277,9 +362,14 @@ def build_progression_retry_question(
     incoming: dict[str, Any],
     *,
     limit: int = 4000,
+    actionability_issues: Iterable[str] = (),
 ) -> str:
     """Build a retry prompt while reserving space for the mandatory rewrite instruction."""
-    suffix = f"\n\n{PROGRESSION_RETRY_INSTRUCTION}"
+    issues = tuple(actionability_issues)
+    actionability = (
+        f"\n\n{ACTIONABILITY_RETRY_INSTRUCTION}\n누락 항목: {', '.join(issues)}" if issues else ""
+    )
+    suffix = f"\n\n{PROGRESSION_RETRY_INSTRUCTION}{actionability}"
     if len(suffix) >= limit:
         raise ValueError("progression retry instruction must be shorter than the question limit")
     base = build_conversation_question(title, turns, incoming, limit=limit - len(suffix))
@@ -314,6 +404,54 @@ def _row_text(row: object) -> str:
     if isinstance(row, dict):
         return str(row.get("action") or row.get("text") or row.get("title") or row.get("finding") or "").strip()
     return ""
+
+
+def community_actionability_issues(result: dict[str, Any]) -> tuple[str, ...]:
+    """Return missing operational context for Linux commands and log collection requests."""
+    if str(result.get("state") or "").upper() != "ANSWERED":
+        return ()
+    report = result.get("report") or {}
+    rows = [
+        _row_text(item)
+        for item in (*list(report.get("recommendedActions") or []), *list(report.get("unknowns") or []))
+    ]
+    text = "\n".join(item for item in rows if item)
+    operation_rows = [item for item in rows if _LINUX_OPERATION.search(item)]
+    has_linux_operation = bool(operation_rows)
+    has_log_request = "로그" in text or "/var/log/" in text or "journalctl" in text.casefold()
+    if not has_linux_operation and not has_log_request:
+        return ()
+
+    issues: list[str] = []
+    lowered = text.casefold()
+    if not _SSH_EXAMPLE.search(text) and not any(
+        marker in text for marker in ("콘솔로 접속", "콘솔 또는 SSH", "터미널에 접속")
+    ):
+        issues.append("missing-access-example")
+    target_markers = ("관리 서버", "KVM 호스트", "호스트에서", "가상머신 안", "게스트에서")
+    if has_linux_operation and any(not any(marker in row for marker in target_markers) for row in operation_rows):
+        issues.append("missing-execution-target")
+    if not any(marker in lowered for marker in ("sudo", "root", "관리자 권한")):
+        issues.append("missing-required-role")
+    if ("systemctl" in lowered or "journalctl" in lowered) and not _SERVICE_UNIT.search(text):
+        issues.append("missing-service-unit")
+    if not any(marker in text for marker in ("정상 기준", "성공 기준", "이면 정상", "오류 없이", "Active: active")):
+        issues.append("missing-success-criteria")
+    if has_log_request and "/var/log/" not in text and not re.search(
+        r"journalctl\s+-u\s+\S+", text, re.IGNORECASE,
+    ):
+        issues.append("missing-log-source")
+    if has_log_request and not (
+        ("--since" in lowered and "--until" in lowered)
+        or any(marker in text for marker in ("상태 변경 전후", "발생 시각 전후", "오류 시각 전후"))
+    ):
+        issues.append("missing-time-window")
+    if has_log_request and not any(
+        marker in lowered
+        for marker in ("암호", "비밀번호", "api key", "token", "토큰", "cookie", "마스킹", "제거")
+    ):
+        issues.append("missing-redaction-guidance")
+    return tuple(issues)
 
 
 def community_result_advances(result: dict[str, Any], turns: Iterable[dict[str, Any]]) -> bool:
