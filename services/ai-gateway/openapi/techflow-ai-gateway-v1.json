@@ -2030,17 +2030,23 @@
             "default": true
           },
           "responseReason": {
-            "type": "string",
-            "enum": [
-              "REQUESTER_AUTO",
-              "ASSISTANT_SELF",
-              "EXPLICIT_AI_REQUEST",
-              "STAFF_RECORDED",
-              "PARTICIPANT_RECORDED",
-              "RESOLUTION_SYNC"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "REQUESTER_AUTO",
+                  "ASSISTANT_SELF",
+                  "EXPLICIT_AI_REQUEST",
+                  "STAFF_RECORDED",
+                  "PARTICIPANT_RECORDED",
+                  "RESOLUTION_SYNC"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Responsereason",
-            "default": "REQUESTER_AUTO"
+            "title": "Responsereason"
           },
           "resolutionOnly": {
             "type": "boolean",

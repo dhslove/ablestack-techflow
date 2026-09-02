@@ -125,6 +125,34 @@ class CommunityTests(unittest.TestCase):
         recorded = next(item for item in events if item["eventType"] == "TURN_RECORDED")
         self.assertEqual("STAFF_RECORDED", recorded["details"]["responseReason"])
 
+    def test_legacy_flow_infers_staff_suppression_reason(self) -> None:
+        store = MemoryStore()
+        first = {
+            **self.payload(), "postId": "100", "postNumber": 1,
+            "postAuthorId": "42", "turnRole": "REQUESTER", "responseRequested": True,
+        }
+        case = store.create_community_case(
+            first,
+            {"draftAnswer": "초기 답변", "answerState": "ANSWERED", "citations": []},
+            "community-legacy-reason-first", "community-legacy-reason-correlation",
+        )
+        client = TestClient(create_app(Settings(), store))
+
+        response = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "community-legacy-reason-staff"},
+            json={
+                **self.payload(), "question": "관리자가 직접 답변했습니다.",
+                "postId": "101", "postNumber": 2, "postAuthorId": "7",
+                "turnRole": "STAFF", "responseRequested": False,
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        events = store.list_community_case_events(case["caseId"], 10)
+        recorded = next(item for item in events if item["eventType"] == "TURN_RECORDED")
+        self.assertEqual("STAFF_RECORDED", recorded["details"]["responseReason"])
+
     def test_edited_answer_can_be_approved_but_disabled_publish_fails_closed(self) -> None:
         client = TestClient(create_app(Settings(), MemoryStore()))
         case = client.post("/v1/community/cases", headers=HEADERS, json=self.payload()).json()["data"]

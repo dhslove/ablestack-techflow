@@ -213,11 +213,34 @@ class CommunityCaseCreateRequest(StrictModel):
         "STAFF_RECORDED",
         "PARTICIPANT_RECORDED",
         "RESOLUTION_SYNC",
-    ] = Field(default="REQUESTER_AUTO", alias="responseReason")
+    ] | None = Field(default=None, alias="responseReason")
     resolution_only: bool = Field(default=False, alias="resolutionOnly")
     best_answer_post_id: Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]{0,18}$")] | None = Field(default=None, alias="bestAnswerPostId")
     best_answer_user_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.:@-]{1,128}$")] | None = Field(default=None, alias="bestAnswerUserId")
     best_answer_set_at: datetime | None = Field(default=None, alias="bestAnswerSetAt")
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_response_reason(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("responseReason") or value.get("response_reason"):
+            return value
+        normalized = dict(value)
+        role = normalized.get("turnRole") or normalized.get("turn_role") or "REQUESTER"
+        requested = normalized.get("responseRequested", normalized.get("response_requested", True))
+        if isinstance(requested, str):
+            requested = requested.casefold() == "true"
+        if normalized.get("resolutionOnly") or normalized.get("resolution_only"):
+            reason = "RESOLUTION_SYNC"
+        elif role == "ASSISTANT":
+            reason = "ASSISTANT_SELF"
+        elif role == "REQUESTER":
+            reason = "REQUESTER_AUTO"
+        elif requested:
+            reason = "EXPLICIT_AI_REQUEST"
+        else:
+            reason = "STAFF_RECORDED"
+        normalized["responseReason"] = reason
+        return normalized
 
     @model_validator(mode="after")
     def unique_artifacts_and_tags(self) -> "CommunityCaseCreateRequest":
