@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "issue": 109,
+  "pullRequest": 110,
+  "rootCause": {
+    "chatTurns": 11,
+    "characters": 4392,
+    "utf8Bytes": 9291,
+    "previousCharacterLimit": 16000,
+    "embeddingMaxInputBytes": 7936,
+    "failureType": "ProviderContractError",
+    "attempts": 3,
+    "previousState": "DEAD_LETTER"
+  },
+  "implementation": {
+    "gatewayVersion": "0.16.6",
+    "chatPromptUsesUtf8Budget": true,
+    "latestQuestionPreserved": true,
+    "oldestTurnsRemovedFirst": true,
+    "retrievalExpansionMaxUtf8Bytes": 4000
+  },
+  "validation": {
+    "targetedTestsPassed": 62,
+    "fullTestsPassed": 322,
+    "fullTestsTotal": 323,
+    "unrelatedExistingFailure": "tmp/research/activepieces-0.86.3 CRLF shell assets",
+    "serverImageTestsPassed": 62,
+    "officialWebResults": 5,
+    "embeddingCallsSucceeded": 8,
+    "responseCallsSucceeded": 1,
+    "recoveredJobState": "COMPLETED",
+    "operationState": "RECOVERED",
+    "assistantAnswerCharacters": 1267
+  },
+  "deployment": {
+    "server": "172.16.0.231",
+    "image": "techflow/ai-gateway:issue109-0.16.6-f9228ca",
+    "imageId": "sha256:6c5513246ebd45262738c4ea76218bcb750cca136e4fcc1539bbd3a6ee1196869",
+    "packageSha256": "e7cf05a38de3bc5f5fbc7af3354923018eedac60b0d1d526b34e504b6d7d99f1",
+    "backup": "/home/ablecloud/techflow-ai-gateway-backups/issue109-chat-utf8-20260902T0302Z",
+    "gatewayHealthy": true,
+    "gatewayRestartCount": 0,
+    "chatHttpStatus": 200,
+    "communityHttpStatus": 200,
+    "databaseSchemaChanged": false
+  },
+  "protectedServices": {
+    "communityPollerChanged": false,
+    "sourceReconcilerChanged": false,
+    "githubChatEventGatewayChanged": false
+  }
+}

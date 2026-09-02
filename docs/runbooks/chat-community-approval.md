@@ -121,3 +121,30 @@ docker exec techflow-ai-gateway-database-1 \
   psql -U techflow_bootstrap -d techflow_rag -Atc \
   "select count(*) from pg_catalog.pg_tables where schemaname='public';"
 ```
+
+## 10. 한글 누적 대화의 입력 상한과 복구
+
+Chat 질문은 평문으로 입력한다. 사용자에게 JSON이나 정해진 질문 양식을 요구하지 않는다.
+Gateway는 누적 대화를 Embedding으로 검색하기 전에 다음 Byte 상한을 적용한다.
+
+- Chat 문맥: UTF-8 7,936 Byte 이하
+- 검색어 확장: UTF-8 4,000 Byte 이하
+- 최신 질문 우선 보존, 오래된 Turn부터 제거
+
+Gateway가 Healthy인데 `ProviderContractError`로 같은 Chat Job이 반복 실패하고 Provider
+감사 기록이 없다면, 문맥의 문자 수뿐 아니라 `octet_length(content)` 합계를 확인한다.
+한글은 문자 수보다 UTF-8 Byte가 크므로 `length(content)`만으로 판정하지 않는다.
+
+수정 Image 배포 후 기존 Dead Letter 질문을 복구할 때는 먼저 해당 Job 메타데이터만
+백업한다. 질문 원문과 Bot Token은 운영 증적에 복사하지 않는다. 정확한 Job ID와
+`DEAD_LETTER` 상태를 확인한 경우에만 Attempt를 0으로 초기화하고 `RETRYING`으로 전환한
+뒤 Gateway를 재생성한다. 시작 시 Gateway가 대기 Job을 회수한다.
+
+완료 기준은 다음과 같다.
+
+- Job `COMPLETED`
+- Assistant Turn 한 건 생성
+- `chat_async_answer_sent` 기록
+- Provider 감사 기록 `SUCCEEDED`
+- Operation Failure `RECOVERED`
+- Community Poller와 GitHub→Chat Event Gateway의 Container ID·Image·StartedAt 불변
