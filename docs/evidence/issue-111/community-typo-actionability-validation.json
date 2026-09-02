@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "issue": 111,
+  "pullRequest": 110,
+  "gatewayVersion": "0.16.7",
+  "implementation": {
+    "probableIdentifierTypoDetection": true,
+    "minimumSimilarity": 0.9,
+    "originalUserTextPreserved": true,
+    "protectedLiteralValues": ["status", "ip", "uuid", "version", "port", "command", "path", "api", "log", "citation", "artifact"],
+    "actionabilityRetry": true,
+    "publishedCorrectionStateSync": true
+  },
+  "validation": {
+    "targetedTestsPassed": 124,
+    "serverImageTestsPassed": 124,
+    "fullTestsPassed": 332,
+    "fullTestsTotal": 333,
+    "unrelatedExistingFailure": "tmp/research/activepieces-0.86.3 CRLF shell assets",
+    "versionedGoldenCases": 17,
+    "liveAnswerState": "ANSWERED",
+    "actionabilityIssues": [],
+    "requiredGuidanceMissing": [],
+    "forbiddenClaimsFound": []
+  },
+  "discussion177": {
+    "postId": "431",
+    "updatedInPlace": true,
+    "approved": true,
+    "answerCharacters": 2720,
+    "caseState": "PUBLISHED",
+    "draftVersion": 5,
+    "publishedPostId": "431",
+    "lastSeenPostId": "431",
+    "caseAndTurnSynchronized": true,
+    "auditEvent": "AUTO_PUBLISHED_CORRECTED"
+  },
+  "deployment": {
+    "server": "172.16.0.231",
+    "image": "techflow/ai-gateway:issue111-0.16.7-c433bbc",
+    "imageId": "sha256:3aac2294f9a00996062e22da36608b95ea1fc2faf929967ae2e47182f52f7453",
+    "packageSha256": "8e971cdc99c1f1e86d6946e8264d3e685ded6cdab49d8c89542d16fcec0d8f8e",
+    "backup": "/home/ablecloud/techflow-ai-gateway-backups/issue111-typo-actionability-20260902T0600Z",
+    "gatewayHealthy": true,
+    "gatewayRestartCount": 0,
+    "chatHttpStatus": 200,
+    "communityHttpStatus": 200,
+    "databaseSchemaChanged": false
+  },
+  "protectedServices": {
+    "communityPollerChanged": false,
+    "sourceReconcilerChanged": false,
+    "githubChatEventGatewayChanged": false
+  }
+}

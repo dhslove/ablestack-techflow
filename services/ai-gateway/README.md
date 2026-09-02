@@ -8,6 +8,7 @@
 - Linux 운영 명령·로그 답변에 실행 대상·SSH/콘솔·권한·정확한 Unit·로그 경로·시간 범위·정상 기준 검사
 - 실행 가능성 미달 답변의 Provider 재작성과 최종 게시 차단
 - Diplo KVM HA Suspect·Degraded 운영 근거와 Discussion #177 Golden Case 추가
+- 동일 Assistant Post 교정 시 Case·Response·Conversation Turn을 함께 갱신하는 멱등 동기화
 
 ## v0.16.6 구현 범위
 
@@ -151,7 +152,7 @@ TechFlow AI Gateway는 Activepieces와 AI Provider 사이에서 ABLESTACK 지식
 - 내부 Evidence Ledger와 Community·일반 Chat용 안전 Projection 분리
 - 공개 답변을 `증상·원인·해결 방법·추가 고려사항·적용 버전` 순서의 트러블슈팅 문서로 표준화
 - 일반 Chat 사용자 기술 질문 자동 응답과 승인 담당자 전용 상세 근거·결정 명령 분리
-- 현재 오류·Europa 개선·미개선·설정 오류·정상·근거 부족 6개 Versioned Golden Case
+- 현재 오류·Europa 개선·미개선·설정 오류·정상·근거 부족과 Community 운영 사례를 포함한 17개 Versioned Golden Case
 
 - Synology Chat Bot Token과 Reviewer 허용목록 검증
 - Chat 사용자 ID·이름 연결과 Community Case 대기·상세·이력 조회

@@ -191,6 +191,10 @@ docker compose --env-file .env \
 | 이미지가 글에는 보이지만 답변에서 확인하지 못함 | Activepieces 최초 Webhook의 `artifactIds`, `artifactWarnings`, Poller의 첨부 참조 수 | 인라인 이미지 참조 1건마다 Artifact ID 또는 처리 경고가 1건 생겨야 한다. 둘 다 0이면 Poller 0.14.9 이상으로 교체하고 해당 Post를 재처리한다. 실패 기록이 없는데 KB에 다운로드 실패 문구가 있으면 게시 내용을 교정한다. |
 | OS 설치 방법을 다른 관리자에게 넘김 | OS 이름과 로컬 공식 자료 검색 결과 | 0.14.7 이상인지 확인하고 Ubuntu·RHEL/Rocky·Windows 설치 스냅샷이 Context에 포함됐는지 확인 |
 | Glue·Koral·Wall·Mold 질문의 기반 자료가 부족함 | `official_web_search_completed`, 내부 Citation의 허용 도메인과 수집 시각 | 운영 플래그와 OpenAI 모드를 확인하고 비허용 도메인 결과는 폐기 |
+| 명백한 제품 식별자 오타를 다시 확인함 | 직전 Assistant Turn의 정식 식별자와 최신 사용자 Token | 단일 후보만 오타로 가정한다고 한 번 알리고 핵심 증상 분석을 계속한다. 상태·IP·UUID·명령·로그 원문은 자동 교정하지 않는다. |
+| 명령은 있지만 어디서 실행할지 알 수 없음 | `community_answer_progression_retry`의 `actionabilityIssues` | 실행 대상, `ssh -p <SSH_PORT> <ADMIN>@<IP>` 또는 콘솔, 권한, 정확한 `.service`, 정상 기준을 포함해 Provider가 재작성하도록 한다. |
+| 로그 요청에 경로·시간 범위가 없음 | `missing-log-source`, `missing-time-window`, `missing-redaction-guidance` | `journalctl -u <service> --since ... --until ...` 또는 승인된 `/var/log/...` 경로와 공개 마스킹 방법을 포함한다. |
+| 기존 Assistant Post를 교정했지만 다음 질문에서 옛 답변을 사용함 | Flarum Post, `community_case.draft_answer`, 최신 `community_response`, 동일 `community_turn` | 같은 Post ID의 교정 경로로 네 위치를 함께 갱신하고 `AUTO_PUBLISHED_CORRECTED` 이벤트를 확인한다. |
 
 ### 9.1 본문과 첨부자료 제한
 
@@ -205,6 +209,16 @@ docker compose --env-file .env \
 본문 글자 수에는 이미지·첨부파일·로그·압축 로그의 바이트나 추출 문자열을 더하지 않는다. Artifact는 별도 저장·검역한 뒤 식별자와 관련 증거 구간만 질의에 연결한다.
 
 `적용 버전`에는 해결 방법을 실제 적용해도 되는 공개 제품 버전만 적는다. 내부 Diplo 상태 판정, Europa Preview 비교, 개선 미확인, 제품 보완 검토는 Evidence Ledger에만 유지하고 Community KB에는 표시하지 않는다.
+
+### 9.2 오타 완화와 실행 가능한 운영 안내
+
+- 영문 제품 식별자는 이전 TechFlow 답변의 정식 표기와 비교한다. 첫 세 글자가 같고 유사도 0.90 이상인 단일 후보만 오타 후보로 사용한다.
+- 사용자 원문은 변경하지 않는다. 답변에서 “문맥상 오타로 보고 진행한다”고 한 번 알린 뒤 최신 상태 분석을 계속한다.
+- `Available`, `Suspect`, `Degraded`, IP, UUID, 버전, 포트, 명령, 경로, API 이름, 화면·로그 원문, Citation ID, Artifact ID는 자동 교정하지 않는다.
+- `systemctl`, `journalctl`, `virsh`, `grep`, `tail`이 있으면 실행 대상·접속 예시·권한·정확한 Unit·정상 기준이 있어야 한다.
+- 로그 요청에는 정확한 `/var/log/...` 경로 또는 `journalctl -u <service>`, `--since`·`--until`, 비밀정보와 내부 인프라 식별자 마스킹 방법이 있어야 한다.
+- 현재 승인된 공개 운영 로그 경로는 `/var/log/cloudstack/management/management-server.log`와 `/var/log/cloudstack/agent/agent.log`다. 저장소 Source 경로와 내부 Citation 경로는 계속 숨긴다.
+- 1차 답변이 계약을 충족하지 않으면 누락 Code를 포함해 한 번 재작성한다. 2차 답변도 실패하면 공개 게시하지 않고 재처리 대상으로 남긴다.
 
 ## 10. 롤백
 
