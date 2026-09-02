@@ -1,5 +1,12 @@
 # TechFlow AI Gateway
 
+## v0.16.6 구현 범위
+
+- 누적 Chat 대화 문맥을 글자 수가 아니라 UTF-8 Byte 기준으로 압축
+- 최신 사용자 질문을 유지하면서 오래된 Turn부터 제거해 Embedding 입력 상한 준수
+- Source 검색어 확장도 UTF-8 Byte 기준 4,000 Byte 이하로 제한
+- 한글 11개 Turn·9,291 Byte 장애 재현과 Chat 비동기 완료 회귀시험 추가
+
 ## v0.16.5 구현 범위
 
 - Synology Chat `post_id`를 `post_file_get`으로 조회해 Bot 대화의 이미지·로그·압축로그 수집

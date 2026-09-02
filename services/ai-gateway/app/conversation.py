@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from .embedding import MAX_INPUT_BYTES
+
 
 ROLE_LABELS = {
     "REQUESTER": "질문자",
@@ -40,6 +42,24 @@ def _excerpt(value: object, limit: int) -> str:
     return text[:head] + marker + text[-(body_limit - head):]
 
 
+def _utf8_excerpt(value: object, limit: int) -> str:
+    """Keep both ends of text within an exact UTF-8 byte budget."""
+    text = str(value or "").strip()
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    marker = "\n... [긴 내용 자동 압축] ...\n"
+    marker_bytes = marker.encode("utf-8")
+    if limit <= len(marker_bytes):
+        return encoded[:limit].decode("utf-8", errors="ignore")
+    body_limit = limit - len(marker_bytes)
+    head_limit = (body_limit * 2) // 3
+    tail_limit = body_limit - head_limit
+    head = encoded[:head_limit].decode("utf-8", errors="ignore")
+    tail = encoded[-tail_limit:].decode("utf-8", errors="ignore") if tail_limit else ""
+    return head + marker + tail
+
+
 def source_post_id(request: dict[str, Any]) -> str:
     """Return a stable identifier for legacy and Post-aware Community events."""
     return str(request.get("postId") or f"discussion-{request['discussionId']}-first")
@@ -68,9 +88,9 @@ def build_chat_question(
     prior_turns: Iterable[dict[str, Any]],
     current_question: str,
     *,
-    limit: int = 16000,
+    limit: int = MAX_INPUT_BYTES,
 ) -> str:
-    """Build the Chat support prompt with a guest-OS official-evidence boundary."""
+    """Build a Chat prompt bounded by the downstream embedding UTF-8 limit."""
     instruction = (
         "같은 사용자의 기술지원 대화입니다. 이전 맥락을 유지하되 현재 질문을 우선하고, "
         "DOC, ABLESTACK Diplo 현재 코드, 관련 제품 코드 전체, ABLESTACK Europa 프리뷰를 순서대로 "
@@ -79,18 +99,25 @@ def build_chat_question(
         "게스트 운영체제 절차를 답할 수 있는데 ABLESTACK 버전이나 관리 서버·호스트 로그를 먼저 요구하지 마세요. "
         "정보가 부족하면 기초 답변 뒤에 다음 분기를 판단하는 자료만 구체적으로 요청하세요."
     )
-    current = f"\n\n현재 질문:\n{_excerpt(current_question, min(8000, limit // 2))}"
-    remaining = max(0, limit - len(instruction) - len(current) - len("\n\n이전 대화:\n"))
+    current_prefix = "\n\n현재 질문:\n"
+    history_prefix = "\n\n이전 대화:\n"
+    fixed_bytes = len((instruction + current_prefix + history_prefix).encode("utf-8"))
+    current_budget = max(0, min(limit // 2, limit - fixed_bytes))
+    current = current_prefix + _utf8_excerpt(current_question, current_budget)
+    remaining = max(0, limit - len((instruction + current + history_prefix).encode("utf-8")))
     rows = [
         f"{'사용자' if item.get('role') == 'USER' else '전문 엔지니어'}: "
-        f"{_excerpt(item.get('content'), 2000)}"
+        f"{_utf8_excerpt(item.get('content'), 2000)}"
         for item in list(prior_turns)[-12:]
     ]
-    while rows and len("\n".join(rows)) > remaining:
+    while rows and len("\n".join(rows).encode("utf-8")) > remaining:
         rows.pop(0)
     joined = "\n".join(rows)
-    transcript = f"\n\n이전 대화:\n{joined}" if rows else ""
-    return instruction + transcript + current
+    transcript = history_prefix + joined if rows else ""
+    prompt = instruction + transcript + current
+    if len(prompt.encode("utf-8")) > limit:
+        raise ValueError("Chat prompt exceeds the UTF-8 byte boundary")
+    return prompt
 
 
 def is_resolution_progress_update(value: object) -> bool:

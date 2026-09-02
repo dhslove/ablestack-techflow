@@ -82,6 +82,16 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("진단 검색어:", expanded)
         self.assertIn("restorecon", expanded)
 
+    def test_korean_retrieval_expansion_uses_utf8_byte_limit(self) -> None:
+        question = "Mold 네트워크 생성 요청 실패 " + "한글 대화 문맥 " * 1200
+
+        expanded = expand_retrieval_question(question)
+
+        self.assertLessEqual(len(expanded.encode("utf-8")), 4000)
+        self.assertTrue(expanded.startswith("Mold 네트워크 생성 요청 실패"))
+        self.assertIn("진단 검색어:", expanded)
+        self.assertIn("createNetwork", expanded)
+
     def test_fsfreeze_question_loads_safe_local_platform_guidance(self) -> None:
         question = "새 볼륨을 /mnt에 마운트한 뒤 guest-fsfreeze-freeze Permission denied가 발생합니다."
         results = curated_platform_results(question)

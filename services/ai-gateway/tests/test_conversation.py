@@ -14,6 +14,7 @@ from app.conversation import (
     is_resolution_progress_update,
     resolution_progress_result,
 )
+from app.embedding import MAX_INPUT_BYTES, validate_inputs
 from app.models import CommunityCaseCreateRequest, ComprehensiveQueryRequest, ComprehensiveSynthesisRequest
 from app.responses import COMPREHENSIVE_SYSTEM_POLICY
 
@@ -25,9 +26,27 @@ class ConversationProgressionTest(unittest.TestCase):
             for index in range(12)
         ]
         prompt = build_chat_question(turns, "현재 첨부파일 형식 지원 여부를 확인해 줘.")
-        self.assertLessEqual(len(prompt), 16000)
+        self.assertLessEqual(len(prompt.encode("utf-8")), MAX_INPUT_BYTES)
         self.assertTrue(prompt.endswith("현재 첨부파일 형식 지원 여부를 확인해 줘."))
         self.assertIn("현재 질문:", prompt)
+
+    def test_chat_prompt_compacts_korean_history_by_utf8_bytes(self) -> None:
+        turns = [
+            {
+                "role": "USER" if index % 2 == 0 else "ASSISTANT",
+                "content": f"이전 대화 {index}: " + "가상머신 시간 동기화와 네트워크 오류 확인 " * 18,
+            }
+            for index in range(11)
+        ]
+        self.assertGreater(sum(len(item["content"].encode("utf-8")) for item in turns), MAX_INPUT_BYTES)
+
+        current = "같은 가상머신에서 Linux 시간 동기화 방법도 알려줘."
+        prompt = build_chat_question(turns, current)
+
+        self.assertLessEqual(len(prompt.encode("utf-8")), MAX_INPUT_BYTES)
+        self.assertTrue(prompt.endswith(current))
+        self.assertIn("이전 대화:", prompt)
+        self.assertEqual((prompt,), validate_inputs([prompt]))
 
     def setUp(self) -> None:
         self.turns = [

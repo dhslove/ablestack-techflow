@@ -128,6 +128,27 @@ class Epic4OperationsTest(unittest.TestCase):
         self.assertEqual("COMPLETED", job["state"])
         self.assertEqual(2, job["attemptCount"])
 
+    def test_long_korean_chat_context_completes_without_dead_letter(self) -> None:
+        self.store.open_chat_conversation("7", "engineer")
+        for index in range(10):
+            self.store.record_chat_turn(
+                "7", f"history-{index}", "USER" if index % 2 == 0 else "ASSISTANT",
+                f"이전 대화 {index}: " + "가상머신 시간 동기화와 네트워크 오류 확인 " * 18,
+            )
+
+        response = self.client.post(
+            "/v1/chat/synology/events",
+            content=chat_form("같은 환경에서 Mold 네트워크 생성 오류의 확인 순서를 알려줘.", "utf8-budget"),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("질문을 접수", response.json()["text"])
+        job = next(item for item in self.store._chat_jobs.values() if item["postId"] == "utf8-budget")
+        self.assertEqual("COMPLETED", job["state"])
+        self.assertEqual(1, job["attemptCount"])
+        self.assertNotIn("AI 분석을 완료하지 못했습니다", self.bot.sent[-1][1]["text"])
+
     def test_failure_notified_once_and_recovery_notified_once(self) -> None:
         self.store.upsert_chat_reviewer("19", "ceo")
         fingerprint = hashlib.sha256(b"community-poller:poll").hexdigest()

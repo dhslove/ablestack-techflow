@@ -288,15 +288,22 @@ def _is_specialized_question(question: str) -> bool:
     return bool(feature_source_terms(question))
 
 
+def _utf8_prefix(value: str, limit: int) -> str:
+    """Return the longest safe prefix within an exact UTF-8 byte budget."""
+    return value.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+
+
 def expand_retrieval_question(question: str, *, limit: int = 4000) -> str:
-    """Add implementation vocabulary without changing the user's visible question."""
+    """Add implementation vocabulary within the embedding UTF-8 byte boundary."""
     anchors = list(feature_source_terms(question))
     if not anchors:
-        return question[:limit]
+        return _utf8_prefix(question, limit)
     suffix = f"\n진단 검색어: {' '.join(dict.fromkeys(anchors))}"
-    if len(suffix) >= limit:
+    suffix_bytes = len(suffix.encode("utf-8"))
+    if suffix_bytes >= limit:
         raise ValueError("retrieval anchors must be shorter than the question limit")
-    return f"{question[:limit - len(suffix)].rstrip()}{suffix}"
+    prefix = _utf8_prefix(question, limit - suffix_bytes).rstrip()
+    return f"{prefix}{suffix}"
 
 
 def _relevance_score(question: str, item: dict[str, Any]) -> int:
