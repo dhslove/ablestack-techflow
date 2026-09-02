@@ -297,6 +297,26 @@ class ConversationProgressionTest(unittest.TestCase):
 
         self.assertEqual((), community_actionability_issues(result))
 
+    def test_actionability_gate_keeps_target_context_for_following_exact_units(self) -> None:
+        result = {
+            "state": "ANSWERED",
+            "report": {
+                "recommendedActions": [
+                    "Mold 관리 서버에는 `ssh -p <SSH_PORT> <MANAGEMENT_ADMIN>@<MOLD_MANAGEMENT_IP>`로 접속하고 관리자 권한을 사용합니다.",
+                    "같은 시간 범위에 `sudo journalctl -u mold.service --since '<전>' --until '<후>' --no-pager`와 "
+                    "`/var/log/cloudstack/management/management-server.log`를 확인합니다. 오류 없이 상태를 반환하면 정상 기준입니다.",
+                    "각 대상 호스트에는 `ssh -p <SSH_PORT> <HOST_ADMIN>@<HOST_MANAGEMENT_IP>`로 접속합니다.",
+                    "대상 호스트의 `sudo journalctl -u mold-agent.service --since '<전>' --until '<후>' --no-pager`와 "
+                    "`sudo virsh -c qemu:///system list --all`을 확인합니다. 오류 없이 VM 목록이 나오면 정상 기준입니다.",
+                ],
+                "unknowns": [
+                    "BMC 암호, API Key, Token, Cookie와 내부 IP를 일관된 별칭으로 마스킹하십시오."
+                ],
+            },
+        }
+
+        self.assertEqual((), community_actionability_issues(result))
+
     def test_actionability_retry_lists_missing_contract_items(self) -> None:
         prompt = build_progression_retry_question(
             "호스트 HA 상태 확인",

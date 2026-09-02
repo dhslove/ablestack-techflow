@@ -674,7 +674,10 @@ def format_public_answer(result: dict[str, Any]) -> str | None:
     if artifact_findings:
         lines.extend(["", "첨부해 주신 자료에서는 다음 내용을 확인했습니다."])
         lines.extend(f"- {value}" for value in artifact_findings[:3])
-    if report.get("currentAssessment") == "CURRENT_RUNTIME_ISSUE":
+    runtime_context = " ".join([summary, *diagnoses]).casefold()
+    if report.get("currentAssessment") == "CURRENT_RUNTIME_ISSUE" and any(
+        marker in runtime_context for marker in ("qemu", "vnc", "콘솔 연결")
+    ):
         lines.extend([
             "",
             "현재 자료로는 ABLESTACK 제품 코드의 오류라기보다 가상화 프로그램이 일시적으로 정상 상태를 잃은 문제에 가깝습니다.",

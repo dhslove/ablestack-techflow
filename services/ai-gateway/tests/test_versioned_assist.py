@@ -373,6 +373,24 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("```powershell\nGet-Service QEMU-GA\n```", answer)
         self.assertNotIn("`sudo ausearch", answer)
 
+    def test_ha_runtime_assessment_does_not_become_a_generic_qemu_claim(self) -> None:
+        answer = format_public_answer({
+            "state": "ANSWERED",
+            "report": {
+                "summary": "호스트 HA 상태가 Degraded입니다.",
+                "observedFacts": [],
+                "diagnoses": [{"title": "HA Activity Check가 정상 완료되지 않았을 가능성"}],
+                "recommendedActions": ["Mold에서 HA.STATE.TRANSITION 이벤트를 확인합니다."],
+                "unknowns": [],
+                "currentAssessment": "CURRENT_RUNTIME_ISSUE",
+                "previewAssessment": "NOT_APPLICABLE",
+                "previewGuidance": None,
+            },
+            "citations": [],
+        }) or ""
+
+        self.assertNotIn("가상화 프로그램이 일시적으로 정상 상태를 잃은 문제", answer)
+
     def test_public_projection_removes_all_external_urls(self) -> None:
         answer = sanitize_public_text(
             "공식 자료 https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html 를 확인합니다.",

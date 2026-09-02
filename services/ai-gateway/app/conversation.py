@@ -428,10 +428,20 @@ def community_actionability_issues(result: dict[str, Any]) -> tuple[str, ...]:
         marker in text for marker in ("콘솔로 접속", "콘솔 또는 SSH", "터미널에 접속")
     ):
         issues.append("missing-access-example")
-    target_markers = (
-        "관리 서버", "KVM 호스트", "호스트에서", "같은 호스트", "해당 호스트", "가상머신 안", "게스트에서",
-    )
-    if has_linux_operation and any(not any(marker in row for marker in target_markers) for row in operation_rows):
+    target_markers = ("관리 서버", "KVM 호스트", "호스트에서", "같은 호스트", "해당 호스트", "가상머신 안", "게스트에서")
+
+    def has_execution_target(row: str) -> bool:
+        if any(marker in row for marker in target_markers):
+            return True
+        folded = row.casefold()
+        if "mold.service" in folded and "관리 서버" in text:
+            return True
+        host_commands = ("mold-agent.service", "libvirtd.service", "virtqemud.service", "virsh ")
+        return any(command in folded for command in host_commands) and any(
+            marker in text for marker in ("KVM 호스트", "대상 호스트", "호스트에서")
+        )
+
+    if has_linux_operation and any(not has_execution_target(row) for row in operation_rows):
         issues.append("missing-execution-target")
     if not any(marker in lowered for marker in ("sudo", "root", "관리자 권한")):
         issues.append("missing-required-role")
