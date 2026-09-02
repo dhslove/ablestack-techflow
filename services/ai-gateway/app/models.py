@@ -206,6 +206,14 @@ class CommunityCaseCreateRequest(StrictModel):
     post_author_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.:@-]{1,128}$")] | None = Field(default=None, alias="postAuthorId")
     turn_role: Literal["REQUESTER", "STAFF", "ASSISTANT"] = Field(default="REQUESTER", alias="turnRole")
     response_requested: bool = Field(default=True, alias="responseRequested")
+    response_reason: Literal[
+        "REQUESTER_AUTO",
+        "ASSISTANT_SELF",
+        "EXPLICIT_AI_REQUEST",
+        "STAFF_RECORDED",
+        "PARTICIPANT_RECORDED",
+        "RESOLUTION_SYNC",
+    ] = Field(default="REQUESTER_AUTO", alias="responseReason")
     resolution_only: bool = Field(default=False, alias="resolutionOnly")
     best_answer_post_id: Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]{0,18}$")] | None = Field(default=None, alias="bestAnswerPostId")
     best_answer_user_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.:@-]{1,128}$")] | None = Field(default=None, alias="bestAnswerUserId")

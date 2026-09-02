@@ -206,6 +206,25 @@ class ConversationProgressionTest(unittest.TestCase):
         self.assertIn("새 디스크를 마운트한 뒤 오류가 발생합니다", prompt)
         self.assertIn("독립된 ```bash 코드 블록", prompt)
 
+    def test_requester_followup_keeps_prior_staff_guidance_in_context(self) -> None:
+        prior_turns = [
+            *self.turns,
+            {
+                "sourcePostId": "379", "postNumber": 3, "role": "STAFF",
+                "content": "관리자가 네트워크 오퍼링 태그를 먼저 확인하라고 안내했습니다.",
+                "artifactIds": [],
+            },
+        ]
+        incoming = {
+            "discussionId": "167", "postId": "380", "postNumber": 4,
+            "turnRole": "REQUESTER", "question": "태그를 맞췄지만 요청 실패가 계속됩니다.",
+        }
+
+        prompt = build_conversation_question("네트워크 생성 오류", prior_turns, incoming)
+
+        self.assertIn("관리자가 네트워크 오퍼링 태그를 먼저 확인", prompt)
+        self.assertIn("태그를 맞췄지만 요청 실패가 계속", prompt)
+
     def test_repeated_generic_checklist_does_not_advance_follow_up(self) -> None:
         repeated = "QEMU Guest Agent 상태와 마운트 정보, SELinux 로그를 확인해 주세요."
         result = {"report": {"recommendedActions": [repeated], "unknowns": [repeated]}}

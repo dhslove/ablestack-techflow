@@ -216,6 +216,9 @@ services:
       TECHFLOW_FLARUM_PUBLIC_URL: ${TECHFLOW_FLARUM_PUBLIC_URL:-https://community.ablecloud.io}
       TECHFLOW_FLARUM_API_KEY_FILE: /run/secrets/flarum_api_key
       TECHFLOW_FLARUM_ASSISTANT_USER_ID_FILE: /run/secrets/flarum_assistant_user_id
+      TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE: /run/secrets/flarum_solution_selector_user_id
+      TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS: ${TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS:-}
+      TECHFLOW_FLARUM_SUPPORT_USER_IDS: ${TECHFLOW_FLARUM_SUPPORT_USER_IDS:-}
       TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE: /run/secrets/community_ingest_webhook
       TECHFLOW_COMMUNITY_POLL_INTERVAL_SECONDS: ${TECHFLOW_COMMUNITY_POLL_INTERVAL_SECONDS:-10}
       TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS: ${TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS:-180}
@@ -235,6 +238,7 @@ services:
     secrets:
       - flarum_api_key
       - flarum_assistant_user_id
+      - flarum_solution_selector_user_id
       - community_ingest_webhook
     networks:
       rag_edge:

@@ -92,6 +92,39 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(self.payload()["question"], turns[0]["content"])
         self.assertNotIn("[첨부 처리 안내]", turns[0]["content"])
 
+    def test_staff_reply_is_recorded_without_creating_an_ai_draft(self) -> None:
+        store = MemoryStore()
+        client = TestClient(create_app(Settings(), store))
+        created = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "community-staff-silence-first"},
+            json={**self.payload(), "postId": "100", "postNumber": 1},
+        )
+        self.assertEqual(201, created.status_code, created.text)
+        case = created.json()["data"]
+
+        response = client.post(
+            "/v1/community/cases",
+            headers={**HEADERS, "Idempotency-Key": "community-staff-silence-second"},
+            json={
+                **self.payload(),
+                "question": "관리자가 질문자에게 직접 안내했습니다.",
+                "postId": "101", "postNumber": 2, "postAuthorId": "7",
+                "turnRole": "STAFF", "responseRequested": False,
+                "responseReason": "STAFF_RECORDED",
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        result = response.json()["data"]
+        self.assertEqual(1, result["draftVersion"])
+        self.assertEqual("101", result["lastSeenPostId"])
+        self.assertTrue(result["turnCreated"])
+        self.assertEqual(["100", "101"], [item["sourcePostId"] for item in store.list_community_turns("901")])
+        events = store.list_community_case_events(UUID(case["caseId"]), 10)
+        recorded = next(item for item in events if item["eventType"] == "TURN_RECORDED")
+        self.assertEqual("STAFF_RECORDED", recorded["details"]["responseReason"])
+
     def test_edited_answer_can_be_approved_but_disabled_publish_fails_closed(self) -> None:
         client = TestClient(create_app(Settings(), MemoryStore()))
         case = client.post("/v1/community/cases", headers=HEADERS, json=self.payload()).json()["data"]

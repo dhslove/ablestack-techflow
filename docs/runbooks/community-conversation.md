@@ -2,15 +2,16 @@
 
 ## 1. 정상 처리 흐름
 
-1. 질문자 또는 다른 참여자가 Discussion이나 후속 댓글을 등록한다.
+1. 질문자가 Discussion이나 후속 댓글을 등록한다.
 2. Poller가 새 Post와 이미지·로그·압축 로그를 수집한다.
 3. AI Gateway가 기존 대화, ABLESTACK 문서와 코드, 승인된 플랫폼 자료를 함께 분석한다. 로컬 공식 자료가 없거나 오래된 경우에만 제품별 공식 도메인을 제한 검색한다.
 4. `TechFlow-Assistant`가 이해하기 쉬운 대화체 답변을 바로 공개한다.
 5. Chat Bot이 게시 결과와 Community 링크를 담당자에게 알린다.
-6. 사람 참여자가 추가 정보나 후속 질문을 올리면 같은 Case에서 분석과 답변을 반복한다. `TechFlow-Assistant` 자신의 Post는 재응답하지 않는다.
-7. 최초 질문자 또는 운영 설정에 등록된 Community 관리자가 Best Answer를 선택하면 해당 답변 중심의 Knowledge Base 최종본을 게시한다.
-8. KB 공개를 확인한 뒤 해당 KB Post를 최종 Best Answer로 지정하고 Flarum 재조회 결과가 일치하는지 확인한다.
-9. 해결 표시가 해제되거나 후속 질문이 생기면 같은 Case를 다시 연다.
+6. 질문자가 추가 정보나 후속 질문을 올리면 같은 Case에서 분석과 답변을 반복한다. `TechFlow-Assistant` 자신의 Post는 재응답하지 않는다.
+7. 관리자·지원 담당자와 일반 참여자의 댓글은 대화 문맥에만 저장하고 자동 답변하지 않는다. AI 검토가 필요하면 인용문이나 코드 블록 밖에서 `@TechFlow-Assistant 검토해 주세요` 또는 줄 시작 `/ai`로 명시적으로 요청한다.
+8. 최초 질문자 또는 운영 설정에 등록된 Community 관리자가 Best Answer를 선택하면 해당 답변 중심의 Knowledge Base 최종본을 게시한다.
+9. KB 공개를 확인한 뒤 해당 KB Post를 최종 Best Answer로 지정하고 Flarum 재조회 결과가 일치하는지 확인한다.
+10. 해결 표시가 해제되거나 질문자의 후속 질문이 생기면 같은 Case를 다시 연다.
 
 진행 중 답변에는 고정된 문서 형식을 강제하지 않는다. 해결 후 KB에만 `증상`, `원인`, `해결 방법`, `추가 고려사항`, `적용 버전`을 사용하며 별도 제목은 붙이지 않는다.
 
@@ -147,11 +148,13 @@ TECHFLOW_COMMUNITY_PUBLISH_ENABLED=true
 TECHFLOW_COMMUNITY_REVIEW_POST_ENABLED=false
 TECHFLOW_COMMUNITY_AUTO_PUBLISH_ENABLED=true
 TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE=/run/secrets/flarum_solution_selector_user_id
+TECHFLOW_FLARUM_SUPPORT_USER_IDS=7,13
 ```
 
 5. `TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_SECRET_FILE`은 Best Answer 변경 권한이 있는 Flarum 관리자 ID 파일을 가리키게 한다. 시험 서버에서는 검증된 관리자 User 1을 사용한다.
-6. 추가 관리자가 있다면 `.env`의 `TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS`에 Flarum User ID를 쉼표로 구분해 설정한다. 최종 KB selector User ID는 자동으로 관리자에 포함된다.
-7. Windows와 Linux에서 동일한 LF 기반 소스 패키지를 생성한다. Windows Git의 전역 `core.autocrlf=true`가 `git archive` 결과를 CRLF로 변환할 수 있으므로 일반 `git archive`를 직접 사용하지 않는다.
+6. 추가 해결 관리자가 있다면 `.env`의 `TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS`에 Flarum User ID를 쉼표로 구분해 설정한다. 최종 KB selector User ID는 자동으로 관리자에 포함된다.
+7. 답변을 직접 제공하는 지원 담당자는 `TECHFLOW_FLARUM_SUPPORT_USER_IDS`에 등록한다. 해결 관리자와 최종 KB selector는 자동으로 지원 담당자 집합에도 포함되므로 중복 등록하지 않아도 된다. 이 값은 응답 억제 사유를 구분하기 위한 신뢰된 서버 설정이며, 등록되지 않은 일반 참여자의 댓글도 기본적으로 AI를 호출하지 않는다.
+8. Windows와 Linux에서 동일한 LF 기반 소스 패키지를 생성한다. Windows Git의 전역 `core.autocrlf=true`가 `git archive` 결과를 CRLF로 변환할 수 있으므로 일반 `git archive`를 직접 사용하지 않는다.
 
 ```bash
 python tools/package_ai_gateway.py \
@@ -159,10 +162,10 @@ python tools/package_ai_gateway.py \
   --output tmp/ai-gateway-release.tar.gz
 ```
 
-8. 패키지 안의 모든 `*.sh`에 CRLF가 없는지 확인한 뒤 Gateway와 Poller만 0.14.10 이상 이미지로 교체한다. `/usr/bin/env: sh\r: No such file or directory`가 나타나면 새 이미지를 배포하지 말고 패키징 단계부터 다시 수행한다.
-9. Health에서 `version=0.14.10` 이상, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
-10. `.env`에 `TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED=true`를 설정하고 공식 도메인 제한 실호출을 검증한다.
-11. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
+9. 패키지 안의 모든 `*.sh`에 CRLF가 없는지 확인한 뒤 Gateway와 Poller만 0.16.8 이상 이미지로 교체한다. `/usr/bin/env: sh\r: No such file or directory`가 나타나면 새 이미지를 배포하지 말고 패키징 단계부터 다시 수행한다.
+10. Health에서 `version=0.16.8` 이상, `provider=openai`, `database=ready`, `vector=ready`를 확인한다.
+11. `.env`에 `TECHFLOW_OFFICIAL_WEB_SEARCH_ENABLED=true`를 설정하고 공식 도메인 제한 실호출을 검증한다.
+12. 기존 GitHub-to-Chat Event Gateway는 재시작·재배포·설정 변경하지 않는다.
 
 OpenAI 시험 환경에서는 재생성 명령에 `compose.openai.override.yml`을 반드시 포함한다. 기본 `compose.yml`만 사용하면 Gateway가 안전 기본값인 Mock Provider로 기동한다.
 
@@ -179,7 +182,9 @@ docker compose --env-file .env \
 | 답변 생성 후 공개되지 않음 | `community_answer_auto_publish_failed`, Flarum Post 상태 | API 권한과 Assistant ID를 확인하고 동일 Post 이벤트 재시도 |
 | 같은 답변이 중복 게시됨 | 본문 Marker와 Case Draft Version | Marker 검색 권한과 Post 조회 범위 확인 |
 | 후속 답변이 같은 점검을 반복함 | `community_answer_progression_retry`, `community_answer_progression_rejected` | 최신 사용자 Turn이 저장됐는지 확인하고, 근거 Context에 구체적인 다음 단계가 있는지 점검 |
-| 다른 참여자의 후속 댓글에 답하지 않음 | Poller의 `turnRole`, `responseRequested`, `seenPosts` | 사람 글은 `REQUESTER` 또는 `STAFF`이고 `responseRequested=true`인지, Assistant 글만 false인지 확인 |
+| 관리자 답변 뒤 AI가 다시 답변함 | Poller의 `turnRole`, `responseRequested`, `responseReason` | 관리자의 일반 답변은 `STAFF`, `false`, `STAFF_RECORDED`인지 확인하고 지원 담당자 ID 설정을 점검 |
+| 관리자가 AI 검토를 요청했지만 답변하지 않음 | 최신 Post의 HTML과 `responseReason` | 인용문·코드 밖에서 `@TechFlow-Assistant` 또는 줄 시작 `/ai`를 사용했는지 확인 |
+| 일반 참여자 댓글 뒤 AI가 다시 답변함 | Poller의 `responseRequested`, `responseReason` | 일반 참여자는 `false`, `PARTICIPANT_RECORDED`가 정상이며 명시 호출만 `EXPLICIT_AI_REQUEST`인지 확인 |
 | 명령이 설명 문장 안에 섞임 | 공개 Post의 HTML `<pre><code class="language-bash">` | AI Gateway 0.14.4 이상인지 확인하고, 코드 블록 수와 인라인 CLI가 없는지 점검 |
 | 긴 대화의 Activepieces HTTP 단계가 `ValidationError`로 실패 | Gateway `request_failed`, Conversation·검색 확장 길이 | AI Gateway 0.14.5 이상인지 확인한다. 실패 Post가 Poller 체크포인트에 이미 있으면 기존 Community Webhook으로 해당 이벤트를 한 번 재전달하고 HTTP 201과 새 Assistant Post를 확인한다. |
 | 해결 표시 후 Activepieces HTTP 단계가 `ValidationError`로 실패 | KB 종합 Prompt 길이, `knowledgeBaseSourcePostId` | AI Gateway 0.14.6 이상인지 확인한다. 일반 질의 4,000자와 내부 KB 종합 16,000자 계약이 분리됐는지 확인하고 동일 해결 이벤트를 재시도한다. 기존 해결 Post는 원본으로 유지한다. |

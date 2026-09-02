@@ -1,5 +1,14 @@
 # TechFlow AI Gateway
 
+## v0.16.8 구현 범위
+
+- 질문자 Post만 기본 AI 응답 대상으로 유지
+- 관리자·지원 담당자와 일반 참여자 Post는 Conversation 문맥에 기록하되 자동 답변 억제
+- `@TechFlow-Assistant` 또는 줄 시작 `/ai`가 있을 때만 비질문자 Post의 AI 응답 허용
+- 인용문·코드 블록 안의 AI 호출 문자열은 명시 호출 판정에서 제외
+- 응답 판정 사유를 Community Case 감사 이벤트에 기록
+- 해결 관리자·최종 KB selector·지원 담당자 ID를 신뢰된 지원 ID 집합으로 통합
+
 ## v0.16.7 구현 범위
 
 - Community 후속 댓글의 영문 제품 식별자를 이전 TechFlow 답변과 비교해 단일 오타 후보 탐지

@@ -33,14 +33,20 @@ class ContentParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.text: list[str] = []
+        self.actionable_text: list[str] = []
         self.links: list[str] = []
         self.attachment_reference_count = 0
+        self._non_actionable_depth = 0
 
     def handle_data(self, data: str) -> None:
         if data.strip():
             self.text.append(data.strip())
+            if self._non_actionable_depth == 0:
+                self.actionable_text.append(data.strip())
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() in {"blockquote", "code", "pre"}:
+            self._non_actionable_depth += 1
         attributes = dict(attrs)
         href = attributes.get("href") if tag == "a" else None
         class_names = (attributes.get("class") or "").casefold()
@@ -64,6 +70,42 @@ class ContentParser(HTMLParser):
         for candidate in candidates:
             if candidate and candidate not in self.links:
                 self.links.append(candidate)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() in {"blockquote", "code", "pre"} and self._non_actionable_depth:
+            self._non_actionable_depth -= 1
+
+
+_AI_MENTION = re.compile(r"(?<![A-Za-z0-9_.-])@(?:TechFlow-Assistant|TechFlowAssist)\b", re.IGNORECASE)
+_AI_COMMAND = re.compile(r"(?im)^\s*/ai(?:\s|$)")
+_SAFE_FLARUM_USER_ID = re.compile(r"^[A-Za-z0-9_.:@-]{1,128}$")
+
+
+def explicit_ai_response_requested(text_parts: list[str]) -> bool:
+    """Return true only for an explicit AI request outside quotes and code blocks."""
+    text = "\n".join(text_parts)
+    return bool(_AI_MENTION.search(text) or _AI_COMMAND.search(text))
+
+
+def configured_support_user_ids() -> set[str]:
+    """Load trusted support identities without accepting an inbound role claim."""
+    identities: set[str] = set()
+    for name in ("TECHFLOW_FLARUM_SUPPORT_USER_IDS", "TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS"):
+        for value in os.getenv(name, "").split(","):
+            candidate = value.strip()
+            if not candidate:
+                continue
+            if not _SAFE_FLARUM_USER_ID.fullmatch(candidate):
+                raise RuntimeError(f"{name} contains an invalid Flarum user ID")
+            identities.add(candidate)
+    selector_file = os.getenv("TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE")
+    if selector_file:
+        candidate = Path(selector_file).read_text(encoding="utf-8").strip()
+        if candidate:
+            if not _SAFE_FLARUM_USER_ID.fullmatch(candidate):
+                raise RuntimeError("TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE contains an invalid Flarum user ID")
+            identities.add(candidate)
+    return identities
 
 
 def read_secret(name: str) -> str:
@@ -281,8 +323,14 @@ def normalize_discussions(payload: dict, base_url: str) -> list[dict]:
     return discussions
 
 
-def normalize_posts(discussion: dict, payload: dict, assistant_user_id: str | None = None) -> list[dict]:
+def normalize_posts(
+    discussion: dict,
+    payload: dict,
+    assistant_user_id: str | None = None,
+    support_user_ids: set[str] | None = None,
+) -> list[dict]:
     included = {(item["type"], item["id"]): item for item in payload.get("included") or []}
+    trusted_support_ids = support_user_ids or set()
     events: list[dict] = []
     for post in payload.get("data") or []:
         attrs = post.get("attributes") or {}
@@ -291,22 +339,37 @@ def normalize_posts(discussion: dict, payload: dict, assistant_user_id: str | No
         user_ref = (((post.get("relationships") or {}).get("user") or {}).get("data") or {})
         user = included.get((user_ref.get("type"), user_ref.get("id")), {})
         post_author = str(user_ref.get("id") or (user.get("attributes") or {}).get("username") or "unknown")
-        if assistant_user_id and post_author == assistant_user_id:
-            role = "ASSISTANT"
-        elif post_author == discussion["authorId"]:
-            role = "REQUESTER"
-        else:
-            role = "STAFF"
         parser = ContentParser()
         parser.feed(attrs.get("contentHtml") or "")
+        explicit_request = explicit_ai_response_requested(parser.actionable_text)
+        if assistant_user_id and post_author == assistant_user_id:
+            role = "ASSISTANT"
+            response_requested = False
+            response_reason = "ASSISTANT_SELF"
+        elif post_author == discussion["authorId"]:
+            role = "REQUESTER"
+            response_requested = True
+            response_reason = "REQUESTER_AUTO"
+        else:
+            # The persisted schema keeps every non-requester human as STAFF.
+            # Their content still advances the conversation context, but only
+            # an explicit request may ask the assistant to publish a reply.
+            role = "STAFF"
+            response_requested = explicit_request
+            response_reason = (
+                "EXPLICIT_AI_REQUEST"
+                if explicit_request
+                else "STAFF_RECORDED"
+                if post_author in trusted_support_ids
+                else "PARTICIPANT_RECORDED"
+            )
         events.append({
             "discussionId": discussion["discussionId"], "discussionUrl": discussion["discussionUrl"],
             "title": discussion["title"], "question": "\n".join(parser.text)[:4000],
             "authorId": discussion["authorId"], "postAuthorId": post_author,
             "postId": str(post["id"]), "postNumber": int(attrs.get("number") or 1),
-            # Every human participant can advance a support conversation. The
-            # assistant is the only author that must never trigger itself.
-            "turnRole": role, "responseRequested": role != "ASSISTANT",
+            "turnRole": role, "responseRequested": response_requested,
+            "responseReason": response_reason,
             "resolutionOnly": False, "tagSlugs": discussion["tagSlugs"],
             "attachmentUrls": parser.links[:5],
             # Internal poller-only evidence. upload_artifacts removes this key
@@ -370,7 +433,8 @@ def resolution_event(discussion: dict) -> dict:
         "title": discussion["title"], "question": "Community 해결 상태가 변경되었습니다.",
         "authorId": discussion["authorId"], "postAuthorId": discussion["authorId"],
         "postId": discussion.get("bestAnswerPostId") or discussion.get("firstPostId"), "postNumber": 1,
-        "turnRole": "REQUESTER", "responseRequested": False, "resolutionOnly": True,
+        "turnRole": "REQUESTER", "responseRequested": False,
+        "responseReason": "RESOLUTION_SYNC", "resolutionOnly": True,
         "bestAnswerPostId": discussion.get("bestAnswerPostId"),
         "bestAnswerUserId": discussion.get("bestAnswerUserId"),
         "bestAnswerSetAt": discussion.get("bestAnswerSetAt"),
@@ -554,6 +618,7 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
         assistant_user_id = Path(assistant_user_id_file).read_text(encoding="utf-8").strip()
         if assistant_user_id.isdigit():
             token = f"{token}; userId={assistant_user_id}"
+    support_user_ids = configured_support_user_ids()
     webhook = read_secret("TECHFLOW_COMMUNITY_INGEST_WEBHOOK_FILE")
     gateway_confirm_timeout = _bounded_env_int(
         "TECHFLOW_COMMUNITY_GATEWAY_CONFIRM_TIMEOUT_SECONDS", 180, 10, 1800
@@ -620,7 +685,12 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
             )
             discussion_failed = False
             discussion_waiting = False
-            events = normalize_posts(discussion, request_json(posts_url, token=token), assistant_user_id)
+            events = normalize_posts(
+                discussion,
+                request_json(posts_url, token=token),
+                assistant_user_id,
+                support_user_ids,
+            )
             gateway_case = None
             if not bootstrap_current and any(item["postId"] not in seen_posts for item in events):
                 gateway_case = get_gateway_case_if_exists(gateway_url, discussion_id)

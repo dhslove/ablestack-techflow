@@ -810,7 +810,11 @@ class MemoryStore:
                 self._community_events.append({
                     "caseId": case_id, "eventType": "CONVERSATION_REOPENED" if was_resolved else "FOLLOWUP_DRAFT_CREATED",
                     "actor": "techflow", "createdAt": value["updatedAt"],
-                    "details": {"sourcePostId": turn["sourcePostId"], "draftVersion": value["draftVersion"]},
+                    "details": {
+                        "sourcePostId": turn["sourcePostId"],
+                        "draftVersion": value["draftVersion"],
+                        "responseReason": request.get("responseReason") or "REQUESTER_AUTO",
+                    },
                 })
                 result = self._remember("create_community_case", idempotency_key, value)
                 result.update(created=False, turnCreated=True)
@@ -844,7 +848,11 @@ class MemoryStore:
             }]
             self._community_events.append({
                 "caseId": case_id, "eventType": "DRAFT_CREATED", "actor": "techflow",
-                "createdAt": value["createdAt"], "details": {"answerState": value["answerState"]},
+                "createdAt": value["createdAt"],
+                "details": {
+                    "answerState": value["answerState"],
+                    "responseReason": request.get("responseReason") or "REQUESTER_AUTO",
+                },
             })
             result = self._remember("create_community_case", idempotency_key, value)
             result["created"] = True
@@ -952,7 +960,10 @@ class MemoryStore:
             self._community_events.append({
                 "caseId": case_id, "eventType": "CONVERSATION_REOPENED" if reopened else "TURN_RECORDED",
                 "actor": turn["role"].lower(), "createdAt": value["updatedAt"],
-                "details": {"sourcePostId": post_id},
+                "details": {
+                    "sourcePostId": post_id,
+                    "responseReason": request.get("responseReason") or "STAFF_RECORDED",
+                },
             })
             result = self._remember("record_community_turn", idempotency_key, value)
             result["turnCreated"] = True

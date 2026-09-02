@@ -26,6 +26,7 @@
             "postAuthorId": "{{trigger['output']['body']['postAuthorId']}}",
             "turnRole": "{{trigger['output']['body']['turnRole']}}",
             "responseRequested": "{{trigger['output']['body']['responseRequested']}}",
+            "responseReason": "{{trigger['output']['body']['responseReason']}}",
             "resolutionOnly": "{{trigger['output']['body']['resolutionOnly']}}",
             "bestAnswerPostId": "{{trigger['output']['body']['bestAnswerPostId']}}",
             "bestAnswerUserId": "{{trigger['output']['body']['bestAnswerUserId']}}",

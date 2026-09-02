@@ -81,7 +81,7 @@ class CommunityPollerTests(unittest.TestCase):
             events[0]["attachmentUrls"],
         )
 
-    def test_followup_posts_are_role_aware_and_human_driven(self) -> None:
+    def test_followup_posts_are_role_aware_and_only_requester_is_automatic(self) -> None:
         discussion = {
             "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
             "title": "질문", "authorId": "7", "tagSlugs": ["mold"], "firstPostId": "100",
@@ -96,10 +96,85 @@ class CommunityPollerTests(unittest.TestCase):
             {"type": "posts", "id": "103", "attributes": {"number": 4, "contentHtml": "<p>다른 참여자의 후속 질문</p>"},
              "relationships": {"user": {"data": {"type": "users", "id": "13"}}}},
         ]}
-        events = poll_flarum.normalize_posts(discussion, payload, "40")
+        events = poll_flarum.normalize_posts(discussion, payload, "40", {"13"})
         self.assertEqual(["REQUESTER", "ASSISTANT", "REQUESTER", "STAFF"], [item["turnRole"] for item in events])
-        self.assertEqual([True, False, True, True], [item["responseRequested"] for item in events])
+        self.assertEqual([True, False, True, False], [item["responseRequested"] for item in events])
+        self.assertEqual(
+            ["REQUESTER_AUTO", "ASSISTANT_SELF", "REQUESTER_AUTO", "STAFF_RECORDED"],
+            [item["responseReason"] for item in events],
+        )
         self.assertEqual(["100", "101", "102", "103"], [item["postId"] for item in events])
+
+    def test_staff_can_explicitly_request_ai_with_mention_or_command(self) -> None:
+        discussion = {
+            "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
+            "title": "질문", "authorId": "7", "tagSlugs": ["mold"], "firstPostId": "100",
+        }
+        payload = {"data": [
+            {"type": "posts", "id": "103", "attributes": {
+                "number": 4, "contentHtml": "<p>@TechFlow-Assistant 이 답변을 검토해 주세요.</p>"
+            }, "relationships": {"user": {"data": {"type": "users", "id": "13"}}}},
+            {"type": "posts", "id": "104", "attributes": {
+                "number": 5, "contentHtml": "<p>/ai 로그를 함께 분석해 주세요.</p>"
+            }, "relationships": {"user": {"data": {"type": "users", "id": "14"}}}},
+        ]}
+
+        events = poll_flarum.normalize_posts(discussion, payload, "40", {"13"})
+
+        self.assertEqual([True, True], [item["responseRequested"] for item in events])
+        self.assertEqual(["EXPLICIT_AI_REQUEST", "EXPLICIT_AI_REQUEST"], [item["responseReason"] for item in events])
+
+    def test_mentions_inside_quote_or_code_do_not_request_ai(self) -> None:
+        discussion = {
+            "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
+            "title": "질문", "authorId": "7", "tagSlugs": ["mold"], "firstPostId": "100",
+        }
+        payload = {"data": [{
+            "type": "posts", "id": "103", "attributes": {
+                "number": 4,
+                "contentHtml": (
+                    "<blockquote><p>@TechFlow-Assistant 검토해 주세요.</p></blockquote>"
+                    "<pre><code>/ai 다시 답변해 주세요.</code></pre>"
+                    "<p>관리자가 직접 안내한 내용입니다.</p>"
+                ),
+            }, "relationships": {"user": {"data": {"type": "users", "id": "13"}}},
+        }]}
+
+        event = poll_flarum.normalize_posts(discussion, payload, "40", {"13"})[0]
+
+        self.assertFalse(event["responseRequested"])
+        self.assertEqual("STAFF_RECORDED", event["responseReason"])
+        self.assertIn("@TechFlow-Assistant", event["question"])
+
+    def test_unverified_participant_is_recorded_without_ai_response(self) -> None:
+        discussion = {
+            "discussionId": "10", "discussionUrl": "https://community.ablecloud.io/d/10",
+            "title": "질문", "authorId": "7", "tagSlugs": ["mold"], "firstPostId": "100",
+        }
+        payload = {"data": [{
+            "type": "posts", "id": "103",
+            "attributes": {"number": 4, "contentHtml": "<p>비슷한 경험이 있습니다.</p>"},
+            "relationships": {"user": {"data": {"type": "users", "id": "77"}}},
+        }]}
+
+        event = poll_flarum.normalize_posts(discussion, payload, "40", {"13"})[0]
+
+        self.assertFalse(event["responseRequested"])
+        self.assertEqual("PARTICIPANT_RECORDED", event["responseReason"])
+
+    def test_support_id_configuration_unions_admin_and_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            selector_file = Path(directory) / "selector"
+            selector_file.write_text("1", encoding="utf-8")
+            environment = {
+                "TECHFLOW_FLARUM_SUPPORT_USER_IDS": "7, support-user",
+                "TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS": "8,7",
+                "TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE": str(selector_file),
+            }
+            with patch.dict(os.environ, environment, clear=True):
+                identities = poll_flarum.configured_support_user_ids()
+
+        self.assertEqual({"1", "7", "8", "support-user"}, identities)
 
     def test_legacy_followup_includes_prior_text_and_prioritizes_current_attachments(self) -> None:
         events = [

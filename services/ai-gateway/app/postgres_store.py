@@ -1206,7 +1206,11 @@ class PostgresStore:
                        (id,case_id,event_type,actor,idempotency_key,correlation_id,details)
                        VALUES (%s,%s,%s,'techflow',%s,%s,%s)""",
                     (uuid4(), row["id"], "CONVERSATION_REOPENED" if was_resolved else "FOLLOWUP_DRAFT_CREATED",
-                     idempotency_key, correlation_id, json.dumps({"sourcePostId": post_id, "draftVersion": draft_version})),
+                     idempotency_key, correlation_id, json.dumps({
+                         "sourcePostId": post_id,
+                         "draftVersion": draft_version,
+                         "responseReason": request.get("responseReason") or "REQUESTER_AUTO",
+                     })),
                 )
                 result = self._community_payload(updated)
                 result.update(created=False, turnCreated=True)
@@ -1242,7 +1246,10 @@ class PostgresStore:
             )
             connection.execute(
                 "INSERT INTO community_case_event (id,case_id,event_type,actor,correlation_id,details) VALUES (%s,%s,'DRAFT_CREATED','techflow',%s,%s)",
-                (uuid4(), case_id, correlation_id, json.dumps({"answerState": draft.get("answerState")})),
+                (uuid4(), case_id, correlation_id, json.dumps({
+                    "answerState": draft.get("answerState"),
+                    "responseReason": request.get("responseReason") or "REQUESTER_AUTO",
+                })),
             )
             result = self._community_payload(row)
             result["created"] = True
@@ -1373,7 +1380,10 @@ class PostgresStore:
                    VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (uuid4(), row["id"], "CONVERSATION_REOPENED" if reopened else "TURN_RECORDED",
                  (request.get("turnRole") or "STAFF").lower(), idempotency_key, correlation_id,
-                 json.dumps({"sourcePostId": post_id})),
+                 json.dumps({
+                     "sourcePostId": post_id,
+                     "responseReason": request.get("responseReason") or "STAFF_RECORDED",
+                 })),
             )
             result = self._community_payload(updated)
             result["turnCreated"] = True

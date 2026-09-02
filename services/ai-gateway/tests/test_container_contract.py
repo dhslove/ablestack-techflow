@@ -16,6 +16,9 @@ MAIN = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 ARTIFACTS = (ROOT / "app" / "artifacts.py").read_text(encoding="utf-8")
 GITATTRIBUTES = (REPO / ".gitattributes").read_text(encoding="utf-8")
 POLLER = (ROOT / "scripts" / "poll_flarum.py").read_text(encoding="utf-8")
+COMMUNITY_FLOW = (
+    REPO / "deploy" / "compose" / "activepieces" / "flows" / "community-assist-v1.json"
+).read_text(encoding="utf-8")
 
 
 class ContainerContractTest(unittest.TestCase):
@@ -118,11 +121,20 @@ class ContainerContractTest(unittest.TestCase):
         poller = COMPOSE.split("  community-poller:", 1)[1].split("  artifact-maintainer:", 1)[0]
         self.assertIn("healthcheck:", poller)
         self.assertIn("TECHFLOW_COMMUNITY_POLLER_STATE", poller)
+        self.assertIn("TECHFLOW_FLARUM_SUPPORT_USER_IDS", poller)
+        self.assertIn("TECHFLOW_FLARUM_RESOLUTION_ADMIN_USER_IDS", poller)
+        self.assertIn("TECHFLOW_FLARUM_SOLUTION_SELECTOR_USER_ID_FILE", poller)
         self.assertIn("st_mtime < 120", poller)
         self.assertIn("gateway:", poller)
         self.assertIn("condition: service_healthy", poller)
         self.assertNotIn("from app import", POLLER)
         self.assertIn('"app" / "__init__.py"', POLLER)
+
+    def test_community_flow_forwards_ai_response_reason(self) -> None:
+        self.assertIn(
+            '"responseReason": "{{trigger[\'output\'][\'body\'][\'responseReason\']}}"',
+            COMMUNITY_FLOW,
+        )
 
     def test_tree_sitter_parsers_are_prefetched_in_the_image(self) -> None:
         self.assertIn("scripts/prefetch_parsers.py", DOCKERFILE)
