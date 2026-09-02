@@ -1,0 +1,47 @@
+{
+  "validatedAt": "2026-09-02T09:44:33Z",
+  "gatewayVersion": "0.16.8",
+  "discussion": {
+    "id": "178",
+    "url": "https://community.ablecloud.io/d/178",
+    "staffPostId": "437",
+    "staffResponseReason": "STAFF_RECORDED",
+    "staffTriggeredAssistant": false,
+    "explicitRequestPostId": "438",
+    "explicitResponseReason": "EXPLICIT_AI_REQUEST",
+    "explicitAssistantPostId": "439"
+  },
+  "retryContinuity": {
+    "issue": 113,
+    "legacyPendingPostId": "434",
+    "pendingPosts": 0,
+    "seen": true,
+    "failed": 0
+  },
+  "runtime": {
+    "gatewayImage": "techflow/ai-gateway:issue112-0.16.8-3047786",
+    "pollerImage": "techflow/ai-gateway:issue113-0.16.8-8330d8c",
+    "gatewayHealthy": true,
+    "pollerHealthy": true,
+    "gatewayRestartCount": 0,
+    "pollerRestartCount": 0,
+    "database": "ready",
+    "vector": "ready",
+    "provider": "openai"
+  },
+  "protectedServices": {
+    "sourceReconcilerContainerId": "d67ff13feccf62434001f5361db114dbc55169cc0d0a1d7eeef3258977ad2b37c",
+    "eventGatewayContainerId": "bf5c76824dbf8b0513431e4d067043d0ff46fa825553512c41239e5f622804b4c",
+    "activepiecesAppContainerId": "80a652dc8961adc8594aafac216270106285ec4d8175bee95e33dbcfd95755dac",
+    "activepiecesWorkerContainerId": "d50ee9a92d9d8337a5253f39644c0a6c2c5473e3c5203af2277611f1da2887879",
+    "unchanged": true
+  },
+  "tests": {
+    "aiGateway": 343,
+    "communityPoller": 35,
+    "activepiecesContracts": 13,
+    "passed": true
+  },
+  "backup": "/home/ablecloud/techflow-ai-gateway-backups/issue112-staff-silence-20260902T090656Z",
+  "packageSha256": "77e5aff4b1c5d0fa8eedfcecb66938015a7abfb947857a1f45b7702770a6da22"
+}
