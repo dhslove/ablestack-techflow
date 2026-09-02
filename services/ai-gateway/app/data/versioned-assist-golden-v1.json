@@ -159,7 +159,7 @@
       "allowedAnswerState": "ANSWERED",
       "expectedPreviewAssessment": "NOT_APPLICABLE",
       "expectedPublicGuidance": "명백한 공급자 오타를 짧게 교정하고 Degraded의 Activity Check 경로를 설명한 뒤 관리 서버와 KVM 호스트의 접속·서비스·로그·정상 기준을 실행 가능한 형태로 안내",
-      "requiredPublicGuidance": ["오타로 보고", "kvmhaprovider", "Degraded", "HA.STATE.TRANSITION", "kvm.ha.on.storage.heartbeat", "이웃", "ssh -p", "mold.service", "mold-agent.service", "/var/log/cloudstack/management/management-server.log", "/var/log/cloudstack/agent/agent.log", "--since", "--until", "마스킹"],
+      "requiredPublicGuidance": ["오타로 보고", "kvmhaprovider", "Degraded", "HA.STATE.TRANSITION", "kvm.ha.on.storage.heartbeat", "다른 KVM 호스트", "ssh -p", "mold.service", "mold-agent.service", "/var/log/cloudstack/management/management-server.log", "/var/log/cloudstack/agent/agent.log", "--since", "--until", "BMC 암호", "내부 IP", "일관된 별칭"],
       "forbiddenPublicClaims": ["kvmhapervider가 실제 값인지 확인", "cloudstack-management.service", "libvirt 장애로 확정", "DB를 직접 수정", "호스트 전원 차단 시험", "github.com"]
     }
   ]

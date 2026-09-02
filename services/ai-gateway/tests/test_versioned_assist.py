@@ -428,6 +428,16 @@ class VersionedAssistPolicyTest(unittest.TestCase):
         self.assertIn("1–2분", answer)
         self.assertNotIn("제품 내부 경로", answer)
 
+    def test_public_projection_preserves_approved_operational_log_paths(self) -> None:
+        answer = simplify_public_text(
+            "`tail -n 300 /var/log/cloudstack/agent/agent.log`와 "
+            "`grep -Ei 'HA state' /var/log/cloudstack/management/management-server.log`를 실행합니다."
+        )
+
+        self.assertIn("/var/log/cloudstack/agent/agent.log", answer)
+        self.assertIn("/var/log/cloudstack/management/management-server.log", answer)
+        self.assertNotIn("제품 내부 경로", answer)
+
     def test_ongoing_answer_naturalizes_internal_action_labels(self) -> None:
         answer = format_public_answer({
             "state": "ANSWERED",

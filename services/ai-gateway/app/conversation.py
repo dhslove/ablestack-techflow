@@ -428,7 +428,9 @@ def community_actionability_issues(result: dict[str, Any]) -> tuple[str, ...]:
         marker in text for marker in ("콘솔로 접속", "콘솔 또는 SSH", "터미널에 접속")
     ):
         issues.append("missing-access-example")
-    target_markers = ("관리 서버", "KVM 호스트", "호스트에서", "가상머신 안", "게스트에서")
+    target_markers = (
+        "관리 서버", "KVM 호스트", "호스트에서", "같은 호스트", "해당 호스트", "가상머신 안", "게스트에서",
+    )
     if has_linux_operation and any(not any(marker in row for marker in target_markers) for row in operation_rows):
         issues.append("missing-execution-target")
     if not any(marker in lowered for marker in ("sudo", "root", "관리자 권한")):
