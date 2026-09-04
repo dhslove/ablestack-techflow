@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-04T01:30:00Z",
+  "issue": 114,
+  "pullRequest": 110,
+  "discussion": {
+    "discussionId": "177",
+    "requesterSelectedPostId": "441",
+    "knowledgeBasePostId": "445",
+    "knowledgeBaseSourcePostId": "441",
+    "knowledgeBaseVersion": 2,
+    "caseState": "RESOLVED",
+    "knowledgeBasePublished": true,
+    "knowledgeBaseSelectedAsSolution": true,
+    "postApproved": true,
+    "requiredSectionsPresent": true,
+    "pendingPosts": 0,
+    "pendingResolutions": 0
+  },
+  "rootCause": {
+    "relatedToStaffResponseSuppression": false,
+    "synthesisQuestionChars": 10354,
+    "synthesisQuestionUtf8Bytes": 17145,
+    "officialSearchLimitUtf8Bytes": 4000,
+    "errorType": "ProviderContractError",
+    "previousResolutionAttempts": 99,
+    "obsoletePendingResolutionPostId": "444"
+  },
+  "fix": {
+    "version": "0.16.9",
+    "commit": "02061eb",
+    "boundedRetrievalQuestionUsed": true,
+    "providerContractErrorCode": "PROVIDER_CONTRACT_REJECTED",
+    "obsoleteResolutionPruning": true,
+    "openApiOperationCount": 39
+  },
+  "runtime": {
+    "image": "techflow/ai-gateway:issue114-0.16.9-02061eb",
+    "gateway": "healthy",
+    "gatewayRestartCount": 0,
+    "communityPoller": "healthy",
+    "communityPollerRestartCount": 0,
+    "publicCommunityHttpStatus": 200,
+    "publicChatHttpStatus": 200
+  },
+  "protectedServices": {
+    "sourceReconcilerContainerId": "d67ff13feccf62434001f5361db114dbc55169cc0d0a1d7eeef3258977ad2b37c",
+    "githubChatEventGatewayContainerId": "bf5c76824dbf8b0513431e4d067043d0ff46fa825553512c41239e5f622804b4c",
+    "activepiecesAppContainerId": "80a652dc8961adc8594aafac216270106285ec4d8175bee95e33dbcfd95755dac",
+    "activepiecesWorkerContainerId": "d50ee9a92d9d8337a5253f39644c0a6c2c5473e3c5203af2277611f1da2887879",
+    "changed": false,
+    "restartCount": 0
+  },
+  "deployment": {
+    "package": "ai-gateway-0.16.9-02061eb.tar.gz",
+    "sha256": "3AB72BFC9920EB5EE2137184CB1A106DE06B9931BF70EB6CEFDF07060A27B654",
+    "backup": "/home/ablecloud/techflow-ai-gateway-backups/issue114-kb-boundary-20260904T011509Z",
+    "databaseSchemaChanged": false,
+    "temporaryFilesRemoved": true
+  },
+  "validation": {
+    "repositoryTestsPassed": 346,
+    "ruffSelectedFilesPassed": true,
+    "browserVerified": true,
+    "duplicateKnowledgeBasePostCreated": false
+  }
+}
