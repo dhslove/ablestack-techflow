@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
-from app.provider import ContextChunk, ResponsesRequest, ResponsesResult
+from app.provider import ProviderContractError, ResponsesRequest, ResponsesResult
 from app.responses import (
     ANSWER_SCHEMA,
     CircuitBreaker,
@@ -14,6 +14,7 @@ from app.responses import (
     stable_safety_identifier,
     validate_grounded_result,
 )
+from app.versioned_assist import expand_retrieval_question
 
 
 def result(
@@ -221,6 +222,26 @@ class ResponsesPolicyTest(unittest.TestCase):
         self.assertEqual(1, len(results))
         self.assertEqual(2, len(client.responses.calls))
         self.assertIn("RETRY:", client.responses.calls[1]["input"][0]["content"])
+
+    def test_long_kb_question_must_use_bounded_official_search_text(self) -> None:
+        url = "https://kubernetes.io/docs/tasks/debug/debug-cluster/"
+        fake = _FakeClient(
+            '{"facts":[{"statement":"Inspect cluster debugging information.","title":"Debug cluster","url":"'
+            + url
+            + '"}]}',
+            {"output": [{"type": "web_search_call", "action": {"sources": [{"url": url}]}}]},
+        )
+        adapter = OpenAIResponsesAdapter("unused", "unused", client=fake)
+        long_question = "Koral Pod가 시작되지 않습니다. " + ("긴 해결 대화 " * 1200)
+
+        with self.assertRaises(ProviderContractError):
+            adapter.search_official_references(long_question)
+
+        bounded = expand_retrieval_question(long_question)
+        results = adapter.search_official_references(bounded)
+
+        self.assertLessEqual(len(bounded.encode("utf-8")), 4000)
+        self.assertEqual(1, len(results))
 
     def test_circuit_breaker_opens_after_failure_threshold(self) -> None:
         breaker = CircuitBreaker(minimum_calls=10, failure_rate=0.5)

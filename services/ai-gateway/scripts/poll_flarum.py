@@ -582,6 +582,26 @@ def checkpoint_confirmed_post(
     return completed_post_ids
 
 
+def prune_obsolete_pending_resolutions(
+    discussions: list[dict], pending_resolutions: dict[str, dict]
+) -> list[str]:
+    """Remove pending selections that no longer match the current Best Answer."""
+    current = {
+        item["discussionId"]: str(item.get("bestAnswerPostId") or "")
+        for item in discussions
+    }
+    removed: list[str] = []
+    for resolution_key, pending in list(pending_resolutions.items()):
+        discussion_id = str(pending.get("discussionId") or "")
+        if discussion_id not in current:
+            continue
+        source_post_id = str(pending.get("sourcePostId") or "")
+        if source_post_id != current[discussion_id]:
+            pending_resolutions.pop(resolution_key, None)
+            removed.append(resolution_key)
+    return removed
+
+
 def gateway_resolution_is_confirmed(case: dict, source_post_id: str) -> bool:
     """Require final KB publication and solution selection before checkpointing a Flarum resolution."""
     source_matches = source_post_id in {
@@ -659,6 +679,11 @@ def run_once(state_path: Path, *, bootstrap_only: bool = False) -> dict:
     snapshots = state.get("discussions") or {}
     pending_posts: dict[str, dict] = dict(state.get("pendingPosts") or {})
     pending_resolutions: dict[str, dict] = dict(state.get("pendingResolutions") or {})
+    for obsolete_resolution in prune_obsolete_pending_resolutions(discussions, pending_resolutions):
+        print(json.dumps({
+            "event": "community_obsolete_resolution_removed",
+            "resolutionKey": obsolete_resolution,
+        }, separators=(",", ":")), flush=True)
     now = int(time.time())
     confirmed = 0
     for pending_post_id, pending in list(pending_posts.items()):

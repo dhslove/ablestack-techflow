@@ -45,7 +45,13 @@ from .models import (
 from .evaluation import judge_case, load_golden_set
 from .postgres_store import PostgresStore
 from .embedding import EmbeddingsAdapter, build_embedding_adapter
-from .provider import PROVIDER_PROFILES, ComprehensiveResponsesRequest, ResponsesRequest, profile_payloads
+from .provider import (
+    PROVIDER_PROFILES,
+    ComprehensiveResponsesRequest,
+    ProviderContractError,
+    ResponsesRequest,
+    profile_payloads,
+)
 from .responses import (
     ResponsesAdapter,
     ResponsesProviderError,
@@ -667,7 +673,10 @@ def create_app(
                         }
                     if runtime_settings.official_web_search_enabled and web_required:
                         try:
-                            live_results = runtime_responses.search_official_references(request.question)
+                            # KB synthesis accepts a longer conversation than the
+                            # official-search provider. Reuse the already bounded
+                            # UTF-8 retrieval question instead of the raw transcript.
+                            live_results = runtime_responses.search_official_references(retrieval_question)
                             if guest_os_question and not live_results:
                                 official_profile = PROVIDER_PROFILES["OPENAI_RAG_DEFAULT_V1"]
                                 raise ResponsesProviderError(
@@ -694,6 +703,25 @@ def create_app(
                                     "generationProviderCalled": exc.provider_called, "errorCode": exc.code,
                                     "failureClass": exc.failure_class,
                                 }
+                        except ProviderContractError as exc:
+                            _json_log(
+                                "provider_contract_rejected",
+                                correlationId=correlation_id,
+                                errorCode="PROVIDER_CONTRACT_REJECTED",
+                                boundary=str(exc),
+                            )
+                            return {
+                                "queryId": request.query_id,
+                                "state": "FAILED",
+                                "plan": plan_payload,
+                                "scope": scope,
+                                "coverage": coverage,
+                                "report": None,
+                                "citations": [],
+                                "generationProviderCalled": False,
+                                "errorCode": "PROVIDER_CONTRACT_REJECTED",
+                                "failureClass": "TERMINAL",
+                            }
                     results_by_profile[profile_id] = curated
                     continue
                 retrieval_request = QueryRequest(
@@ -743,6 +771,25 @@ def create_app(
                     "scope": scope, "coverage": coverage,
                     "citations": [], "generationProviderCalled": exc.provider_called, "errorCode": exc.code,
                     "failureClass": exc.failure_class}
+        except ProviderContractError as exc:
+            _json_log(
+                "provider_contract_rejected",
+                correlationId=correlation_id,
+                errorCode="PROVIDER_CONTRACT_REJECTED",
+                boundary=str(exc),
+            )
+            return {
+                "queryId": request.query_id,
+                "state": "FAILED",
+                "plan": plan_payload,
+                "report": None,
+                "scope": scope,
+                "coverage": coverage,
+                "citations": [],
+                "generationProviderCalled": False,
+                "errorCode": "PROVIDER_CONTRACT_REJECTED",
+                "failureClass": "TERMINAL",
+            }
 
     @application.post("/v1/assist/query", response_model=Envelope, operation_id="queryAssist")
     def query_assist(request: ComprehensiveQueryRequest, correlation_id: Annotated[str, Depends(_correlation_id)]) -> Envelope:

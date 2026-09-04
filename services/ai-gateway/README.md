@@ -1,5 +1,12 @@
 # TechFlow AI Gateway
 
+## v0.16.9 구현 범위
+
+- KB용 16,000자 대화가 공식 외부 자료 검색의 4,000자 계약을 넘지 않도록 UTF-8 제한 검색 질문 재사용
+- Provider 계약 오류를 일반 500 대신 명시적 실패 상태로 기록
+- Best Answer가 변경되거나 해제되면 이전 Pending Resolution을 자동 제거
+- Discussion #177의 반복 해결 이벤트 복구와 KB 최종 게시 검증
+
 ## v0.16.8 구현 범위
 
 - 질문자 Post만 기본 AI 응답 대상으로 유지

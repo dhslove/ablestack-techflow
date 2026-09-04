@@ -261,6 +261,23 @@ class CommunityPollerTests(unittest.TestCase):
         self.assertTrue(poll_flarum.gateway_resolution_is_confirmed(complete, "420"))
         self.assertTrue(poll_flarum.gateway_resolution_is_confirmed(complete, "421"))
 
+    def test_changed_best_answer_removes_only_obsolete_pending_resolution(self) -> None:
+        discussions = [
+            {"discussionId": "177", "bestAnswerPostId": "441"},
+            {"discussionId": "178", "bestAnswerPostId": None},
+        ]
+        pending = {
+            "resolution-177-444": {"discussionId": "177", "sourcePostId": "444"},
+            "resolution-177-441": {"discussionId": "177", "sourcePostId": "441"},
+            "resolution-178-500": {"discussionId": "178", "sourcePostId": "500"},
+            "resolution-999-900": {"discussionId": "999", "sourcePostId": "900"},
+        }
+
+        removed = poll_flarum.prune_obsolete_pending_resolutions(discussions, pending)
+
+        self.assertEqual({"resolution-177-444", "resolution-178-500"}, set(removed))
+        self.assertEqual({"resolution-177-441", "resolution-999-900"}, set(pending))
+
     def test_legacy_discussion_state_bootstraps_posts_without_notification_flood(self) -> None:
         discussion_payload = {
             "data": [{"type": "discussions", "id": "10",

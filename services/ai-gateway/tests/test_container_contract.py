@@ -109,6 +109,10 @@ class ContainerContractTest(unittest.TestCase):
         self.assertNotIn(setting, migrate)
         self.assertIn(setting, gateway)
 
+    def test_long_kb_synthesis_uses_bounded_official_search_question(self) -> None:
+        self.assertIn("search_official_references(retrieval_question)", MAIN)
+        self.assertNotIn("search_official_references(request.question)", MAIN)
+
     def test_healthcheck_exists(self) -> None:
         self.assertGreaterEqual(COMPOSE.count("healthcheck:"), 2)
 
